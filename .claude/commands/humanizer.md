@@ -10,7 +10,7 @@ Toma la pregunta o respuesta proporcionada y genera una respuesta completa, cohe
    - **Coherente**: fluye naturalmente, con ideas conectadas y bien estructuradas
    - **Correcta**: basada fielmente en el material del curso (SDLC, factibilidad, metodologías, alineamiento estratégico, requerimientos)
    - **Humana**: escrita en primera persona del plural o como estudiante universitario, sin sonar robótica ni generada por IA; usa lenguaje académico pero natural
-   - **Concisa**: responde directamente sin relleno innecesario
+   - **Concisa**: máximo 3-4 oraciones por punto; sin introducción, sin conclusión genérica, sin relleno. Ve directo al grano.
 
 ## Contexto del curso
 
