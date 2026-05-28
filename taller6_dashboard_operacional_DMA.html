@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Operacional DMA · Municipalidad de Ñuñoa</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --rojo:#e23b48; --amarillo:#f0a623; --verde:#1f9d57; --azul:#1c5d99; --azulc:#2a7fc1;
+    --teal:#138086; --tinta:#16232f; --gris:#64727f; --linea:#e6ebf0; --fondo:#eef1f5; --panel:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--tinta);padding:22px;font-size:14px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;background:linear-gradient(95deg,var(--teal),var(--verde));color:#fff;padding:18px 24px;border-radius:14px;box-shadow:0 4px 14px rgba(19,128,134,.25)}
+  .topbar h1{font-size:1.4rem;font-weight:700}
+  .topbar .s{font-size:.85rem;opacity:.92;margin-top:3px}
+  .topbar .r{text-align:right;font-size:.8rem;opacity:.92;line-height:1.5}
+  .slicers{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 4px}
+  .slicer{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:7px 14px;font-size:.8rem;color:var(--gris);cursor:pointer;display:flex;align-items:center;gap:6px}
+  .slicer.on{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .aviso{font-size:.75rem;color:#8a5a00;background:#fff7e6;border:1px solid #f4cf8e;padding:6px 12px;border-radius:7px;margin:12px 0}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .panel{background:var(--panel);border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+  .panel h3{font-size:.82rem;text-transform:uppercase;letter-spacing:.03em;color:var(--teal);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .panel h3::before{content:"";width:4px;height:15px;background:var(--teal);border-radius:3px}
+  .c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}.c8{grid-column:span 8}.c12{grid-column:span 12}
+  .chartbox{position:relative;height:240px}
+  .gauge{position:relative;height:150px}
+  .gval{position:absolute;top:62%;left:0;right:0;text-align:center}
+  .gval .v{font-size:1.5rem;font-weight:700;line-height:1}
+  .gval .m{font-size:.68rem;color:var(--gris)}
+  .gtitle{text-align:center;font-size:.78rem;font-weight:600;margin-bottom:4px}
+  .matrix{width:100%;border-collapse:collapse;font-size:.8rem}
+  .matrix th{text-align:left;color:var(--gris);font-weight:600;padding:6px 8px;border-bottom:2px solid var(--linea);font-size:.7rem;text-transform:uppercase}
+  .matrix td{padding:7px 8px;border-bottom:1px solid var(--linea)}
+  .tag{font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:20px;color:#fff}
+  .tag.r{background:var(--rojo)}.tag.a{background:var(--amarillo)}.tag.v{background:var(--verde)}
+  .leg{display:flex;gap:14px;font-size:.74rem;color:var(--gris);margin-top:8px;flex-wrap:wrap}
+  .leg .d{width:12px;height:12px;border-radius:50%}.leg span{display:flex;align-items:center;gap:5px}
+  footer{margin-top:18px;font-size:.74rem;color:var(--gris);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media(max-width:900px){.c3,.c4,.c6,.c8{grid-column:span 12}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <h1>Dashboard Operacional · Dirección de Medio Ambiente</h1>
+    <div class="s">Reunión operativa semanal — Fase Controlar (Execution Premium · Kaplan &amp; Norton)</div>
+  </div>
+  <div class="r">
+    <div><strong>Municipalidad de Ñuñoa</strong> · Grupo 2</div>
+    <div>Centro de Gasto Discrecional · Costo total $14.849 MM</div>
+    <div>Semana de control S-21 / 2025</div>
+  </div>
+</div>
+
+<div class="slicers">
+  <div class="slicer on">📅 Semana 21</div>
+  <div class="slicer">🌳 Dirección Medio Ambiente</div>
+  <div class="slicer">📋 SLA Adquisiciones (Ley 19.886)</div>
+  <div class="slicer">🎯 8 indicadores</div>
+</div>
+<div class="aviso">⚠️ Valores de medición y series temporales <strong>simulados</strong> para la simulación de reunión operativa. Umbrales de semáforo del tablero DMA (Taller 4-5).</div>
+
+<div class="grid">
+  <!-- Gauges -->
+  <div class="panel c3"><div class="gtitle">Satisfacción vecinal</div><div class="gauge"><canvas id="g1"></canvas><div class="gval"><div class="v" style="color:var(--amarillo)">5,2</div><div class="m">meta ≥ 5,5 · /7</div></div></div></div>
+  <div class="panel c3"><div class="gtitle">Ejecución presupuestaria</div><div class="gauge"><canvas id="g2"></canvas><div class="gval"><div class="v" style="color:var(--rojo)">71%</div><div class="m">meta ≥ 90%</div></div></div></div>
+  <div class="panel c3"><div class="gtitle">Áreas verdes per cápita</div><div class="gauge"><canvas id="g3"></canvas><div class="gval"><div class="v" style="color:var(--verde)">9,3</div><div class="m">meta ≥ 9 m² (OMS)</div></div></div></div>
+  <div class="panel c3"><div class="gtitle">Abandono de trámites</div><div class="gauge"><canvas id="g4"></canvas><div class="gval"><div class="v" style="color:var(--amarillo)">12%</div><div class="m">meta &lt; 10%</div></div></div></div>
+
+  <!-- Trend satisfaction + reclamos -->
+  <div class="panel c8">
+    <h3>Evolución satisfacción vecinal vs. tasa de reclamos (12 semanas)</h3>
+    <div class="chartbox"><canvas id="trend"></canvas></div>
+  </div>
+  <div class="panel c4">
+    <h3>Indicadores por estado</h3>
+    <div class="chartbox"><canvas id="estado"></canvas></div>
+    <div class="leg"><span><span class="d" style="background:var(--verde)"></span>En meta (4)</span><span><span class="d" style="background:var(--amarillo)"></span>Alerta (2)</span><span><span class="d" style="background:var(--rojo)"></span>Bajo meta (2)</span></div>
+  </div>
+
+  <!-- SLA bars -->
+  <div class="panel c6">
+    <h3>Cumplimiento SLA — autorización de Órdenes de Compra (DAF)</h3>
+    <div class="chartbox"><canvas id="sla"></canvas></div>
+    <div class="leg"><span><span class="d" style="background:var(--azulc)"></span>Tiempo real</span><span><span class="d" style="background:var(--gris)"></span>Meta SLA</span></div>
+  </div>
+  <!-- Budget execution trend -->
+  <div class="panel c6">
+    <h3>Ejecución presupuestaria DMA acumulada vs. programada (2025)</h3>
+    <div class="chartbox"><canvas id="presup"></canvas></div>
+  </div>
+
+  <!-- Semaphore matrix -->
+  <div class="panel c12">
+    <h3>Tablero de indicadores DMA — detalle por perspectiva</h3>
+    <table class="matrix">
+      <thead><tr><th>Perspectiva</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Frec.</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td>Procesos Int.</td><td>% satisfacción vecinal post-atención</td><td>5,2</td><td>≥ 5,5</td><td>Mensual</td><td><span class="tag a">Alerta</span></td></tr>
+        <tr><td>Procesos Int.</td><td>M² áreas verdes per cápita</td><td>9,3</td><td>≥ 9</td><td>Mensual</td><td><span class="tag v">En meta</span></td></tr>
+        <tr><td>Procesos Int.</td><td>% ejecución presupuestaria DMA</td><td>71%</td><td>≥ 90%</td><td>Mensual</td><td><span class="tag r">Bajo meta</span></td></tr>
+        <tr><td>Procesos Int.</td><td>Tasa de abandono de trámites</td><td>12%</td><td>&lt; 10%</td><td>Mensual</td><td><span class="tag a">Alerta</span></td></tr>
+        <tr><td>SLA</td><td>Tiempo autorización OC normal (i=1)</td><td>2,6 d</td><td>≤ 3 d</td><td>Semanal</td><td><span class="tag v">En meta</span></td></tr>
+        <tr><td>SLA</td><td>Tiempo autorización OC urgente (i=2)</td><td>2,3 d</td><td>≤ 1 d</td><td>Semanal</td><td><span class="tag r">Bajo meta</span></td></tr>
+        <tr><td>Comunitaria</td><td>Tasa de reclamos formales DMA</td><td>3,8%</td><td>&lt; 5%</td><td>Mensual</td><td><span class="tag v">En meta</span></td></tr>
+        <tr><td>Financiera</td><td>% ejecución presupuestaria en plazo</td><td>91%</td><td>≥ 90%</td><td>Mensual</td><td><span class="tag v">En meta</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  <span>Taller 6 · Control de Gestión · Reunión operativa semanal (XPP)</span>
+  <span>Prof. Alicia Núñez · FEN — Universidad de Chile</span>
+</footer>
+
+<script>
+Chart.defaults.font.family="'Segoe UI',system-ui,sans-serif";
+Chart.defaults.font.size=11;
+
+function gauge(ctx,pct,color){
+  return new Chart(ctx,{type:'doughnut',data:{datasets:[{data:[pct,100-pct],backgroundColor:[color,'#eceff3'],borderWidth:0}]},
+    options:{maintainAspectRatio:false,rotation:-90,circumference:180,cutout:'72%',plugins:{legend:{display:false},tooltip:{enabled:false}}}});
+}
+gauge(g1,74,'#f0a623');   // 5.2/7
+gauge(g2,71,'#e23b48');   // 71%
+gauge(g3,93,'#1f9d57');   // 9.3 vs ~10
+gauge(g4,60,'#f0a623');   // abandono (inverso, ilustrativo)
+
+const wk=['S10','S11','S12','S13','S14','S15','S16','S17','S18','S19','S20','S21'];
+new Chart(trend,{data:{labels:wk,datasets:[
+  {type:'line',label:'Satisfacción (/7)',data:[5.6,5.5,5.4,5.5,5.3,5.4,5.3,5.2,5.3,5.2,5.1,5.2],borderColor:'#1c5d99',backgroundColor:'rgba(28,93,153,.08)',tension:.35,fill:true,yAxisID:'y'},
+  {type:'line',label:'Reclamos (%)',data:[2.9,3.1,3.0,3.4,3.6,3.5,3.9,4.1,3.8,4.0,3.9,3.8],borderColor:'#e23b48',tension:.35,yAxisID:'y1'}
+]},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{
+  y:{min:4.5,max:7,title:{display:true,text:'Satisfacción'}},
+  y1:{position:'right',min:0,max:8,grid:{drawOnChartArea:false},title:{display:true,text:'Reclamos %'}}
+},plugins:{legend:{position:'top'}}}});
+
+new Chart(estado,{type:'doughnut',data:{labels:['En meta','Alerta','Bajo meta'],datasets:[{data:[4,2,2],backgroundColor:['#1f9d57','#f0a623','#e23b48'],borderWidth:0}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false}}}});
+
+new Chart(sla,{type:'bar',data:{labels:['OC normal (i=1)','OC urgente (i=2)','OC crítica (i=3)'],datasets:[
+  {label:'Tiempo real',data:[2.6,2.3,10],backgroundColor:c=>{const i=c.dataIndex;const real=[2.6,2.3,10][i],meta=[3,1,12][i];return real<=meta?'#1f9d57':'#e23b48'}},
+  {label:'Meta SLA',data:[3,1,12],backgroundColor:'#b8c2cc'}
+]},options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'horas/días'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+(c.dataIndex===2?' h':' días')}}}}});
+
+const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul'];
+new Chart(presup,{data:{labels:meses,datasets:[
+  {type:'line',label:'Programado',data:[14,28,43,57,71,85,100],borderColor:'#64727f',borderDash:[6,4],tension:.2},
+  {type:'line',label:'Ejecutado',data:[10,19,29,41,52,63,71],borderColor:'#1c5d99',backgroundColor:'rgba(28,93,153,.10)',fill:true,tension:.2}
+]},options:{maintainAspectRatio:false,scales:{y:{max:100,title:{display:true,text:'% acumulado'}}},plugins:{legend:{position:'top'}}}});
+</script>
+</body>
+</html>
