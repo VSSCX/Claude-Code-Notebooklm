@@ -18,7 +18,7 @@ html,body{width:1280px;height:720px;overflow:hidden;
 .hdr-mid{flex:1}
 .hdr-mid h1{font-size:13px;font-weight:700;letter-spacing:.01em}
 .hdr-mid .sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:1px}
-.hdr-right{text-align:right;font-size:9px;color:rgba(255,255,255,.8);line-height:1.5;flex-shrink:0}
+.hdr-right{font-size:9px;color:rgba(255,255,255,.8);line-height:1.5;flex-shrink:0}
 .hdr-right strong{color:#fff}
 .aviso-hdr{font-size:9px;background:#f7a800;color:#3a2000;padding:2px 8px;border-radius:2px;margin-left:8px;white-space:nowrap}
 
@@ -107,9 +107,14 @@ html,body{width:1280px;height:720px;overflow:hidden;
     <div class="sub">Tablero DMA · Reunión operativa semanal · Fase Controlar y Aprender · Execution Premium (Kaplan &amp; Norton)</div>
   </div>
   <span class="aviso-hdr">⚠ Datos simulados</span>
-  <div class="hdr-right">
-    <div><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2</div>
-    <div>CGD · Presupuesto 2025: $14.849 MM · Semana S-21/2025</div>
+  <div class="hdr-right" style="display:flex;align-items:center;gap:10px">
+    <div style="text-align:right">
+      <div><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2</div>
+      <div>CGD · Presupuesto 2025: $14.849 MM · Semana S-21/2025</div>
+    </div>
+    <!-- SLOT IMAGEN MUNICIPALIDAD — reemplazar src con la foto real -->
+    <img id="logo-muni" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='38'%3E%3Crect width='56' height='38' rx='3' fill='%231a2e5a'/%3E%3Crect x='3' y='3' width='50' height='32' rx='2' fill='%232d4696' opacity='.5'/%3E%3Ctext x='28' y='16' text-anchor='middle' font-family='Segoe UI,sans-serif' font-size='7' font-weight='700' fill='%23f7a800'%3EMUNIC. ÑUÑOA%3C/text%3E%3Ctext x='28' y='26' text-anchor='middle' font-family='Segoe UI,sans-serif' font-size='6' fill='%23fff'%3E📷 subir foto%3C/text%3E%3C/svg%3E"
+         alt="Logo Municipalidad" style="height:36px;width:auto;object-fit:contain;border:1px solid rgba(255,255,255,.2);border-radius:3px;cursor:pointer" title="Reemplazar con foto real de la municipalidad">
   </div>
 </div>
 
@@ -205,34 +210,49 @@ html,body{width:1280px;height:720px;overflow:hidden;
 
       <!-- ══ PAGE 1: Resumen ══ -->
       <div id="pg1" class="page on">
-        <!-- Row 1 -->
-        <div class="row" style="flex:0 0 270px">
-          <div class="panel" style="flex:0 0 610px">
+        <!-- Row 1 (reducida) -->
+        <div class="row" style="flex:0 0 175px">
+          <div class="panel" style="flex:0 0 480px">
             <div class="panel-hdr"><span class="accent"></span><span id="p1-trend-title">Satisfacción vecinal vs. tasa de reclamos — Q1 2025</span></div>
             <div class="panel-body"><canvas id="trend"></canvas></div>
           </div>
           <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent v"></span>Indicadores clave — semáforo DMA</div>
+            <div class="panel-hdr"><span class="accent v"></span>Semáforo indicadores DMA</div>
             <div class="panel-body" style="padding:4px 6px;overflow-y:auto">
-              <table class="tbl" id="tbl1"><thead><tr><th>Perspectiva</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+              <table class="tbl" id="tbl1"><thead><tr><th>Perspect.</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
             </div>
           </div>
         </div>
-        <!-- Row 2 -->
+        <!-- Row 2 (nuevas gráficas) -->
+        <div class="row" style="flex:0 0 175px">
+          <div class="panel" style="flex:0 0 340px">
+            <div class="panel-hdr"><span class="accent r"></span>Proyección cierre presupuestario 2025 — ¿alcanzamos el 90%?</div>
+            <div class="panel-body"><canvas id="proyeccion"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 300px">
+            <div class="panel-hdr"><span class="accent o"></span>Radar BSC — desempeño vs. meta por perspectiva</div>
+            <div class="panel-body"><canvas id="radar_bsc"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent"></span>Indicadores en alerta — evolución últimas 4 semanas</div>
+            <div class="panel-body"><canvas id="alertas_trend"></canvas></div>
+          </div>
+        </div>
+        <!-- Row 3 -->
         <div class="row" style="flex:1">
-          <div class="panel" style="flex:0 0 290px">
-            <div class="panel-hdr"><span class="accent o"></span>Ejecuc. presupuestaria acumulada 2025 (%)</div>
+          <div class="panel" style="flex:0 0 260px">
+            <div class="panel-hdr"><span class="accent o"></span>Ejecuc. acumulada 2025 vs. prog. (%)</div>
             <div class="panel-body"><canvas id="presup_mini"></canvas></div>
           </div>
-          <div class="panel" style="flex:0 0 200px">
+          <div class="panel" style="flex:0 0 175px">
             <div class="panel-hdr"><span class="accent r"></span>Brecha vs. prog. ($MM)</div>
             <div class="panel-body"><canvas id="brecha_mini"></canvas></div>
           </div>
           <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent"></span>Estado objetivos BSC por perspectiva</div>
+            <div class="panel-hdr"><span class="accent"></span>Estado ind. BSC por perspectiva</div>
             <div class="panel-body"><canvas id="bsc_bar"></canvas></div>
           </div>
-          <div class="panel" style="flex:0 0 155px">
+          <div class="panel" style="flex:0 0 140px">
             <div class="panel-hdr"><span class="accent v"></span>Distribución</div>
             <div class="panel-body"><canvas id="donut_est"></canvas></div>
           </div>
@@ -564,6 +584,61 @@ function initPg1(){
       plugins:{legend:{position:'bottom',labels:{font:{size:9}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed}}}}
   });
 
+  // ── NUEVA 1: Proyección cierre presupuestario 2025 ──
+  // Basada en ritmo real (45% a mayo), proyecta pace al 100% → llega ~71% en dic
+  const MESES_ACT=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const ejActual=[6,12,18,33,45,null,null,null,null,null,null,null];
+  // Proyección lineal desde mayo al cierre (pace ~9%/mes)
+  const ejProy=[null,null,null,null,45,54,63,70,75,78,80,82];
+  const ejIdeal=[null,null,null,null,58,66.7,75,83.3,90,95,98.3,100];
+  CH.proyec=new Chart(document.getElementById('proyeccion'),{
+    data:{labels:MESES_ACT,datasets:[
+      {type:'line',label:'Ejec. real',data:ejActual,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696',borderWidth:2},
+      {type:'line',label:'Proyección (ritmo actual)',data:ejProy,borderColor:'#f7a800',borderDash:[6,3],tension:.2,pointRadius:2,pointBackgroundColor:'#f7a800',borderWidth:1.5},
+      {type:'line',label:'Ideal ≥ 90%',data:ejIdeal,borderColor:'#1db14f',borderDash:[3,3],tension:.2,pointRadius:0,borderWidth:1.5}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:0,max:100,title:{display:true,text:'% acum.',font:{size:8}},
+        ticks:{callback:v=>v+'%'}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}},
+        annotation:{annotations:{meta:{type:'line',yMin:90,yMax:90,borderColor:'#c0392b',borderWidth:1,borderDash:[4,3],
+          label:{content:'Meta 90%',enabled:true,position:'end',font:{size:8},color:'#c0392b',padding:2}}}}}}
+  });
+
+  // ── NUEVA 2: Radar BSC — desempeño % vs meta por perspectiva ──
+  // Porcentaje de indicadores en meta por perspectiva → muestra balance
+  const rData=PERSP.map(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    if(!rows.length) return 0;
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar=new Chart(document.getElementById('radar_bsc'),{type:'radar',
+    data:{labels:['Comunitaria','Financiera','Procesos\nInternos','Aprend. y\nCrecimiento'],
+      datasets:[
+        {label:'% ind. en meta',data:rData,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.18)',pointBackgroundColor:'#2d4696',pointRadius:3,borderWidth:2},
+        {label:'Meta (100%)',data:[100,100,100,100],borderColor:'rgba(29,177,79,.5)',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1}
+      ]},
+    options:{maintainAspectRatio:false,scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:8},callback:v=>v+'%'},
+      pointLabels:{font:{size:8.5}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:8.5},boxWidth:8,padding:5}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.r+'%'}}}}
+  });
+
+  // ── NUEVA 3: Tendencia 4 semanas — indicadores en alerta ──
+  // Muestra evolución semanal de los 3 principales indicadores en alerta
+  const S4=['S18','S19','S20','S21'];
+  CH.alerta=new Chart(document.getElementById('alertas_trend'),{
+    data:{labels:S4,datasets:[
+      {type:'line',label:'Satisf. gestión DMA (%)',data:[71,72,71,73],borderColor:'#f7a800',backgroundColor:'rgba(247,168,0,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y',borderWidth:2},
+      {type:'line',label:'Abandono trámites (%)',data:[13,14,13,12],borderColor:'#c0392b',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2},
+      {type:'line',label:'Cobertura prog. (%)',data:[72,73,73,74],borderColor:'#2d4696',tension:.3,pointRadius:3,yAxisID:'y',borderWidth:1.5,borderDash:[4,3]}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:60,max:100,title:{display:true,text:'%',font:{size:8}}},
+              y1:{position:'right',min:0,max:25,grid:{drawOnChartArea:false},title:{display:true,text:'Abandono %',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
   renderTbl1(u);
   updateStrip(u);
 }
@@ -597,6 +672,15 @@ function updatePg1(){
   CH.bsc.data.datasets[1].data=bd.o;
   CH.bsc.data.datasets[2].data=bd.r;
   CH.bsc.update('none');
+
+  // Radar: recalcula % en meta por perspectiva para unidad activa
+  const rData=PERSP.map(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    if(!rows.length) return 0;
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar.data.datasets[0].data=rData;
+  CH.radar.update('none');
 
   renderTbl1(u);
   updateStrip(u);
