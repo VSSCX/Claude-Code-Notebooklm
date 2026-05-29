@@ -6,157 +6,419 @@
 <title>Dashboard Estratégico CMI · Municipalidad de Ñuñoa</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root{
-    --rojo:#e23b48; --amarillo:#f0a623; --verde:#1f9d57; --azul:#1c5d99; --azulc:#2a7fc1;
-    --morado:#6a4c93; --teal:#138086; --tinta:#16232f; --gris:#64727f; --linea:#e6ebf0;
-    --fondo:#eef1f5; --panel:#ffffff;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--tinta);padding:22px;font-size:14px}
-  .topbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;background:linear-gradient(95deg,var(--azul),var(--teal));color:#fff;padding:18px 24px;border-radius:14px;box-shadow:0 4px 14px rgba(28,93,153,.25)}
-  .topbar h1{font-size:1.4rem;font-weight:700}
-  .topbar .s{font-size:.85rem;opacity:.9;margin-top:3px}
-  .topbar .r{text-align:right;font-size:.8rem;opacity:.92;line-height:1.5}
-  .slicers{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 4px}
-  .slicer{background:var(--panel);border:1px solid var(--linea);border-radius:8px;padding:7px 14px;font-size:.8rem;color:var(--gris);cursor:pointer;transition:.15s;display:flex;align-items:center;gap:6px}
-  .slicer.on{background:var(--azul);color:#fff;border-color:var(--azul)}
-  .slicer:hover{border-color:var(--azulc)}
-  .aviso{font-size:.75rem;color:#8a5a00;background:#fff7e6;border:1px solid #f4cf8e;padding:6px 12px;border-radius:7px;margin:12px 0}
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:14px 0}
-  .kpi{background:var(--panel);border-radius:12px;padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.05);border-top:3px solid var(--azul);position:relative}
-  .kpi.neg{border-top-color:var(--rojo)} .kpi.pos{border-top-color:var(--verde)}
-  .kpi .l{font-size:.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:.03em}
-  .kpi .n{font-size:1.5rem;font-weight:700;margin-top:5px}
-  .kpi .d{font-size:.7rem;color:var(--gris);margin-top:3px}
-  .grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
-  .panel{background:var(--panel);border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-  .panel h3{font-size:.82rem;text-transform:uppercase;letter-spacing:.03em;color:var(--azul);margin-bottom:12px;display:flex;align-items:center;gap:7px}
-  .panel h3::before{content:"";width:4px;height:15px;background:var(--azul);border-radius:3px}
-  .c6{grid-column:span 6} .c4{grid-column:span 4} .c8{grid-column:span 8} .c12{grid-column:span 12}
-  .chartbox{position:relative;height:260px}
-  .chartbox.tall{height:330px}
-  .matrix{width:100%;border-collapse:collapse;font-size:.8rem}
-  .matrix th{text-align:left;color:var(--gris);font-weight:600;padding:6px 8px;border-bottom:2px solid var(--linea);font-size:.72rem;text-transform:uppercase}
-  .matrix td{padding:7px 8px;border-bottom:1px solid var(--linea)}
-  .dots{display:flex;gap:5px}
-  .d{width:13px;height:13px;border-radius:50%}
-  .d.r{background:var(--rojo)} .d.a{background:var(--amarillo)} .d.v{background:var(--verde)}
-  .leg{display:flex;gap:14px;font-size:.74rem;color:var(--gris);margin-top:8px;flex-wrap:wrap}
-  .leg span{display:flex;align-items:center;gap:5px}
-  footer{margin-top:18px;font-size:.74rem;color:var(--gris);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
-  @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.c6,.c4,.c8{grid-column:span 12}}
+:root{
+  --azul:#2d4696;--azul2:#4a67b8;--azul3:#d6dff5;
+  --verde:#1db14f;--verde2:#158a3e;--verde3:#d4f0df;
+  --oro:#f7a800;--oro2:#c57f00;--oro3:#fff3cc;
+  --rojo:#c0392b;--rojo3:#fde8e8;
+  --tinta:#1a2332;--gris:#6c757d;--linea:#dde2ea;
+  --fondo:#eaecf2;--panel:#fff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#8e95a6;display:flex;justify-content:center;padding:24px;min-height:100vh}
+.wrapper{width:1280px;min-width:1280px;background:#fff;box-shadow:0 6px 32px rgba(0,0,0,.3);display:flex;flex-direction:column}
+
+.hdr{background:var(--azul);color:#fff;padding:0 20px;height:52px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.logo{width:36px;height:36px;background:var(--verde);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.hdr-right{text-align:right;font-size:10px;opacity:.88;line-height:1.6;flex-shrink:0}
+
+.tabs{background:#1e3278;display:flex;padding:0 16px;gap:2px;align-items:flex-end;height:36px;flex-shrink:0}
+.tab{background:#243d8f;color:rgba(255,255,255,.65);padding:7px 18px;font-size:11.5px;font-family:inherit;cursor:pointer;border:none;border-radius:4px 4px 0 0;transition:.12s;white-space:nowrap}
+.tab.on{background:var(--fondo);color:var(--azul);font-weight:700}
+.tab:hover:not(.on){color:#fff;background:#2d4fa0}
+
+.canvas{background:var(--fondo);padding:12px;display:none}
+.canvas.on{display:block}
+
+.slicers{background:#fff;border-radius:6px;padding:7px 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.sl-lbl{font-size:9.5px;color:var(--gris);text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+.sl-sep{width:1px;height:18px;background:var(--linea);margin:0 4px}
+.sl{background:#fff;border:1px solid var(--linea);border-radius:4px;padding:3px 11px;font-size:10.5px;cursor:pointer;color:var(--tinta);font-family:inherit;transition:.1s}
+.sl.on{background:var(--azul);color:#fff;border-color:var(--azul)}
+
+.aviso{font-size:10px;color:#7a5200;background:var(--oro3);border-left:3px solid var(--oro);padding:5px 10px;border-radius:0 4px 4px 0;margin-bottom:10px}
+
+.row{display:grid;gap:10px}
+.c2{grid-template-columns:1fr 1fr}
+.c3{grid-template-columns:1fr 1fr 1fr}
+.c4{grid-template-columns:repeat(4,1fr)}
+.c5{grid-template-columns:repeat(5,1fr)}
+.c21{grid-template-columns:2fr 1fr}
+.c12{grid-template-columns:1fr 2fr}
+.c31{grid-template-columns:3fr 1fr}
+.c211{grid-template-columns:2fr 1fr 1fr}
+
+.p{background:#fff;border-radius:6px;padding:11px 13px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.pt{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gris);border-bottom:1px solid var(--linea);padding-bottom:6px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ptb{width:3px;height:12px;border-radius:2px;background:var(--azul);flex-shrink:0}
+.ptb.v{background:var(--verde)}.ptb.o{background:var(--oro)}.ptb.r{background:var(--rojo)}
+
+.kpi{background:#fff;border-radius:6px;padding:11px 13px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-top:3px solid var(--azul);position:relative;overflow:hidden}
+.kpi.v{border-top-color:var(--verde)}.kpi.o{border-top-color:var(--oro)}.kpi.r{border-top-color:var(--rojo)}
+.kpi-l{font-size:9px;color:var(--gris);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.kpi-n{font-size:22px;font-weight:700;line-height:1;color:var(--tinta)}
+.kpi-n.v{color:var(--verde)}.kpi-n.o{color:var(--oro2)}.kpi-n.r{color:var(--rojo)}
+.kpi-d{font-size:9.5px;color:var(--gris);margin-top:3px}
+.badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;color:#fff;position:absolute;top:9px;right:9px}
+.badge.v{background:var(--verde)}.badge.o{background:var(--oro);color:#5a3500}.badge.r{background:var(--rojo)}
+
+.tbl{width:100%;border-collapse:collapse;font-size:10.5px}
+.tbl th{background:var(--azul);color:#fff;padding:5px 8px;text-align:left;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.tbl td{padding:5px 8px;border-bottom:1px solid var(--linea)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--azul3)}
+.tag{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;color:#fff}
+.tag.v{background:var(--verde)}.tag.o{background:var(--oro);color:#5a3500}.tag.r{background:var(--rojo)}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 2px;vertical-align:middle}
+.dot.v{background:var(--verde)}.dot.o{background:var(--oro)}.dot.r{background:var(--rojo)}
+
+.footer{background:var(--azul);color:rgba(255,255,255,.8);padding:5px 20px;font-size:9.5px;display:flex;justify-content:space-between;flex-shrink:0}
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div>
-    <h1>Dashboard Estratégico · CMI Corporativo</h1>
-    <div class="s">Reunión estratégica trimestral — Fase Aprender (Execution Premium · Kaplan &amp; Norton)</div>
+<div class="wrapper">
+
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="logo">🏛️</div>
+    <div>
+      <div style="font-size:14px;font-weight:700">Dashboard Estratégico · Cuadro de Mando Integral (CMI) Corporativo</div>
+      <div style="font-size:10px;opacity:.8">Reunión estratégica trimestral · Fase Aprender y Adaptar · Execution Premium (Kaplan &amp; Norton)</div>
+    </div>
   </div>
-  <div class="r">
-    <div><strong>Municipalidad de Ñuñoa</strong> · Grupo 2</div>
-    <div>Estrategia de Diferenciación · Ejercicio 2024</div>
-    <div>Cierre Q1 2025</div>
+  <div class="hdr-right">
+    <div><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2</div>
+    <div>Estrategia de Diferenciación · 4 Perspectivas BSC · Ejercicio 2024</div>
+    <div>Cierre Q1 2025 — Actualizado Semana 21/2025</div>
   </div>
 </div>
 
-<div class="slicers">
-  <div class="slicer on">📅 Ejercicio 2024</div>
-  <div class="slicer">🏛️ Todas las direcciones</div>
-  <div class="slicer">🎯 4 perspectivas BSC</div>
-  <div class="slicer">📊 CMI Corporativo (Nivel 1)</div>
-</div>
-<div class="aviso">⚠️ Datos financieros y de departamentalización <strong>reales</strong> (Estados 2024). Avances de iniciativas y semáforos BSC <strong>simulados</strong> para la simulación de reunión estratégica.</div>
-
-<div class="kpis">
-  <div class="kpi pos"><div class="l">Ingresos totales</div><div class="n">$84.509</div><div class="d">millones · 2024</div></div>
-  <div class="kpi"><div class="l">Gastos totales</div><div class="n">$83.510</div><div class="d">millones · 2024</div></div>
-  <div class="kpi neg"><div class="l">Resultado ejercicio</div><div class="n" style="color:var(--rojo)">−4,4%</div><div class="d">déficit $3.734 MM</div></div>
-  <div class="kpi pos"><div class="l">IPP (autonomía)</div><div class="n" style="color:var(--verde)">54,9%</div><div class="d">ingresos propios perm.</div></div>
-  <div class="kpi"><div class="l">Dependencia FCM</div><div class="n">5,31%</div><div class="d">baja dependencia</div></div>
+<div class="tabs">
+  <button class="tab on" onclick="pg('pg1',this)">📊 Resumen CMI</button>
+  <button class="tab" onclick="pg('pg2',this)">💰 Análisis Financiero</button>
+  <button class="tab" onclick="pg('pg3',this)">🎯 Iniciativas Estratégicas</button>
 </div>
 
-<div class="grid">
-  <div class="panel c6">
-    <h3>Estructura de ingresos municipales</h3>
-    <div class="chartbox"><canvas id="ingresos"></canvas></div>
-  </div>
-  <div class="panel c6">
-    <h3>Estructura de gastos municipales</h3>
-    <div class="chartbox"><canvas id="gastos"></canvas></div>
-  </div>
-
-  <div class="panel c8">
-    <h3>Costo total por dirección operativa (primario + absorbido)</h3>
-    <div class="chartbox tall"><canvas id="direcciones"></canvas></div>
-    <div class="leg"><span><span class="d" style="background:var(--azulc)"></span>Costo primario</span><span><span class="d" style="background:var(--amarillo)"></span>Costo absorbido (apoyo)</span></div>
-  </div>
-  <div class="panel c4">
-    <h3>Sobrecosto por absorción (%)</h3>
-    <div class="chartbox tall"><canvas id="variacion"></canvas></div>
-    <div class="leg"><span>Promedio direcciones operativas: +11%</span></div>
+<!-- ═══════ PÁGINA 1: Resumen CMI ═══════ -->
+<div id="pg1" class="canvas on">
+  <div class="aviso">⚠️ Datos financieros y de departamentalización <strong>reales</strong> (FECU 2024). Avances de iniciativas y semáforos BSC <strong>simulados</strong> para la simulación de reunión estratégica.</div>
+  <div class="slicers">
+    <span class="sl-lbl">Ejercicio</span>
+    <button class="sl on">2024</button><button class="sl">2023</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Perspectiva</span>
+    <button class="sl on">Todas</button><button class="sl">Comunitaria</button><button class="sl">Financiera</button><button class="sl">Procesos Int.</button><button class="sl">Aprend. y Crecim.</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Nivel</span>
+    <button class="sl on">CMI Corporativo (N1)</button><button class="sl">CMI Direcciones (N2)</button>
   </div>
 
-  <div class="panel c4">
-    <h3>Centros de responsabilidad (79 unidades)</h3>
-    <div class="chartbox"><canvas id="centros"></canvas></div>
-  </div>
-  <div class="panel c4">
-    <h3>Estado de objetivos por perspectiva BSC</h3>
-    <div class="chartbox"><canvas id="bsc"></canvas></div>
-    <div class="leg"><span><span class="d v"></span>En meta</span><span><span class="d a"></span>Alerta</span><span><span class="d r"></span>Bajo meta</span></div>
-  </div>
-  <div class="panel c4">
-    <h3>Avance de iniciativas estratégicas</h3>
-    <div class="chartbox"><canvas id="iniciativas"></canvas></div>
+  <!-- KPIs estratégicos -->
+  <div class="row c5" style="margin-bottom:10px">
+    <div class="kpi v"><span class="badge v">Destacado</span><div class="kpi-l">Ingresos Totales 2024</div><div class="kpi-n">$84.509</div><div class="kpi-d">millones · +3,1% vs 2023</div></div>
+    <div class="kpi"><div class="kpi-l">Gastos Totales 2024</div><div class="kpi-n">$83.510</div><div class="kpi-d">millones · ejercicio</div></div>
+    <div class="kpi r"><span class="badge r">Déficit</span><div class="kpi-l">Resultado del Ejercicio</div><div class="kpi-n r">−4,4%</div><div class="kpi-d">déficit $3.734 MM</div></div>
+    <div class="kpi v"><span class="badge v">Sólido</span><div class="kpi-l">IPP (Autonomía Fiscal)</div><div class="kpi-n v">54,9%</div><div class="kpi-d">ingresos propios perm.</div></div>
+    <div class="kpi"><div class="kpi-l">Dependencia FCM</div><div class="kpi-n">5,31%</div><div class="kpi-d">baja dependencia</div></div>
   </div>
 
-  <div class="panel c12">
-    <h3>Matriz de semáforo — Mapa estratégico</h3>
-    <table class="matrix">
-      <thead><tr><th style="width:22%">Perspectiva</th><th>Objetivos y estado</th><th style="width:14%">Resumen</th></tr></thead>
+  <!-- Donuts + BSC objectives + polar area -->
+  <div class="row" style="grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+    <div class="p">
+      <div class="pt"><span class="ptb"></span>Estructura de ingresos municipales</div>
+      <div style="height:200px"><canvas id="ingresos"></canvas></div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb v"></span>Estructura de gastos municipales</div>
+      <div style="height:200px"><canvas id="gastos"></canvas></div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb o"></span>Estado objetivos BSC por perspectiva</div>
+      <div style="height:178px"><canvas id="bsc_status"></canvas></div>
+      <div style="font-size:9.5px;display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+        <span><span class="dot v"></span>En meta</span><span><span class="dot o"></span>Alerta</span><span><span class="dot r"></span>Bajo meta</span>
+      </div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb"></span>Centros de responsabilidad (79)</div>
+      <div style="height:200px"><canvas id="centros"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Strategic map semaphore -->
+  <div class="p">
+    <div class="pt"><span class="ptb"></span>Mapa estratégico CMI — semáforo por perspectiva y objetivo</div>
+    <table class="tbl">
+      <thead><tr><th style="width:18%">Perspectiva</th><th>Objetivos y estado semáforo</th><th style="width:120px">Resumen</th></tr></thead>
       <tbody>
-        <tr><td><strong>Comunitaria</strong></td><td>Calidad 🟢 · Acceso 🟡 · Oportunidad 🟢 · Equidad 🟡 · Confianza 🔴 · Participación 🟡 · Bienestar 🟢</td><td><div class="dots"><span class="d v"></span><span class="d v"></span><span class="d v"></span><span class="d a"></span><span class="d a"></span><span class="d a"></span><span class="d r"></span></div></td></tr>
-        <tr><td><strong>Financiera</strong></td><td>Costo per cápita 🟡 · Ejecución presupuestaria 🔴 · Sostenibilidad IPP 🟢</td><td><div class="dots"><span class="d v"></span><span class="d a"></span><span class="d r"></span></div></td></tr>
-        <tr><td><strong>Procesos Internos</strong></td><td>Calidad servicio 🟢 · Trámites 🟡 · Distribución perfiles 🟡 · Recaudación 🔴 · Corporaciones 🟡 · Infraestructura 🟢</td><td><div class="dots"><span class="d v"></span><span class="d v"></span><span class="d a"></span><span class="d a"></span><span class="d a"></span><span class="d r"></span></div></td></tr>
-        <tr><td><strong>Aprendizaje y Crecimiento</strong></td><td>Competencias 🟡 · Ambiente laboral 🟢 · Integridad 🟢 · Sistemas de información 🔴</td><td><div class="dots"><span class="d v"></span><span class="d v"></span><span class="d a"></span><span class="d r"></span></div></td></tr>
+        <tr>
+          <td><strong>Comunitaria</strong></td>
+          <td>Calidad de servicio <span class="dot v"></span> · Acceso equitativo <span class="dot o"></span> · Oportunidad de atención <span class="dot v"></span> · Equidad territorial <span class="dot o"></span> · Confianza institucional <span class="dot r"></span> · Participación ciudadana <span class="dot o"></span> · Bienestar barrial <span class="dot v"></span></td>
+          <td><span class="dot v"></span><span class="dot v"></span><span class="dot v"></span><span class="dot o"></span><span class="dot o"></span><span class="dot o"></span><span class="dot r"></span></td>
+        </tr>
+        <tr>
+          <td><strong>Financiera</strong></td>
+          <td>Costo per cápita eficiente <span class="dot o"></span> · Ejecución presupuestaria <span class="dot r"></span> · Sostenibilidad IPP <span class="dot v"></span></td>
+          <td><span class="dot v"></span><span class="dot o"></span><span class="dot r"></span></td>
+        </tr>
+        <tr>
+          <td><strong>Procesos Internos</strong></td>
+          <td>Calidad de atención <span class="dot v"></span> · Digitalización trámites <span class="dot o"></span> · Distribución perfiles <span class="dot o"></span> · Recaudación municipal <span class="dot r"></span> · Corporaciones eficientes <span class="dot o"></span> · Infraestructura adecuada <span class="dot v"></span></td>
+          <td><span class="dot v"></span><span class="dot v"></span><span class="dot o"></span><span class="dot o"></span><span class="dot o"></span><span class="dot r"></span></td>
+        </tr>
+        <tr>
+          <td><strong>Aprend. y Crecimiento</strong></td>
+          <td>Competencias del personal <span class="dot o"></span> · Clima laboral <span class="dot v"></span> · Probidad e integridad <span class="dot v"></span> · Sistemas de información <span class="dot r"></span></td>
+          <td><span class="dot v"></span><span class="dot v"></span><span class="dot o"></span><span class="dot r"></span></td>
+        </tr>
       </tbody>
     </table>
   </div>
 </div>
 
-<footer>
-  <span>Taller 6 · Control de Gestión · Reunión estratégica trimestral (XPP)</span>
-  <span>Prof. Alicia Núñez · FEN — Universidad de Chile</span>
-</footer>
+<!-- ═══════ PÁGINA 2: Análisis Financiero ═══════ -->
+<div id="pg2" class="canvas">
+  <div class="aviso">💰 Datos reales FECU 2024. Datos presupuestarios por dirección <strong>simulados</strong> con proporciones representativas del ejercicio 2024.</div>
+  <div class="slicers">
+    <span class="sl-lbl">Ejercicio</span>
+    <button class="sl on">2024</button><button class="sl">2023</button><button class="sl">2022</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Dirección</span>
+    <button class="sl on">Todas</button><button class="sl">Obras Mun.</button><button class="sl">DIDECO</button><button class="sl">Medio Amb.</button><button class="sl">Adm. y Fin.</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Tipo de costo</span>
+    <button class="sl on">Primario + absorbido</button><button class="sl">Solo primario</button>
+  </div>
+
+  <!-- Financial KPIs -->
+  <div class="row c5" style="margin-bottom:10px">
+    <div class="kpi"><div class="kpi-l">Ingresos propios (IPP)</div><div class="kpi-n v">$46.395</div><div class="kpi-d">54,9% del total</div></div>
+    <div class="kpi"><div class="kpi-l">Transferencias Estado</div><div class="kpi-n">$20.358</div><div class="kpi-d">24,1% · FCM + otros</div></div>
+    <div class="kpi r"><div class="kpi-l">Impuesto territorial</div><div class="kpi-n">$22.898</div><div class="kpi-d">27,1% mayores ingresos</div></div>
+    <div class="kpi o"><div class="kpi-l">Transf. Salud/Educ/Corp</div><div class="kpi-n">$28.958</div><div class="kpi-d">34,7% mayor gasto</div></div>
+    <div class="kpi"><div class="kpi-l">Costo total 9 direcc. oper.</div><div class="kpi-n">$71.827</div><div class="kpi-d">MM · primario + absorbido</div></div>
+  </div>
+
+  <!-- Charts row 1: Costs by direction + overrun -->
+  <div class="row c21" style="margin-bottom:10px">
+    <div class="p">
+      <div class="pt"><span class="ptb"></span>Costo total por dirección operativa — primario + absorbido ($MM)</div>
+      <div style="height:245px"><canvas id="direcciones"></canvas></div>
+      <div style="font-size:9.5px;display:flex;gap:12px;margin-top:6px">
+        <span><span class="dot" style="background:#2d4696"></span>Costo primario</span>
+        <span><span class="dot" style="background:#f7a800"></span>Costo absorbido (apoyo)</span>
+      </div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb r"></span>Sobrecosto por absorción (% sobre costo primario)</div>
+      <div style="height:245px"><canvas id="variacion"></canvas></div>
+      <div style="font-size:9.5px;color:var(--gris);margin-top:6px">Promedio direcc. operativas: +11%</div>
+    </div>
+  </div>
+
+  <!-- Charts row 2: Budget execution by direction -->
+  <div class="row c2">
+    <div class="p">
+      <div class="pt"><span class="ptb v"></span>Ejecución presupuestaria por dirección — comparativa 2024 (%)</div>
+      <div style="height:195px"><canvas id="ejec_dir"></canvas></div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb o"></span>Evolución ingresos vs. gastos anuales 2020–2024 ($MM)</div>
+      <div style="height:195px"><canvas id="evol_fin"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PÁGINA 3: Iniciativas Estratégicas ═══════ -->
+<div id="pg3" class="canvas">
+  <div class="aviso">🎯 Avances de iniciativas estratégicas <strong>simulados</strong> para la simulación de reunión estratégica trimestral.</div>
+  <div class="slicers">
+    <span class="sl-lbl">Perspectiva</span>
+    <button class="sl on">Todas</button><button class="sl">Comunitaria</button><button class="sl">Financiera</button><button class="sl">Procesos Int.</button><button class="sl">Aprend. y Crecim.</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Estado</span>
+    <button class="sl on">Todas</button><button class="sl">En curso</button><button class="sl">Retrasadas</button>
+    <div class="sl-sep"></div>
+    <span class="sl-lbl">Año</span>
+    <button class="sl on">2024</button><button class="sl">2025</button>
+  </div>
+
+  <!-- Initiative KPIs -->
+  <div class="row c4" style="margin-bottom:10px">
+    <div class="kpi v"><span class="badge v">8 iniciativas</span><div class="kpi-l">Avance promedio</div><div class="kpi-n v">61%</div><div class="kpi-d">del portafolio estratégico</div></div>
+    <div class="kpi v"><div class="kpi-l">Iniciativas al día (≥70%)</div><div class="kpi-n v">3</div><div class="kpi-d">Áreas verdes, Vinc. vecinal, Ñuñoa Atiende</div></div>
+    <div class="kpi o"><div class="kpi-l">Iniciativas en riesgo (45–70%)</div><div class="kpi-n o">3</div><div class="kpi-d">Estandariz., Efic. fin., Cobranza</div></div>
+    <div class="kpi r"><div class="kpi-l">Iniciativas retrasadas (&lt;45%)</div><div class="kpi-n r">2</div><div class="kpi-d">Cobertura dig., SIMEV</div></div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="row c21" style="margin-bottom:10px">
+    <div class="p">
+      <div class="pt"><span class="ptb"></span>Avance de iniciativas estratégicas — % completado</div>
+      <div style="height:210px"><canvas id="iniciativas"></canvas></div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb v"></span>Radar BSC — cumplimiento por perspectiva (%)</div>
+      <div style="height:210px"><canvas id="radar_bsc"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts row 2 + detail table -->
+  <div class="row c2">
+    <div class="p">
+      <div class="pt"><span class="ptb o"></span>N° de objetivos estratégicos por estado — todas las perspectivas</div>
+      <div style="height:178px"><canvas id="obj_estado"></canvas></div>
+    </div>
+    <div class="p">
+      <div class="pt"><span class="ptb r"></span>Detalle de iniciativas críticas — acciones requeridas</div>
+      <table class="tbl" style="font-size:10px">
+        <thead><tr><th>Iniciativa</th><th>Perspect.</th><th>Avance</th><th>Alerta</th><th>Acción</th></tr></thead>
+        <tbody>
+          <tr><td>Cobertura digital ciudadana</td><td>Aprend.</td><td>35%</td><td><span class="tag r">Retrasada</span></td><td>Aceleración Q2</td></tr>
+          <tr><td>SIMEV — Sist. info. medioamb.</td><td>Procesos</td><td>30%</td><td><span class="tag r">Retrasada</span></td><td>Revisión alcance</td></tr>
+          <tr><td>Estandarización trámites</td><td>Procesos</td><td>60%</td><td><span class="tag o">En riesgo</span></td><td>Seguimiento semanal</td></tr>
+          <tr><td>Eficiencia financiera</td><td>Financiera</td><td>55%</td><td><span class="tag o">En riesgo</span></td><td>Plan correctivo</td></tr>
+          <tr><td>Cobranza municipal</td><td>Financiera</td><td>50%</td><td><span class="tag o">En riesgo</span></td><td>KPIs adicionales</td></tr>
+          <tr><td>Áreas verdes Ñuñoa</td><td>Comunit.</td><td>90%</td><td><span class="tag v">Al día</span></td><td>Cierre Q2</td></tr>
+          <tr><td>Vinculación vecinal</td><td>Comunit.</td><td>80%</td><td><span class="tag v">Al día</span></td><td>Monitoreo</td></tr>
+          <tr><td>Ñuñoa Atiende</td><td>Procesos</td><td>75%</td><td><span class="tag v">Al día</span></td><td>Monitoreo</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>Taller 6 · Control de Gestión · Reunión estratégica trimestral (XPP) · Prof. Alicia Núñez · FEN — Universidad de Chile</span>
+  <span>Municipalidad de Ñuñoa · Grupo 2 · Cierre Q1 2025</span>
+</div>
+</div>
 
 <script>
 Chart.defaults.font.family="'Segoe UI',system-ui,sans-serif";
-Chart.defaults.font.size=11;
-Chart.defaults.plugins.legend.labels.boxWidth=12;
-const PAL=['#1c5d99','#2a7fc1','#138086','#1f9d57','#f0a623','#e2873b','#9b59b6','#64727f'];
+Chart.defaults.font.size=10;
+Chart.defaults.plugins.legend.labels.boxWidth=10;
+Chart.defaults.plugins.legend.labels.padding=8;
 
-new Chart(ingresos,{type:'doughnut',data:{labels:['Impuesto Territorial','Transferencias Corrientes','Patentes Municipales','Derecho de Aseo','Permisos de Circulación','Multas e intereses','Otros derechos','Resto'],datasets:[{data:[27.1,24.1,8.7,6.9,4.6,4.0,3.3,21.3],backgroundColor:PAL.concat(['#c2cad3'])}]},options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right'},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}});
+function pg(id,btn){
+  document.querySelectorAll('.canvas').forEach(c=>c.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  btn.classList.add('on');
+}
+document.querySelectorAll('.slicers').forEach(bar=>{
+  bar.querySelectorAll('.sl').forEach(b=>{
+    b.addEventListener('click',function(){
+      const all=[...bar.children];
+      let gi=0,groups=[[]];
+      all.forEach(el=>{
+        if(el.classList.contains('sl-sep')){gi++;groups[gi]=[]}
+        else if(el.classList.contains('sl')){groups[gi].push(el)}
+      });
+      groups.forEach(g=>{if(g.includes(this)){g.forEach(x=>x.classList.remove('on'));this.classList.add('on')}});
+    });
+  });
+});
 
-new Chart(gastos,{type:'doughnut',data:{labels:['Transf. Salud/Educ/Corp','Servicios Urbanos','Remuneraciones','Aporte FCM','Gastos operacionales','Inversión infraestructura','Subsidios y prog. sociales'],datasets:[{data:[34.7,22.8,21.0,8.8,7.9,3.0,1.8],backgroundColor:PAL}]},options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right'},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}});
+const PAL=['#2d4696','#4a67b8','#1db14f','#f7a800','#7d9dd4','#a8d5b8','#c8cdd6','#c0392b'];
 
-const dirL=['Obras Municipales','Desarrollo Comunitario','Medio Ambiente','Adm. y Finanzas','Seguridad Pública','Gestión Riesgos','Inspección','Tránsito y Transporte','Emprend., Pymes e Innov.'];
-new Chart(direcciones,{type:'bar',data:{labels:dirL,datasets:[
-  {label:'Costo primario',data:[20293,15449,14030,9771,5261,3758,1253,668,334],backgroundColor:'#2a7fc1'},
-  {label:'Costo absorbido',data:[1337,1598,819,672,920,389,728,678,586],backgroundColor:'#f0a623'}
-]},options:{maintainAspectRatio:false,indexAxis:'y',scales:{x:{stacked:true,title:{display:true,text:'M$ millones'}},y:{stacked:true}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.x.toLocaleString('es')+' MM'}}}}});
+// ── PAGE 1 ──
+new Chart(document.getElementById('ingresos'),{type:'doughnut',
+  data:{labels:['Impuesto Territorial','Transfer. Corrientes','Patentes Municipales','Derecho de Aseo','Permisos Circulación','Multas e intereses','Otros derechos','Resto'],
+    datasets:[{data:[27.1,24.1,8.7,6.9,4.6,4.0,3.3,21.3],backgroundColor:PAL,borderWidth:2,borderColor:'#fff'}]},
+  options:{maintainAspectRatio:false,cutout:'55%',
+    plugins:{legend:{position:'right',labels:{font:{size:8.5}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}});
 
-new Chart(variacion,{type:'bar',data:{labels:['Emprend.','Tránsito','Inspección','Seguridad','Gestión R.','DIDECO','Adm.Fin.','Obras','M.Amb.'],datasets:[{data:[175.4,101.5,58.1,17.5,10.3,10.3,6.9,6.6,5.8],backgroundColor:c=>{const v=c.raw;return v>50?'#e23b48':v>15?'#f0a623':'#1f9d57'}}]},options:{maintainAspectRatio:false,indexAxis:'y',scales:{x:{title:{display:true,text:'% sobre costo primario'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'+'+c.parsed.x+'%'}}}}});
+new Chart(document.getElementById('gastos'),{type:'doughnut',
+  data:{labels:['Transf. Salud/Educ/Corp','Servicios Urbanos','Remuneraciones','Aporte FCM','Gastos operacionales','Inversión infraestructura','Subsidios y prog. sociales'],
+    datasets:[{data:[34.7,22.8,21.0,8.8,7.9,3.0,1.8],backgroundColor:PAL,borderWidth:2,borderColor:'#fff'}]},
+  options:{maintainAspectRatio:false,cutout:'55%',
+    plugins:{legend:{position:'right',labels:{font:{size:8.5}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}});
 
-new Chart(centros,{type:'polarArea',data:{labels:['CGD · Gasto Discrecional (56)','CGT · Gasto Técnico (19)','CIng · Ingresos (4)'],datasets:[{data:[56,19,4],backgroundColor:['#1c5d99','#138086','#1f9d57']}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+new Chart(document.getElementById('bsc_status'),{type:'bar',
+  data:{labels:['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'],
+    datasets:[
+      {label:'En meta',data:[3,1,2,2],backgroundColor:'#1db14f'},
+      {label:'Alerta',data:[3,1,3,1],backgroundColor:'#f7a800'},
+      {label:'Bajo meta',data:[1,1,1,1],backgroundColor:'#c0392b'}
+    ]},
+  options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° objetivos',font:{size:9}}}},
+    plugins:{legend:{display:false}}}});
 
-new Chart(bsc,{type:'bar',data:{labels:['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'],datasets:[
-  {label:'En meta',data:[3,1,2,2],backgroundColor:'#1f9d57'},
-  {label:'Alerta',data:[3,1,3,1],backgroundColor:'#f0a623'},
-  {label:'Bajo meta',data:[1,1,1,1],backgroundColor:'#e23b48'}
-]},options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° objetivos'}}},plugins:{legend:{display:false}}}});
+new Chart(document.getElementById('centros'),{type:'polarArea',
+  data:{labels:['CGD · Gasto Discrecional (56)','CGT · Gasto Técnico (19)','CIng · Ingresos (4)'],
+    datasets:[{data:[56,19,4],backgroundColor:['#2d4696','#1db14f','#f7a800']}]},
+  options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
 
-new Chart(iniciativas,{type:'bar',data:{labels:['Áreas verdes','Vinc. vecinal','Ñuñoa Atiende','Estandariz.','Eficiencia fin.','Cobranza','Cobertura dig.','SIMEV'],datasets:[{label:'% avance',data:[90,80,75,60,55,50,35,30],backgroundColor:c=>{const v=c.raw;return v>=70?'#1f9d57':v>=45?'#f0a623':'#e23b48'}}]},options:{maintainAspectRatio:false,scales:{y:{max:100,title:{display:true,text:'% avance'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+'% completado'}}}}});
+// ── PAGE 2 ──
+const dirL=['Obras Municipales','Desarrollo Comunitario','Medio Ambiente','Adm. y Finanzas','Seguridad Pública','Gestión Riesgos','Inspección','Tránsito','Emprend. e Innov.'];
+new Chart(document.getElementById('direcciones'),{type:'bar',
+  data:{labels:dirL,datasets:[
+    {label:'Costo primario',data:[20293,15449,14030,9771,5261,3758,1253,668,334],backgroundColor:'#2d4696'},
+    {label:'Costo absorbido',data:[1337,1598,819,672,920,389,728,678,586],backgroundColor:'#f7a800'}
+  ]},
+  options:{maintainAspectRatio:false,indexAxis:'y',
+    scales:{x:{stacked:true,title:{display:true,text:'$MM',font:{size:9}}},y:{stacked:true}},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.x.toLocaleString('es')+' MM'}}}}});
+
+new Chart(document.getElementById('variacion'),{type:'bar',
+  data:{labels:['Emprend.','Tránsito','Inspección','Seguridad','Gestión R.','DIDECO','Adm.Fin.','Obras','M.Amb.'],
+    datasets:[{data:[175.4,101.5,58.1,17.5,10.3,10.3,6.9,6.6,5.8],
+      backgroundColor:(_,i)=>{const v=[175.4,101.5,58.1,17.5,10.3,10.3,6.9,6.6,5.8][i];return v>50?'#c0392b':v>15?'#f7a800':'#1db14f'}}]},
+  options:{maintainAspectRatio:false,indexAxis:'y',
+    scales:{x:{title:{display:true,text:'% sobre costo primario',font:{size:9}}}},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'+'+c.parsed.x+'%'}}}}});
+
+const ejecDir=[88,92,71,95,79,84,73,97,68];
+new Chart(document.getElementById('ejec_dir'),{type:'bar',
+  data:{labels:dirL,datasets:[
+    {label:'% ejecutado',data:ejecDir,backgroundColor:ejecDir.map(v=>v>=90?'#1db14f':v>=75?'#f7a800':'#c0392b')},
+    {label:'% restante',data:ejecDir.map(v=>100-v),backgroundColor:'#e4e8f0'}
+  ]},
+  options:{maintainAspectRatio:false,indexAxis:'y',
+    scales:{x:{stacked:true,max:100,title:{display:true,text:'% ejecución',font:{size:9}}},y:{stacked:true}},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.x+'%'}}}}});
+
+const anos=['2020','2021','2022','2023','2024'];
+new Chart(document.getElementById('evol_fin'),{data:{labels:anos,datasets:[
+    {type:'line',label:'Ingresos ($MM)',data:[71200,73400,76800,81950,84509],borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.08)',fill:true,tension:.3,pointRadius:4},
+    {type:'line',label:'Gastos ($MM)',data:[69800,72100,75200,80300,83510],borderColor:'#c0392b',tension:.3,pointRadius:4}
+  ]},
+  options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    scales:{y:{title:{display:true,text:'$MM',font:{size:9}}}},
+    plugins:{legend:{position:'top'}}}});
+
+// ── PAGE 3 ──
+const initL=['Áreas verdes','Vinc. vecinal','Ñuñoa Atiende','Estandariz.','Eficiencia fin.','Cobranza','Cobertura dig.','SIMEV'];
+const initV=[90,80,75,60,55,50,35,30];
+new Chart(document.getElementById('iniciativas'),{type:'bar',
+  data:{labels:initL,datasets:[
+    {label:'% avance',data:initV,backgroundColor:initV.map(v=>v>=70?'#1db14f':v>=45?'#f7a800':'#c0392b')},
+    {label:'% restante',data:initV.map(v=>100-v),backgroundColor:'#e4e8f0'}
+  ]},
+  options:{maintainAspectRatio:false,indexAxis:'y',
+    scales:{x:{stacked:true,max:100,title:{display:true,text:'% avance',font:{size:9}}},y:{stacked:true}},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.x+'%'}}}}});
+
+new Chart(document.getElementById('radar_bsc'),{type:'radar',
+  data:{labels:['Comunitaria','Financiera','Procesos Internos','Aprendizaje'],
+    datasets:[
+      {label:'Cumplimiento 2024',data:[68,55,62,60],borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.15)',pointBackgroundColor:'#2d4696'},
+      {label:'Meta 100%',data:[100,100,100,100],borderColor:'#dde2ea',borderDash:[4,3],backgroundColor:'transparent',pointRadius:0}
+    ]},
+  options:{maintainAspectRatio:false,scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:8}}}},
+    plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
+
+new Chart(document.getElementById('obj_estado'),{type:'bar',
+  data:{labels:['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'],
+    datasets:[
+      {label:'En meta',data:[3,1,2,2],backgroundColor:'#1db14f'},
+      {label:'Alerta',data:[3,1,3,1],backgroundColor:'#f7a800'},
+      {label:'Bajo meta',data:[1,1,1,1],backgroundColor:'#c0392b'}
+    ]},
+  options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° objetivos',font:{size:9}}}},
+    plugins:{legend:{position:'top'}}}});
 </script>
 </body>
 </html>
