@@ -149,14 +149,14 @@ html,body{width:1280px;height:720px;overflow:hidden;
 
     <div class="sb-section">
       <div class="sb-lbl">Perspectiva CMI</div>
-      <label class="sb-opt active" id="f-persp-Todas"><input type="radio" name="persp" value="Todas" checked onchange="onFilter('persp',this.value)"> Todas</label>
-      <label class="sb-opt" id="f-persp-Comunitaria"><input type="radio" name="persp" value="Comunitaria" onchange="onFilter('persp',this.value)"> Comunitaria</label>
-      <label class="sb-opt" id="f-persp-Financiera"><input type="radio" name="persp" value="Financiera" onchange="onFilter('persp',this.value)"> Financiera</label>
-      <label class="sb-opt" id="f-persp-Procesos Int."><input type="radio" name="persp" value="Procesos Int." onchange="onFilter('persp',this.value)"> Procesos Int.</label>
-      <label class="sb-opt" id="f-persp-SLA (DAF)"><input type="radio" name="persp" value="SLA (DAF)" onchange="onFilter('persp',this.value)"> SLA (DAF)</label>
+      <label class="sb-opt active" id="f-persp-Todas"><input type="radio" name="persp" value="Todas" checked onchange="onFilter('persp',this.value)"> Todas (19 ind.)</label>
+      <label class="sb-opt" id="f-persp-Comunitaria"><input type="radio" name="persp" value="Comunitaria" onchange="onFilter('persp',this.value)"> Comunitaria (6)</label>
+      <label class="sb-opt" id="f-persp-Financiera"><input type="radio" name="persp" value="Financiera" onchange="onFilter('persp',this.value)"> Financiera (3)</label>
+      <label class="sb-opt" id="f-persp-Procesos Int."><input type="radio" name="persp" value="Procesos Int." onchange="onFilter('persp',this.value)"> Procesos Int. (5)</label>
+      <label class="sb-opt" id="f-persp-Aprend. y Crec."><input type="radio" name="persp" value="Aprend. y Crec." onchange="onFilter('persp',this.value)"> Aprend. y Crec. (5)</label>
     </div>
 
-    <div class="sb-filter-note">Centro de Gasto Discrecional<br>9 direcc. oper. · 8 apoyo<br>79 centros responsabilidad<br><br>SLA Adquisiciones (Ley 19.886)<br>OC normal ≤3d · urgente ≤1d</div>
+    <div class="sb-filter-note">CMI desplegado en cascada<br>Nivel 3 · Tablero DMA (no integral)<br>Centro de Gasto Discrecional<br>79 centros de responsabilidad<br><br>Datos operativos simulados</div>
   </div>
 
   <!-- MAIN -->
@@ -165,14 +165,14 @@ html,body{width:1280px;height:720px;overflow:hidden;
     <!-- KPI STRIP -->
     <div class="kpi-strip">
       <div class="kpi-box">
-        <div class="kb-lbl">Ejecución presupuestaria</div>
+        <div class="kb-lbl">Ppto. ejecutado en plazo</div>
         <div class="kb-val r" id="kb-ejec">71%</div>
         <div class="kb-sub"><span class="kb-badge r" id="kb-ejec-b">Bajo meta</span> <span id="kb-ejec-s">meta ≥ 90%</span></div>
       </div>
       <div class="kpi-box">
-        <div class="kb-lbl">Satisfacción vecinal</div>
-        <div class="kb-val o" id="kb-sat">5,2</div>
-        <div class="kb-sub"><span class="kb-badge o" id="kb-sat-b">Alerta</span> <span id="kb-sat-s">meta ≥ 5,5 / 7</span></div>
+        <div class="kb-lbl">Satisf. gestión DMA</div>
+        <div class="kb-val o" id="kb-sat">73%</div>
+        <div class="kb-sub"><span class="kb-badge o" id="kb-sat-b">Alerta</span> <span id="kb-sat-s">meta ≥ 75%</span></div>
       </div>
       <div class="kpi-box">
         <div class="kb-lbl">Áreas verdes per cápita</div>
@@ -192,11 +192,11 @@ html,body{width:1280px;height:720px;overflow:hidden;
       <div class="kpi-box" style="border-right:2px solid #2d4696">
         <div class="kb-lbl">Estado indicadores</div>
         <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
-          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">4</span><span style="font-size:9px;color:#6c7280">meta</span>
-          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">2</span><span style="font-size:9px;color:#6c7280">alerta</span>
-          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">2</span><span style="font-size:9px;color:#6c7280">bajo</span>
+          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">8</span><span style="font-size:9px;color:#6c7280">meta</span>
+          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">10</span><span style="font-size:9px;color:#6c7280">alerta</span>
+          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">1</span><span style="font-size:9px;color:#6c7280">bajo</span>
         </div>
-        <div class="kb-sub" id="kb-total-u">DMA Completa · 8 indicadores</div>
+        <div class="kb-sub" id="kb-total-u">DMA Completa · 19 indicadores</div>
       </div>
     </div>
 
@@ -333,65 +333,78 @@ const MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','
 
 const UNITS={
   'Completa':{
-    ejec:'71%',ejec_c:'r',sat:'5,2',sat_c:'o',av:'9,3 m²',av_c:'v',ab:'12%',ab_c:'o',rec:'3,8%',rec_c:'v',
+    ejec:'71%',ejec_c:'r',sat:'73%',sat_c:'o',av:'9,3 m²',av_c:'v',ab:'12%',ab_c:'o',rec:'3,8%',rec_c:'v',
     ejec_b:'Bajo meta',sat_b:'Alerta',av_b:'En meta',ab_b:'Alerta',rec_b:'En meta',
-    g_ejec:71,g_sat:74,g_av:78,
+    g_ejec:71,g_sat:73,g_av:78,
     t_sat:[5.6,5.5,5.4,5.5,5.3,5.4,5.3,5.2,5.3,5.2,5.1,5.2],
     t_rec:[2.9,3.1,3.0,3.4,3.6,3.5,3.9,4.1,3.8,4.0,3.9,3.8],
     sem:[
-      {p:'Comunitaria', i:'Satisfacción vecinal post-atención',  v:'5,2',   m:'≥ 5,5', e:'o'},
-      {p:'Procesos Int.',i:'M² áreas verdes per cápita',         v:'9,3 m²',m:'≥ 9 m²',e:'v'},
-      {p:'Financiera',  i:'% Ejecución presupuestaria',         v:'71%',   m:'≥ 90%', e:'r'},
-      {p:'Procesos Int.',i:'Tasa abandono de trámites',          v:'12%',   m:'< 10%', e:'o'},
-      {p:'SLA (DAF)',   i:'Autorización OC normal (i=1)',        v:'2,6 d', m:'≤ 3 d', e:'v'},
-      {p:'SLA (DAF)',   i:'Autorización OC urgente (i=2)',       v:'2,3 d', m:'≤ 1 d', e:'r'},
-      {p:'Comunitaria', i:'Reclamos formales DMA',               v:'3,8%',  m:'< 5%',  e:'v'},
-      {p:'Financiera',  i:'% Ejecución en plazo',               v:'91%',   m:'≥ 90%', e:'v'}
+      {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',   v:'68%',   m:'≥ 70%', e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio',v:'3,8%', m:'< 5%',  e:'v'},
+      {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',    v:'73%',   m:'≥ 75%', e:'o'},
+      {p:'Comunitaria',    i:'% población accede a servicios DMA',    v:'87%',   m:'≥ 85%', e:'v'},
+      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',    v:'12%',   m:'< 10%', e:'o'},
+      {p:'Comunitaria',    i:'Índice distrib. inversión por sector',  v:'76%',   m:'≥ 80%', e:'o'},
+      {p:'Financiera',     i:'Costo per cápita servicios DMA',        v:'−8%',   m:'red. ≥10%',e:'o'},
+      {p:'Financiera',     i:'Variación personas beneficiadas',       v:'9%',    m:'≥ 7%',  e:'v'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',    v:'71%',   m:'≥ 90%', e:'r'},
+      {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',     v:'5,2',   m:'≥ 5,5', e:'o'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',           v:'88%',   m:'≥ 90%', e:'o'},
+      {p:'Procesos Int.',  i:'M² áreas verdes per cápita',            v:'9,3 m²',m:'≥ 9 m²',e:'v'},
+      {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',  v:'82%',   m:'≥ 80%', e:'v'},
+      {p:'Procesos Int.',  i:'% cobertura programas focalizados',     v:'74%',   m:'≥ 80%', e:'o'},
+      {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas',v:'0,82', m:'↑ alza',e:'v'},
+      {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',    v:'5,5',   m:'≥ 5,7', e:'o'},
+      {p:'Aprend. y Crec.',i:'% funcionarios en integración',         v:'84%',   m:'> 80%', e:'v'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles a DMA',   v:'4',     m:'≤ 3',   e:'o'},
+      {p:'Aprend. y Crec.',i:'Puntaje código de conducta (nota)',     v:'6,1',   m:'≥ 6,0', e:'v'}
     ]
   },
   'Áreas Verdes':{
-    ejec:'61%',ejec_c:'r',sat:'5,5',sat_c:'v',av:'9,8 m²',av_c:'v',ab:'8%',ab_c:'v',rec:'1,8%',rec_c:'v',
+    ejec:'61%',ejec_c:'r',sat:'80%',sat_c:'v',av:'9,8 m²',av_c:'v',ab:'8%',ab_c:'v',rec:'1,8%',rec_c:'v',
     ejec_b:'Bajo meta',sat_b:'En meta',av_b:'En meta',ab_b:'En meta',rec_b:'En meta',
-    g_ejec:61,g_sat:79,g_av:82,
+    g_ejec:61,g_sat:80,g_av:82,
     t_sat:[5.8,5.9,5.7,5.8,5.6,5.7,5.6,5.5,5.6,5.5,5.4,5.5],
     t_rec:[1.5,1.6,1.4,1.8,2.0,1.9,2.1,2.0,1.8,2.0,1.9,1.8],
     sem:[
-      {p:'Comunitaria', i:'Satisfacción servicio áreas verdes',  v:'5,5',   m:'≥ 5,5', e:'v'},
-      {p:'Procesos Int.',i:'M² gestionados per cápita',          v:'9,8 m²',m:'≥ 9 m²',e:'v'},
-      {p:'Financiera',  i:'% Ejecución presupuestaria',         v:'61%',   m:'≥ 90%', e:'r'},
-      {p:'Procesos Int.',i:'Árboles podados / mes',              v:'342',   m:'≥ 300', e:'v'},
-      {p:'Procesos Int.',i:'Poda de emergencia en plazo',        v:'88%',   m:'≥ 90%', e:'o'},
-      {p:'Comunitaria', i:'Reclamos formales',                   v:'1,8%',  m:'< 5%',  e:'v'}
+      {p:'Comunitaria',    i:'% satisfacción servicio áreas verdes', v:'80%',   m:'≥ 75%', e:'v'},
+      {p:'Procesos Int.',  i:'M² áreas verdes gestionados p/c',      v:'9,8 m²',m:'≥ 9 m²',e:'v'},
+      {p:'Procesos Int.',  i:'% infraestructura verde buen estado',  v:'84%',   m:'≥ 80%', e:'v'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',   v:'61%',   m:'≥ 90%', e:'r'},
+      {p:'Procesos Int.',  i:'Poda de emergencia en plazo',          v:'88%',   m:'≥ 90%', e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales',               v:'1,8%',  m:'< 5%',  e:'v'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles',        v:'2',     m:'≤ 3',   e:'v'}
     ]
   },
   'Tramitación':{
-    ejec:'42%',ejec_c:'r',sat:'4,8',sat_c:'r',av:'N/A',av_c:'',ab:'15%',ab_c:'r',rec:'5,0%',rec_c:'o',
+    ejec:'42%',ejec_c:'r',sat:'64%',sat_c:'r',av:'N/A',av_c:'',ab:'15%',ab_c:'r',rec:'5,0%',rec_c:'o',
     ejec_b:'Bajo meta',sat_b:'Bajo meta',av_b:'N/A',ab_b:'Bajo meta',rec_b:'Alerta',
-    g_ejec:42,g_sat:69,g_av:0,
+    g_ejec:42,g_sat:64,g_av:0,
     t_sat:[5.2,5.1,5.0,5.1,4.9,5.0,4.9,4.8,4.9,4.8,4.7,4.8],
     t_rec:[4.1,4.3,4.2,4.6,4.8,4.7,5.1,5.3,5.0,5.2,5.1,5.0],
     sem:[
-      {p:'Comunitaria', i:'Satisfacción trámites DMA',           v:'4,8',   m:'≥ 5,5', e:'r'},
-      {p:'Financiera',  i:'% Ejecución presupuestaria',         v:'42%',   m:'≥ 90%', e:'r'},
-      {p:'Procesos Int.',i:'Tasa abandono de trámites',          v:'15%',   m:'< 10%', e:'r'},
-      {p:'SLA (DAF)',   i:'Autorización OC normal',              v:'3,1 d', m:'≤ 3 d', e:'o'},
-      {p:'SLA (DAF)',   i:'Autorización OC urgente',             v:'2,8 d', m:'≤ 1 d', e:'r'},
-      {p:'Comunitaria', i:'Reclamos trámites formales',          v:'5,0%',  m:'< 5%',  e:'o'}
+      {p:'Comunitaria',    i:'% satisfacción trámites DMA',          v:'64%',   m:'≥ 75%', e:'r'},
+      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',   v:'15%',   m:'< 10%', e:'r'},
+      {p:'Comunitaria',    i:'% población accede a servicios',       v:'81%',   m:'≥ 85%', e:'o'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',   v:'42%',   m:'≥ 90%', e:'r'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',          v:'79%',   m:'≥ 90%', e:'r'},
+      {p:'Comunitaria',    i:'Tasa reclamos trámites formales',      v:'5,0%',  m:'< 5%',  e:'o'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles',        v:'5',     m:'≤ 3',   e:'r'}
     ]
   },
   'Aseo Urbano':{
-    ejec:'58%',ejec_c:'r',sat:'5,0',sat_c:'o',av:'N/A',av_c:'',ab:'12%',ab_c:'o',rec:'4,1%',rec_c:'v',
+    ejec:'58%',ejec_c:'r',sat:'71%',sat_c:'o',av:'N/A',av_c:'',ab:'12%',ab_c:'o',rec:'4,1%',rec_c:'v',
     ejec_b:'Bajo meta',sat_b:'Alerta',av_b:'N/A',ab_b:'Alerta',rec_b:'En meta',
     g_ejec:58,g_sat:71,g_av:0,
     t_sat:[5.4,5.3,5.2,5.3,5.1,5.2,5.1,5.0,5.1,5.0,4.9,5.0],
     t_rec:[3.2,3.4,3.3,3.7,3.9,3.8,4.2,4.4,4.1,4.3,4.2,4.1],
     sem:[
-      {p:'Comunitaria', i:'Satisfacción aseo urbano',            v:'5,0',   m:'≥ 5,5', e:'o'},
-      {p:'Financiera',  i:'% Ejecución presupuestaria',         v:'58%',   m:'≥ 90%', e:'r'},
-      {p:'Procesos Int.',i:'Frecuencia retiro residuos',         v:'3/sem', m:'3/sem', e:'v'},
-      {p:'Procesos Int.',i:'Puntos limpios habilitados',         v:'8/10',  m:'≥ 10',  e:'o'},
-      {p:'SLA (DAF)',   i:'Autorización OC normal',              v:'2,9 d', m:'≤ 3 d', e:'v'},
-      {p:'Comunitaria', i:'Reclamos formales aseo',              v:'4,1%',  m:'< 5%',  e:'v'}
+      {p:'Comunitaria',    i:'% satisfacción aseo urbano',           v:'71%',   m:'≥ 75%', e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales aseo',          v:'4,1%',  m:'< 5%',  e:'v'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',   v:'58%',   m:'≥ 90%', e:'r'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',          v:'86%',   m:'≥ 90%', e:'o'},
+      {p:'Procesos Int.',  i:'% cobertura puntos limpios',           v:'80%',   m:'≥ 100%',e:'o'},
+      {p:'Aprend. y Crec.',i:'% funcionarios en integración',        v:'82%',   m:'> 80%', e:'v'}
     ]
   }
 };
@@ -419,14 +432,25 @@ const ITEMS={
 };
 
 const FULL_SEM=[
-  {p:'Comunitaria', i:'Satisfacción vecinal post-atención',   f:'Encuesta Likert /7',       v:'5,2',   m:'≥ 5,5', u:'4,5–5,5', fr:'Mensual', e:'o'},
-  {p:'Procesos Int.',i:'M² áreas verdes per cápita',          f:'m² verdes/hab.',            v:'9,3 m²',m:'≥ 9 m²',u:'8,0–9,0', fr:'Mensual', e:'v'},
-  {p:'Financiera',  i:'% Ejecución presupuestaria',          f:'Ejecutado/Presupuesto',     v:'71%',   m:'≥ 90%', u:'75–90%',  fr:'Mensual', e:'r'},
-  {p:'Procesos Int.',i:'Tasa abandono de trámites',           f:'Abandon./total',            v:'12%',   m:'< 10%', u:'10–15%',  fr:'Mensual', e:'o'},
-  {p:'SLA (DAF)',   i:'T° autorización OC normal (i=1)',      f:'Días hábiles DAF',          v:'2,6 d', m:'≤ 3 d', u:'2,5–3,0', fr:'Semanal', e:'v'},
-  {p:'SLA (DAF)',   i:'T° autorización OC urgente (i=2)',     f:'Días hábiles DAF',          v:'2,3 d', m:'≤ 1 d', u:'1,0–2,0', fr:'Semanal', e:'r'},
-  {p:'Comunitaria', i:'Tasa de reclamos formales',            f:'Reclamos/atenciones',       v:'3,8%',  m:'< 5%',  u:'4,0–5,0', fr:'Mensual', e:'v'},
-  {p:'Financiera',  i:'% Ejecución en plazo',                f:'OC en plazo/total OC',      v:'91%',   m:'≥ 90%', u:'80–90%',  fr:'Mensual', e:'v'}
+  {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',     f:'Σ puntajes 6–7 dim. amb. / encuestados',   v:'68%',   m:'≥ 70%',  u:'65–70%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio', f:'Reclamos formales / servicios entregados', v:'3,8%',  m:'< 5%',   u:'4,0–5,0',fr:'Trimestral',e:'v'},
+  {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',      f:'Σ puntajes 6–7 gestión DMA / encuestados', v:'73%',   m:'≥ 75%',  u:'70–75%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'% población accede a servicios DMA',      f:'Personas acceden / población objetivo',    v:'87%',   m:'≥ 85%',  u:'80–85%', fr:'Semestral', e:'v'},
+  {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',      f:'(Iniciados − finalizados) / iniciados',    v:'12%',   m:'< 10%',  u:'10–15%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'Índice distrib. inversión por sector',    f:'Sectores ±15% del promedio / total sect.', v:'76%',   m:'≥ 80%',  u:'75–80%', fr:'Semestral', e:'o'},
+  {p:'Financiera',     i:'Costo per cápita servicios DMA',          f:'Σ gastos servicio / residentes benef.',    v:'−8%',   m:'red. ≥10%',u:'5–10%',fr:'Semestral', e:'o'},
+  {p:'Financiera',     i:'Variación personas beneficiadas',         f:'(PBt − PBt-1) / PBt-1',                    v:'9%',    m:'≥ 7%',   u:'5–7%',   fr:'Semestral', e:'v'},
+  {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',      f:'Ppto. ejec. en plazo / ppto. programado',  v:'71%',   m:'≥ 90%',  u:'75–90%', fr:'Semestral', e:'r'},
+  {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',       f:'Σ encuesta post-atención 1–7 / encuestas', v:'5,2',   m:'≥ 5,5',  u:'4,5–5,5',fr:'Trimestral',e:'o'},
+  {p:'Procesos Int.',  i:'% servicios que cumplen SLA',             f:'Servicios cumplen SLA / total catastrados',v:'88%',   m:'≥ 90%',  u:'80–90%', fr:'Semestral', e:'o'},
+  {p:'Procesos Int.',  i:'M² áreas verdes per cápita',              f:'m² áreas verdes mantenidas / habitantes',  v:'9,3 m²',m:'≥ 9 m²', u:'8,0–9,0',fr:'Anual',     e:'v'},
+  {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',    f:'m² infra. buen estado / m² catastrada',    v:'82%',   m:'≥ 80%',  u:'75–80%', fr:'Anual',     e:'v'},
+  {p:'Procesos Int.',  i:'% cobertura programas focalizados',       f:'Beneficiarios efectivos / población obj.', v:'74%',   m:'≥ 80%',  u:'70–80%', fr:'Semestral', e:'o'},
+  {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas', f:'Habilidades cubiertas / demandadas',       v:'0,82',  m:'↑ alza', u:'0,7–0,8',fr:'Semestral', e:'v'},
+  {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',      f:'Promedio encuesta satisf. laboral 1–7',    v:'5,5',   m:'≥ 5,7',  u:'5,0–5,7',fr:'Semestral', e:'o'},
+  {p:'Aprend. y Crec.',i:'% funcionarios en integración',          f:'Funcionarios participantes / total DMA',   v:'84%',   m:'> 80%',  u:'75–80%', fr:'Por activ.',e:'v'},
+  {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles a DMA',     f:'Conteo quejas válidas servicios DMA',      v:'4',     m:'≤ 3',    u:'3–5',    fr:'Semanal',   e:'o'},
+  {p:'Aprend. y Crec.',i:'Puntaje código de conducta (nota)',       f:'Promedio evaluación interna 1–7',          v:'6,1',   m:'≥ 6,0',  u:'5,5–6,0',fr:'Semestral', e:'v'}
 ];
 
 // ─── STATE ──────────────────────────────────────────
@@ -435,6 +459,17 @@ const CH={};
 const INITED={pg1:false,pg2:false,pg3:false};
 const tag=e=>`<span class="tag ${e}">${e==='v'?'En meta':e==='o'?'Alerta':'Bajo meta'}</span>`;
 const COL={v:'#1db14f',o:'#f7a800',r:'#c0392b'};
+const PERSP=['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'];
+function bscData(u){
+  const v=[],o=[],r=[];
+  PERSP.forEach(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    v.push(rows.filter(x=>x.e==='v').length);
+    o.push(rows.filter(x=>x.e==='o').length);
+    r.push(rows.filter(x=>x.e==='r').length);
+  });
+  return {v,o,r};
+}
 function sliceByPeriod(arr){return ST.period==='Sem. 21'?arr.slice(-1):ST.period==='Mayo 2025'?arr.slice(-4):arr;}
 function labsByPeriod(){return ST.period==='Sem. 21'?WK.slice(-1):ST.period==='Mayo 2025'?WK.slice(-4):WK;}
 
@@ -505,15 +540,16 @@ function initPg1(){
       plugins:{legend:{display:false}}}
   });
 
-  // BSC bar
+  // BSC bar (dinámico por perspectiva)
+  const bd=bscData(u);
   CH.bsc=new Chart(document.getElementById('bsc_bar'),{type:'bar',
-    data:{labels:['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'],
+    data:{labels:PERSP,
       datasets:[
-        {label:'En meta',data:[3,1,2,2],backgroundColor:'#1db14f'},
-        {label:'Alerta',data:[3,1,3,1],backgroundColor:'#f7a800'},
-        {label:'Bajo meta',data:[1,1,1,1],backgroundColor:'#c0392b'}
+        {label:'En meta',data:bd.v,backgroundColor:'#1db14f'},
+        {label:'Alerta',data:bd.o,backgroundColor:'#f7a800'},
+        {label:'Bajo meta',data:bd.r,backgroundColor:'#c0392b'}
       ]},
-    options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° obj.',font:{size:8}}}},
+    options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° ind.',font:{size:8}}}},
       plugins:{legend:{position:'top'}}}
   });
 
@@ -555,6 +591,12 @@ function updatePg1(){
   const cr=u.sem.filter(r=>r.e==='r').length;
   CH.donut.data.datasets[0].data=[cv,co,cr];
   CH.donut.update('none');
+
+  const bd=bscData(u);
+  CH.bsc.data.datasets[0].data=bd.v;
+  CH.bsc.data.datasets[1].data=bd.o;
+  CH.bsc.data.datasets[2].data=bd.r;
+  CH.bsc.update('none');
 
   renderTbl1(u);
   updateStrip(u);
