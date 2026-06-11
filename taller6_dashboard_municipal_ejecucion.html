@@ -31,9 +31,12 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
 .sidebar{width:162px;background:#fff;border-right:1px solid #d0d4e0;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
 .sb-header{background:#2d4696;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:7px 10px;display:flex;align-items:center;gap:5px}
 .sb-section{padding:8px 10px 6px;border-bottom:1px solid #e8eaf0}
+.sb-dirs{max-height:232px;overflow-y:auto}
+.sb-dirs::-webkit-scrollbar{width:6px}
+.sb-dirs::-webkit-scrollbar-thumb{background:#c5cad8;border-radius:3px}
 .sb-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#4a5068;margin-bottom:4px}
-.sb-opt{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer;font-size:10px;color:#2a3050}
-.sb-opt input[type=radio]{accent-color:#2d4696;width:11px;height:11px;cursor:pointer}
+.sb-opt{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer;font-size:9.5px;color:#2a3050}
+.sb-opt input[type=radio]{accent-color:#2d4696;width:11px;height:11px;cursor:pointer;flex-shrink:0}
 .sb-opt.active{color:#2d4696;font-weight:600}
 .sb-sep{height:1px;background:#e8eaf0;margin:4px 0}
 .sb-filter-note{font-size:8.5px;color:#8890a0;padding:8px 10px;line-height:1.4}
@@ -71,14 +74,14 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
 .panel-body canvas{width:100%!important;height:100%!important}
 
 /* ── TABLE ── */
-.tbl{width:100%;border-collapse:collapse;font-size:10px}
+.tbl{width:100%;border-collapse:collapse;font-size:9.5px}
 .tbl thead tr{background:#2d4696}
-.tbl th{color:#fff;padding:4px 7px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
-.tbl td{padding:4px 7px;border-bottom:1px solid #edf0f5;color:#1a2332;white-space:nowrap}
+.tbl th{color:#fff;padding:3px 6px;text-align:left;font-size:8.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.tbl td{padding:3px 6px;border-bottom:1px solid #edf0f5;color:#1a2332;white-space:nowrap}
 .tbl tr:nth-child(even) td{background:#f7f8fc}
 .tbl tr:hover td{background:#edf2ff}
 .tbl tr.hl td{background:#eef2ff}
-.tag{display:inline-block;font-size:8.5px;font-weight:700;padding:1px 7px;border-radius:2px;color:#fff;white-space:nowrap}
+.tag{display:inline-block;font-size:8px;font-weight:700;padding:1px 6px;border-radius:2px;color:#fff;white-space:nowrap}
 .tag.v{background:#1db14f}.tag.o{background:#f7a800;color:#3a2000}.tag.r{background:#c0392b}
 
 /* ── TABS ── */
@@ -134,16 +137,7 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
     <div class="sb-header">⚙ Filtros</div>
     <div class="sb-section">
       <div class="sb-lbl">Dirección / Unidad</div>
-      <label class="sb-opt active" id="f-dir-Todas"><input type="radio" name="dir" value="Todas" checked onchange="onFilter('dir',this.value)"> Todas (9)</label>
-      <label class="sb-opt" id="f-dir-DIDECO"><input type="radio" name="dir" value="DIDECO" onchange="onFilter('dir',this.value)"> DIDECO</label>
-      <label class="sb-opt" id="f-dir-DOM"><input type="radio" name="dir" value="DOM" onchange="onFilter('dir',this.value)"> DOM</label>
-      <label class="sb-opt" id="f-dir-DAF"><input type="radio" name="dir" value="DAF" onchange="onFilter('dir',this.value)"> DAF</label>
-      <label class="sb-opt" id="f-dir-SECPLA"><input type="radio" name="dir" value="SECPLA" onchange="onFilter('dir',this.value)"> SECPLA</label>
-      <label class="sb-opt" id="f-dir-Tránsito"><input type="radio" name="dir" value="Tránsito" onchange="onFilter('dir',this.value)"> Tránsito</label>
-      <label class="sb-opt" id="f-dir-DMA"><input type="radio" name="dir" value="DMA" onchange="onFilter('dir',this.value)"> Medio Ambiente (DMA)</label>
-      <label class="sb-opt" id="f-dir-Seguridad"><input type="radio" name="dir" value="Seguridad" onchange="onFilter('dir',this.value)"> Seguridad Pública</label>
-      <label class="sb-opt" id="f-dir-Educación"><input type="radio" name="dir" value="Educación" onchange="onFilter('dir',this.value)"> Educación (Corp.)</label>
-      <label class="sb-opt" id="f-dir-Salud"><input type="radio" name="dir" value="Salud" onchange="onFilter('dir',this.value)"> Salud (Corp.)</label>
+      <div class="sb-dirs" id="dir-filter-list"></div>
     </div>
     <div class="sb-section">
       <div class="sb-lbl">Año presupuestario</div>
@@ -155,7 +149,7 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
       <label class="sb-opt active" id="f-view-Todos"><input type="radio" name="view" value="Todos" checked onchange="onFilter('view',this.value)"> Todas las direcciones</label>
       <label class="sb-opt" id="f-view-Alertas"><input type="radio" name="view" value="Alertas" onchange="onFilter('view',this.value)"> Solo bajo meta / alerta</label>
     </div>
-    <div class="sb-filter-note">CMI desplegado en cascada<br>Nivel 1 · Tablero Municipal<br>9 Direcciones / Unidades<br>Presupuesto total 2026: $54.200 MM<br><br>Datos operativos simulados</div>
+    <div class="sb-filter-note">CMI desplegado en cascada<br>Nivel 1 · Tablero Municipal<br>17 Direcciones / Unidades<br>Presupuesto total 2026: $54.200 MM<br><br>Datos operativos simulados</div>
   </div>
 
   <!-- MAIN -->
@@ -165,12 +159,12 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
     <div class="kpi-strip">
       <div class="kpi-box">
         <div class="kb-lbl">Ppto. ejecutado (proy. cierre)</div>
-        <div class="kb-val r" id="kb-ejec">68%</div>
+        <div class="kb-val r" id="kb-ejec">70%</div>
         <div class="kb-sub"><span class="kb-badge r" id="kb-ejec-b">Bajo meta</span> <span id="kb-ejec-s">meta ≥ 90%</span></div>
       </div>
       <div class="kpi-box">
         <div class="kb-lbl">Satisfacción vecinal</div>
-        <div class="kb-val o" id="kb-sat">66%</div>
+        <div class="kb-val o" id="kb-sat">63%</div>
         <div class="kb-sub"><span class="kb-badge o" id="kb-sat-b">Alerta</span> <span id="kb-sat-s">meta ≥ 75%</span></div>
       </div>
       <div class="kpi-box">
@@ -186,11 +180,11 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
       <div class="kpi-box" style="border-right:2px solid #2d4696">
         <div class="kb-lbl">Estado direcciones (ejecución)</div>
         <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
-          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">1</span><span style="font-size:9px;color:#6c7280">meta</span>
-          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">2</span><span style="font-size:9px;color:#6c7280">alerta</span>
-          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">6</span><span style="font-size:9px;color:#6c7280">bajo</span>
+          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">2</span><span style="font-size:9px;color:#6c7280">meta</span>
+          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">6</span><span style="font-size:9px;color:#6c7280">alerta</span>
+          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">9</span><span style="font-size:9px;color:#6c7280">bajo</span>
         </div>
-        <div class="kb-sub" id="kb-total-u">9 direcciones · ejecución vs. meta 90%</div>
+        <div class="kb-sub" id="kb-total-u">17 direcciones · ejecución vs. meta 90%</div>
       </div>
     </div>
 
@@ -202,51 +196,41 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
         <div style="flex:1;display:flex;gap:7px;min-height:0;min-width:0">
           <!-- LEFT: charts -->
           <div style="flex:1;display:flex;flex-direction:column;gap:7px;min-height:0;min-width:0">
-            <div class="row" style="flex:0 0 175px">
-              <div class="panel" style="flex:1">
-                <div class="panel-hdr"><span class="accent r"></span>% Ejecución presupuestaria por Dirección — proyección de cierre 2026</div>
-                <div class="panel-body"><canvas id="ejec_dir"></canvas></div>
-              </div>
-              <div class="panel" style="flex:0 0 330px">
-                <div class="panel-hdr"><span class="accent r"></span>Diagnóstico Municipal — la brecha en cifras</div>
-                <div class="panel-body" style="padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:5px">
-                  <div style="font-size:9px;color:#4a5068;line-height:1.3">El presupuesto asignado <b>no se traduce</b> en servicio percibido por el vecino, en casi todas las direcciones:</div>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px">
-                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">68%</span> <span style="font-size:7.5px;color:#6c7280">ejec. ppto. proy. (meta ≥90%)</span></div>
-                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">66%</span> <span style="font-size:7.5px;color:#6c7280">satisf. vecinal (≥75%)</span></div>
-                    <div><span style="font-size:16px;font-weight:700;color:#c57f00">74%</span> <span style="font-size:7.5px;color:#6c7280">cobertura territorial (≥80%)</span></div>
-                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">−1%</span> <span style="font-size:7.5px;color:#6c7280">var. beneficiarios (≥5%)</span></div>
-                  </div>
-                  <div style="font-size:8px;color:#9298a8;line-height:1.3">6/9 direcciones bajo meta de ejecución — solo SECPLA cumple, DAF y Seguridad están en alerta.</div>
-                </div>
-              </div>
+            <div class="panel" style="flex:1">
+              <div class="panel-hdr"><span class="accent r"></span>% Ejecución presupuestaria por Dirección — proyección de cierre 2026 (meta ≥ 90%)</div>
+              <div class="panel-body"><canvas id="ejec_dir"></canvas></div>
             </div>
-            <div class="row" style="flex:0 0 175px">
+            <div class="row" style="flex:0 0 215px">
               <div class="panel" style="flex:1">
-                <div class="panel-hdr"><span class="accent o"></span>Satisfacción vecinal por Dirección (%)</div>
-                <div class="panel-body"><canvas id="sat_dir"></canvas></div>
+                <div class="panel-hdr"><span class="accent"></span>Ejecución presupuestaria acumulada — en cuánto va vs. en cuánto debería ir (2026)</div>
+                <div class="panel-body"><canvas id="ejec_linea"></canvas></div>
               </div>
-              <div class="panel" style="flex:0 0 200px">
-                <div class="panel-hdr"><span class="accent"></span>Estado direcciones según ejecución ppto.</div>
+              <div class="panel" style="flex:0 0 205px">
+                <div class="panel-hdr"><span class="accent"></span>Estado direcciones</div>
                 <div class="panel-body"><canvas id="estado_donut"></canvas></div>
               </div>
             </div>
-            <div class="row" style="flex:1">
-              <div class="panel" style="flex:1">
-                <div class="panel-hdr"><span class="accent r"></span>Variación de personas beneficiadas por Dirección (%)</div>
-                <div class="panel-body"><canvas id="ben_dir"></canvas></div>
-              </div>
-              <div class="panel" style="flex:1">
-                <div class="panel-hdr"><span class="accent o"></span>Cobertura de servicios municipales por sector territorial (%)</div>
-                <div class="panel-body"><canvas id="cobertura_sect"></canvas></div>
+          </div>
+          <!-- RIGHT: diagnóstico + tabla -->
+          <div style="flex:0 0 432px;display:flex;flex-direction:column;gap:7px;min-height:0">
+            <div class="panel" style="flex:0 0 138px">
+              <div class="panel-hdr"><span class="accent r"></span>Diagnóstico municipal — la brecha en cifras</div>
+              <div class="panel-body" style="padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:5px">
+                <div style="font-size:9px;color:#4a5068;line-height:1.3">El presupuesto asignado <b>no se traduce</b> en servicio percibido por el vecino: la baja ejecución frena obras y programas.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px">
+                  <div><span style="font-size:16px;font-weight:700;color:#c0392b">70%</span> <span style="font-size:7.5px;color:#6c7280">ejec. ppto. proy. (≥90%)</span></div>
+                  <div><span style="font-size:16px;font-weight:700;color:#c57f00">63%</span> <span style="font-size:7.5px;color:#6c7280">satisf. vecinal (≥75%)</span></div>
+                  <div><span style="font-size:16px;font-weight:700;color:#c57f00">74%</span> <span style="font-size:7.5px;color:#6c7280">cobertura territorial (≥80%)</span></div>
+                  <div><span style="font-size:16px;font-weight:700;color:#c0392b">−1%</span> <span style="font-size:7.5px;color:#6c7280">var. beneficiarios (≥5%)</span></div>
+                </div>
+                <div style="font-size:8px;color:#9298a8;line-height:1.3">9/17 direcciones bajo meta de ejecución — solo SECPLA y Control cumplen; 6 unidades de apoyo en alerta.</div>
               </div>
             </div>
-          </div>
-          <!-- RIGHT: Semáforo de direcciones, full height -->
-          <div class="panel" style="flex:0 0 440px">
-            <div class="panel-hdr"><span class="accent v"></span>Semáforo Ejecución y Satisfacción por Dirección</div>
-            <div class="panel-body" style="padding:4px 6px">
-              <table class="tbl" id="tbl1"><thead><tr><th>Dirección</th><th>% Ejec. (proy.)</th><th>Meta</th><th>Satisf. vec.</th><th>Var. benef.</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+            <div class="panel" style="flex:1">
+              <div class="panel-hdr"><span class="accent v"></span>Semáforo Ejecución y Satisfacción por Dirección</div>
+              <div class="panel-body" style="padding:3px 5px">
+                <table class="tbl" id="tbl1"><thead><tr><th>Dirección</th><th>% Ejec.</th><th>Meta</th><th>Satisf.</th><th>Var. ben.</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+              </div>
             </div>
           </div>
         </div>
@@ -271,13 +255,37 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
           </div>
         </div>
         <div class="row" style="flex:1">
-          <div class="panel" style="flex:1">
+          <div class="panel" style="flex:0 0 410px">
             <div class="panel-hdr"><span class="accent v"></span>% Ejecución por ítem presupuestario (municipal)</div>
             <div class="panel-body"><canvas id="items_pres"></canvas></div>
           </div>
-          <div class="panel" style="flex:0 0 470px">
+          <div class="panel" style="flex:1">
             <div class="panel-hdr"><span class="accent o"></span>Presupuesto ejecutado (proy.) vs. disponible por Dirección ($MM)</div>
             <div class="panel-body"><canvas id="dir_budget"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE 3: Servicio al vecino & Análisis ══ -->
+      <div id="pg3" class="page">
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Satisfacción vecinal por Dirección de atención directa (%)</div>
+            <div class="panel-body"><canvas id="sat_dir"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 340px">
+            <div class="panel-hdr"><span class="accent o"></span>Cobertura de servicios por sector territorial (%)</div>
+            <div class="panel-body"><canvas id="cobertura_radar"></canvas></div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent r"></span>Ejecución presupuestaria vs. satisfacción vecinal (tamaño = $ asignado)</div>
+            <div class="panel-body"><canvas id="scatter_es"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent r"></span>Variación de personas beneficiadas por Dirección (%)</div>
+            <div class="panel-body"><canvas id="ben_dir"></canvas></div>
           </div>
         </div>
       </div>
@@ -288,8 +296,9 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
     <div class="tab-bar">
       <button class="tab-btn on" onclick="switchPg('pg1',this)">📊 Resumen ejecutivo</button>
       <button class="tab-btn" onclick="switchPg('pg2',this)">💰 Ejecución Presupuestaria</button>
+      <button class="tab-btn" onclick="switchPg('pg3',this)">👥 Servicio al vecino</button>
       <div class="tab-right">
-        <span>9 Direcciones · Presupuesto municipal $54.200 MM</span>
+        <span>17 Direcciones · Presupuesto municipal $54.200 MM</span>
         <span>Prof. Alicia Núñez · FEN</span>
         <span>Taller 6 · Grupo 2</span>
       </div>
@@ -310,26 +319,35 @@ Chart.defaults.set('plugins.datalabels',{display:false});
 // ─── DATA ───────────────────────────────────────────
 const MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-// % ejecución = proyección de cierre 2026 vs. meta 90% (estado: v ≥90, o 75-89, r <75)
-// sat = satisfacción vecinal (%) · ben = variación personas beneficiadas (%)
+// ejec = % ejecución proyección cierre 2026 vs. meta 90% (ec: v ≥90, o 75-89, r <75)
+// sat = satisfacción vecinal % (sc: v ≥75, o 60-74, r <60) · solo direcciones con atención directa (cit:true)
+// ben = variación personas beneficiadas % (bc: v ≥8, o 5-7, r <5)
 const DIRS={
-  'DIDECO':   {full:'Desarrollo Comunitario (DIDECO)',          ejec:65, ejec_c:'r', sat:70, sat_c:'o', ben:-2, ben_c:'r', alloc:9000},
-  'DOM':      {full:'Obras Municipales (DOM)',                  ejec:58, ejec_c:'r', sat:58, sat_c:'r', ben:-5, ben_c:'r', alloc:12000},
-  'DAF':      {full:'Administración y Finanzas (DAF)',          ejec:89, ejec_c:'o', sat:null,sat_c:'',  ben:null,ben_c:'',  alloc:4500},
-  'SECPLA':   {full:'Planificación Comunal (SECPLA)',           ejec:92, ejec_c:'v', sat:null,sat_c:'',  ben:null,ben_c:'',  alloc:1800},
-  'Tránsito': {full:'Tránsito y Transporte Público',            ejec:62, ejec_c:'r', sat:61, sat_c:'r', ben:-1, ben_c:'r', alloc:5200},
-  'DMA':      {full:'Medio Ambiente, Aseo y Ornato (DMA)',      ejec:71, ejec_c:'r', sat:68, sat_c:'r', ben:4,  ben_c:'r', alloc:8200},
-  'Seguridad':{full:'Seguridad Pública',                        ejec:81, ejec_c:'o', sat:74, sat_c:'o', ben:6,  ben_c:'o', alloc:4500},
-  'Educación':{full:'Educación (Corp. Municipal)',              ejec:64, ejec_c:'r', sat:66, sat_c:'r', ben:-3, ben_c:'r', alloc:6000},
-  'Salud':    {full:'Salud (Corp. Municipal)',                  ejec:60, ejec_c:'r', sat:63, sat_c:'r', ben:-4, ben_c:'r', alloc:3000}
+  'AdmMun':     {full:'Administración Municipal',                 ab:'Adm. Municipal', ejec:78,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:2500, cit:false},
+  'SECPLA':     {full:'Secretaría de Planificación (SECPLA)',     ab:'SECPLA',         ejec:92,ec:'v', sat:null,sc:'', ben:null,bc:'', alloc:1800, cit:false},
+  'SecMun':     {full:'Secretaría Municipal',                     ab:'Secr. Munic.',   ejec:85,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:900,  cit:false},
+  'Control':    {full:'Dirección de Control',                     ab:'Control',        ejec:91,ec:'v', sat:null,sc:'', ben:null,bc:'', alloc:700,  cit:false},
+  'Juridica':   {full:'Dirección de Asesoría Jurídica',           ab:'Jurídica',       ejec:88,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:800,  cit:false},
+  'DAF':        {full:'Administración y Finanzas (DAF)',          ab:'DAF',            ejec:87,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:4500, cit:false},
+  'DOM':        {full:'Obras Municipales (DOM)',                  ab:'DOM',            ejec:58,ec:'r', sat:56,sc:'r', ben:-5,bc:'r', alloc:9000, cit:true},
+  'DIDECO':     {full:'Desarrollo Comunitario (DIDECO)',          ab:'DIDECO',         ejec:64,ec:'r', sat:64,sc:'o', ben:-3,bc:'r', alloc:11000,cit:true},
+  'DMA':        {full:'Medio Ambiente, Aseo y Ornato (DMA)',      ab:'DMA',            ejec:69,ec:'r', sat:67,sc:'o', ben:3, bc:'r', alloc:8500, cit:true},
+  'Inspeccion': {full:'Dirección de Inspección',                  ab:'Inspección',     ejec:66,ec:'r', sat:59,sc:'r', ben:-2,bc:'r', alloc:1600, cit:true},
+  'Comunic':    {full:'Dirección de Comunicaciones',              ab:'Comunic.',       ejec:79,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:1200, cit:false},
+  'Seguridad':  {full:'Dirección de Seguridad Pública',           ab:'Seguridad',      ejec:72,ec:'r', sat:71,sc:'o', ben:6, bc:'o', alloc:5200, cit:true},
+  'Transito':   {full:'Tránsito y Transporte Público',            ab:'Tránsito',       ejec:61,ec:'r', sat:58,sc:'r', ben:-4,bc:'r', alloc:2400, cit:true},
+  'Informatica':{full:'Dirección de Informática',                 ab:'Informática',    ejec:74,ec:'r', sat:null,sc:'', ben:null,bc:'', alloc:1500, cit:false},
+  'Personas':   {full:'Dirección de Gestión de Personas',         ab:'Gest. Personas', ejec:83,ec:'o', sat:null,sc:'', ben:null,bc:'', alloc:1100, cit:false},
+  'Operaciones':{full:'Dirección de Operaciones',                 ab:'Operaciones',    ejec:63,ec:'r', sat:62,sc:'o', ben:-2,bc:'r', alloc:1100, cit:true},
+  'Emprend':    {full:'Emprendimiento, Pymes e Innovación',       ab:'Emprend.',       ejec:55,ec:'r', sat:68,sc:'o', ben:2, bc:'r', alloc:400,  cit:true}
 };
-const DIR_ORDER=['DIDECO','DOM','DAF','SECPLA','Tránsito','DMA','Seguridad','Educación','Salud'];
-const DIR_CIT=['DIDECO','DOM','Tránsito','DMA','Seguridad','Educación','Salud']; // direcciones con servicio directo al vecino
+const DIR_ORDER=['AdmMun','SECPLA','SecMun','Control','Juridica','DAF','DOM','DIDECO','DMA','Inspeccion','Comunic','Seguridad','Transito','Informatica','Personas','Operaciones','Emprend'];
+const DIR_CIT=DIR_ORDER.filter(k=>DIRS[k].cit); // direcciones con servicio directo al vecino
 
 const COLOR={v:'#1db14f',o:'#f7a800',r:'#c0392b'};
 
 // Cobertura de servicios municipales por sector territorial (%)
-const SECTORES=['Centro','Plaza Ñuñoa','Villa Frei','Estadio /\nÑuñoa Sur','Depto. /\nPoniente'];
+const SECTORES=['Centro','Plaza Ñuñoa','Villa Frei','Estadio /\nÑuñoa Sur','Suárez Mujica /\nPoniente'];
 const COBERTURA=[88,81,68,71,64];
 
 const BUDGET={
@@ -338,7 +356,7 @@ const BUDGET={
     ejec:[7,14,22,32,41,null,null,null,null,null,null,null],
     mens:[3794,3794,4336,5420,4878,null,null,null,null,null,null,null],
     brecha:[-705,-1463,-1626,-5257,-9377],bl:['Ene','Feb','Mar','Abr','May'],
-    ej_val:'$22.222',ej_pct:'41%',prog_pct:'58,3%',saldo:'$31.978',oc:'1.850',proy:'68%'
+    ej_val:'$22.222',ej_pct:'41%',prog_pct:'58,3%',saldo:'$31.978',oc:'1.850',proy:'70%'
   },
   2025:{
     prog:[8.3,16.7,25.0,41.7,58.3,66.7,75.0,83.3,90.0,95.0,98.3,100],
@@ -358,7 +376,7 @@ const ITEMS={
 // ─── STATE ──────────────────────────────────────────
 const ST={dir:'Todas',year:2026,view:'Todos'};
 const CH={};
-const INITED={pg1:false,pg2:false};
+const INITED={pg1:false,pg2:false,pg3:false};
 const tag=e=>`<span class="tag ${e}">${e==='v'?'En meta':e==='o'?'Alerta':'Bajo meta'}</span>`;
 
 function muniAvgEjec(){
@@ -379,8 +397,18 @@ function muniAvgCov(){
 }
 function ejecCounts(){
   const c={v:0,o:0,r:0};
-  DIR_ORDER.forEach(k=>c[DIRS[k].ejec_c]++);
+  DIR_ORDER.forEach(k=>c[DIRS[k].ec]++);
   return c;
+}
+function lastExecIdx(arr){let l=-1;for(let i=arr.length-1;i>=0;i--){if(arr[i]!=null){l=i;break;}}return l;}
+
+// ─── SIDEBAR DIR LIST ───────────────────────────────
+function buildDirFilter(){
+  let html=`<label class="sb-opt active" id="f-dir-Todas"><input type="radio" name="dir" value="Todas" checked onchange="onFilter('dir',this.value)"> Todas (17)</label>`;
+  DIR_ORDER.forEach(k=>{
+    html+=`<label class="sb-opt" id="f-dir-${k}"><input type="radio" name="dir" value="${k}" onchange="onFilter('dir',this.value)"> ${DIRS[k].ab}</label>`;
+  });
+  document.getElementById('dir-filter-list').innerHTML=html;
 }
 
 // ─── KPI STRIP ──────────────────────────────────────
@@ -400,14 +428,14 @@ function updateStrip(){
     set('kb-sat',s+'%','o',badge['o'],'meta ≥ 75%');
     set('kb-cov',c+'%','o',badge['o'],'meta ≥ 80%');
     set('kb-ben','−'+Math.abs(b)+'%','r',badge['r'],'meta ≥ 5%');
-    document.getElementById('kb-total-u').textContent='9 direcciones · ejecución vs. meta 90%';
+    document.getElementById('kb-total-u').textContent='17 direcciones · ejecución vs. meta 90%';
   }else{
     const d=DIRS[ST.dir];
-    set('kb-ejec',d.ejec+'%',d.ejec_c,badge[d.ejec_c],'meta ≥ 90%');
+    set('kb-ejec',d.ejec+'%',d.ec,badge[d.ec],'meta ≥ 90%');
     if(d.sat==null){
       set('kb-sat','N/D','',  'Serv. interno','sin atención directa');
     }else{
-      set('kb-sat',d.sat+'%',d.sat_c,badge[d.sat_c],'meta ≥ 75%');
+      set('kb-sat',d.sat+'%',d.sc,badge[d.sc],'meta ≥ 75%');
     }
     const c=muniAvgCov();
     set('kb-cov',c+'%','o',badge['o'],'meta ≥ 80% (prom. municipal)');
@@ -415,7 +443,7 @@ function updateStrip(){
       set('kb-ben','N/D','','Serv. interno','sin beneficiarios directos');
     }else{
       const sign=d.ben>=0?'+':'−';
-      set('kb-ben',sign+Math.abs(d.ben)+'%',d.ben_c,badge[d.ben_c],'meta ≥ 5%');
+      set('kb-ben',sign+Math.abs(d.ben)+'%',d.bc,badge[d.bc],'meta ≥ 5%');
     }
     document.getElementById('kb-total-u').textContent=DIRS[ST.dir].full;
   }
@@ -429,98 +457,78 @@ function updateStrip(){
 // ─── TABLE: SEMÁFORO DIRECCIONES ────────────────────
 function renderTbl1(){
   let rows=DIR_ORDER;
-  if(ST.view==='Alertas') rows=rows.filter(k=>DIRS[k].ejec_c!=='v');
+  if(ST.view==='Alertas') rows=rows.filter(k=>DIRS[k].ec!=='v');
   document.getElementById('tbl1-body').innerHTML=rows.map(k=>{
     const d=DIRS[k];
     const sat=d.sat==null?'—':d.sat+'%';
     const ben=d.ben==null?'—':(d.ben>=0?'+':'−')+Math.abs(d.ben)+'%';
     const hl=k===ST.dir?' hl':'';
-    return `<tr class="${hl.trim()}"><td>${d.full}</td><td><b>${d.ejec}%</b></td><td>≥ 90%</td><td>${sat}</td><td>${ben}</td><td>${tag(d.ejec_c)}</td></tr>`;
+    return `<tr class="${hl.trim()}"><td>${d.ab}</td><td><b>${d.ejec}%</b></td><td>≥90%</td><td>${sat}</td><td>${ben}</td><td>${tag(d.ec)}</td></tr>`;
   }).join('')||'<tr><td colspan="6" style="text-align:center;color:#9298a8;padding:8px">Sin resultados</td></tr>';
 }
 
 // ─── PAGE 1: RESUMEN ────────────────────────────────
 function initPg1(){
-  // % Ejecución por Dirección — proyección cierre 2026
+  // % Ejecución por Dirección — barra horizontal, proyección cierre 2026
   CH.ejecDir=new Chart(document.getElementById('ejec_dir'),{type:'bar',
-    data:{labels:DIR_ORDER.map(k=>k==='Tránsito'?'Tránsito':k==='DMA'?'DMA':k==='Seguridad'?'Seg. Pública':k==='Educación'?'Educación':k==='Salud'?'Salud':k),
+    data:{labels:DIR_ORDER.map(k=>DIRS[k].ab),
       datasets:[
         {label:'% ejecución proyectada',data:DIR_ORDER.map(k=>DIRS[k].ejec),
-          backgroundColor:DIR_ORDER.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ejec_c]),
-          datalabels:{display:true,anchor:'end',align:'top',color:c=>COLOR[DIRS[DIR_ORDER[c.dataIndex]].ejec_c],font:{size:9,weight:'700'},formatter:v=>v+'%'}},
-        {label:'Meta ≥ 90%',data:Array(9).fill(90),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
+          backgroundColor:DIR_ORDER.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ec]),
+          borderRadius:2,
+          datalabels:{display:true,anchor:'end',align:'end',color:c=>COLOR[DIRS[DIR_ORDER[c.dataIndex]].ec],font:{size:8.5,weight:'700'},formatter:v=>v+'%'}}
       ]},
-    options:{maintainAspectRatio:false,
-      scales:{y:{min:0,max:100,title:{display:true,text:'% ejecución (proy. cierre)',font:{size:8}}},
-              x:{ticks:{font:{size:8}}}},
-      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{min:0,max:100,title:{display:true,text:'% ejecución (proy. cierre) · meta ≥ 90%',font:{size:8}},grid:{color:'#eef0f5'}},
+              y:{ticks:{font:{size:8.5}},grid:{display:false}}},
+      plugins:{legend:{display:false}}}
   });
 
-  // Satisfacción vecinal por dirección
-  CH.satDir=new Chart(document.getElementById('sat_dir'),{type:'bar',
-    data:{labels:DIR_CIT.map(k=>k==='Tránsito'?'Tránsito':k==='DMA'?'DMA':k==='Seguridad'?'Seg. Pública':k==='Educación'?'Educación':k==='Salud'?'Salud':k),
-      datasets:[
-        {label:'% satisfacción vecinal',data:DIR_CIT.map(k=>DIRS[k].sat),
-          backgroundColor:DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].sat_c]),
-          datalabels:{display:true,anchor:'end',align:'top',color:c=>COLOR[DIRS[DIR_CIT[c.dataIndex]].sat_c],font:{size:9,weight:'700'},formatter:v=>v+'%'}},
-        {label:'Meta ≥ 75%',data:Array(7).fill(75),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
-      ]},
-    options:{maintainAspectRatio:false,
-      scales:{y:{min:0,max:100,title:{display:true,text:'%',font:{size:8}}},x:{ticks:{font:{size:8}}}},
-      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
-  });
+  // Línea: ejecución acumulada — en cuánto va vs. en cuánto debería ir
+  const b=BUDGET[ST.year];
+  CH.ejecLinea=buildLineaChart(b);
 
   // Donut estado direcciones según ejecución
   const c=ejecCounts();
   CH.estDonut=new Chart(document.getElementById('estado_donut'),{type:'doughnut',
     data:{labels:['En meta','Alerta','Bajo meta'],datasets:[{data:[c.v,c.o,c.r],
       backgroundColor:[COLOR.v,COLOR.o,COLOR.r],borderWidth:2,borderColor:'#fff',
-      datalabels:{display:true,color:'#fff',font:{size:11,weight:'700'},formatter:v=>v}}]},
-    options:{maintainAspectRatio:false,cutout:'56%',
+      datalabels:{display:true,color:'#fff',font:{size:12,weight:'700'},formatter:v=>v}}]},
+    options:{maintainAspectRatio:false,cutout:'54%',
       plugins:{legend:{position:'bottom',labels:{font:{size:8.5},boxWidth:8,padding:4}}}}
-  });
-
-  // Variación personas beneficiadas por dirección
-  CH.benDir=new Chart(document.getElementById('ben_dir'),{type:'bar',
-    data:{labels:DIR_CIT.map(k=>k==='Tránsito'?'Tránsito':k==='DMA'?'DMA':k==='Seguridad'?'Seg. Pública':k==='Educación'?'Educación':k==='Salud'?'Salud':k),
-      datasets:[
-        {label:'% variación beneficiarios',data:DIR_CIT.map(k=>DIRS[k].ben),
-          backgroundColor:DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ben_c]),
-          datalabels:{display:true,anchor:c=>c.dataset.data[c.dataIndex]>=0?'end':'start',
-            align:c=>c.dataset.data[c.dataIndex]>=0?'top':'bottom',
-            color:c=>COLOR[DIRS[DIR_CIT[c.dataIndex]].ben_c],font:{size:9,weight:'700'},
-            formatter:v=>(v>=0?'+':'−')+Math.abs(v)+'%'}},
-        {label:'Meta ≥ 5%',data:Array(7).fill(5),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
-      ]},
-    options:{maintainAspectRatio:false,
-      scales:{y:{min:-8,max:10,title:{display:true,text:'%',font:{size:8}},grid:{color:c=>c.tick.value===0?'#9298a8':'#eef0f5'}},x:{ticks:{font:{size:8}}}},
-      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
-  });
-
-  // Cobertura servicios municipales por sector
-  CH.cobSect=new Chart(document.getElementById('cobertura_sect'),{type:'bar',
-    data:{labels:SECTORES,datasets:[
-      {label:'% cobertura servicios',data:COBERTURA,
-        backgroundColor:COBERTURA.map(v=>v>=80?COLOR.v:v>=65?COLOR.o:COLOR.r),
-        datalabels:{display:true,anchor:'end',align:'top',color:c=>{const v=COBERTURA[c.dataIndex];return v>=80?COLOR.v:v>=65?COLOR.o:COLOR.r;},font:{size:9,weight:'700'},formatter:v=>v+'%'}},
-      {label:'Meta ≥ 80%',data:Array(5).fill(80),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
-    ]},
-    options:{maintainAspectRatio:false,
-      scales:{y:{min:0,max:100,title:{display:true,text:'%',font:{size:8}}},x:{ticks:{font:{size:8}}}},
-      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
   });
 
   renderTbl1();
   updateStrip();
 }
 
+function buildLineaChart(b){
+  const li=lastExecIdx(b.ejec);
+  return new Chart(document.getElementById('ejec_linea'),{type:'line',
+    data:{labels:MESES,datasets:[
+      {label:'Debería ir (programado %)',data:b.prog,borderColor:'#6c7280',borderDash:[6,4],tension:.25,pointRadius:0,borderWidth:1.8,
+        datalabels:{display:c=>c.dataIndex===li,align:'top',color:'#6c7280',font:{size:9,weight:'700'},formatter:v=>v+'%'}},
+      {label:'Va (ejecutado %)',data:b.ejec,borderColor:'#2d4696',backgroundColor:'rgba(192,57,43,.10)',fill:'-1',tension:.25,pointRadius:3,pointBackgroundColor:'#2d4696',borderWidth:2.4,
+        datalabels:{display:c=>c.dataIndex===li,align:'bottom',offset:6,color:'#2d4696',font:{size:11,weight:'700'},formatter:v=>v+'%'}}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:0,max:100,title:{display:true,text:'% acumulado',font:{size:8}},ticks:{font:{size:8}}},
+              x:{ticks:{font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:10,padding:5}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+'%'}}}}
+  });
+}
+
 function updatePg1(){
-  CH.ejecDir.data.datasets[0].backgroundColor=DIR_ORDER.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ejec_c]);
+  CH.ejecDir.data.datasets[0].backgroundColor=DIR_ORDER.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ec]);
   CH.ejecDir.update('none');
-  CH.satDir.data.datasets[0].backgroundColor=DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].sat_c]);
-  CH.satDir.update('none');
-  CH.benDir.data.datasets[0].backgroundColor=DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].ben_c]);
-  CH.benDir.update('none');
+  const b=BUDGET[ST.year];
+  const li=lastExecIdx(b.ejec);
+  CH.ejecLinea.data.datasets[0].data=b.prog;
+  CH.ejecLinea.data.datasets[1].data=b.ejec;
+  CH.ejecLinea.data.datasets[0].datalabels.display=c=>c.dataIndex===li;
+  CH.ejecLinea.data.datasets[1].datalabels.display=c=>c.dataIndex===li;
+  CH.ejecLinea.update();
   renderTbl1();
   updateStrip();
 }
@@ -564,7 +572,7 @@ function initPg2(){
       {label:'% restante',data:iv.map(v=>100-v),backgroundColor:'#e4e8f0',datalabels:{display:false}}
     ]},
     options:{maintainAspectRatio:false,indexAxis:'y',
-      scales:{x:{stacked:true,max:100,title:{display:true,text:'%',font:{size:8.5}}},y:{stacked:true}},
+      scales:{x:{stacked:true,max:100,title:{display:true,text:'%',font:{size:8.5}}},y:{stacked:true,ticks:{font:{size:8.5}}}},
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.x+'%'}}}}
   });
 
@@ -572,16 +580,16 @@ function initPg2(){
   const ejMM=DIR_ORDER.map(k=>Math.round(DIRS[k].alloc*DIRS[k].ejec/100));
   const dispMM=DIR_ORDER.map((k,i)=>DIRS[k].alloc-ejMM[i]);
   CH.dirBudget=new Chart(document.getElementById('dir_budget'),{type:'bar',
-    data:{labels:DIR_ORDER.map(k=>DIRS[k].full.replace(/ \(.*\)/,'')),
+    data:{labels:DIR_ORDER.map(k=>DIRS[k].ab),
       datasets:[
         {label:'Ejecutado (proy.) $MM',data:ejMM,backgroundColor:DIR_ORDER.map(k=>k===ST.dir?'#1a2e5a':'#2d4696'),
-          datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{size:8.5,weight:'700'},
+          datalabels:{display:c=>c.dataset.data[c.dataIndex]>=600,color:'#fff',anchor:'center',align:'center',font:{size:7.5,weight:'700'},
             formatter:(v,c)=>DIRS[DIR_ORDER[c.dataIndex]].ejec+'%'}},
         {label:'Disponible $MM',data:dispMM,backgroundColor:'#e4e8f0',
-          datalabels:{display:true,color:'#6c7280',anchor:'center',align:'center',font:{size:8},formatter:v=>'$'+v.toLocaleString('es-CL')}}
+          datalabels:{display:c=>c.dataset.data[c.dataIndex]>=600,color:'#6c7280',anchor:'center',align:'center',font:{size:7},formatter:v=>'$'+v.toLocaleString('es-CL')}}
       ]},
     options:{maintainAspectRatio:false,indexAxis:'y',
-      scales:{x:{stacked:true,title:{display:true,text:'$MM',font:{size:8.5}}},y:{stacked:true,ticks:{font:{size:8.5}}}},
+      scales:{x:{stacked:true,title:{display:true,text:'$MM',font:{size:8.5}}},y:{stacked:true,ticks:{font:{size:7.5}}}},
       plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:4}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.x.toLocaleString('es-CL')+' MM'}}}}
   });
@@ -621,7 +629,7 @@ function renderP2summary(b){
     </div>
     <div style="margin-top:8px;font-size:9px;color:#6c7280;border-top:1px solid #e4e8f2;padding-top:5px;line-height:1.4">
       <div><b>Proyección de cierre:</b> ${b.proy} (meta ≥ 90%)</div>
-      <div><b>Ítem crítico:</b> Activos no financ. ${ITEMS[ST.year][2]}% · Direcciones más rezagadas: DOM, Salud, DIDECO</div>
+      <div><b>Ítem crítico:</b> Activos no financ. ${ITEMS[ST.year][2]}% · Direcciones más rezagadas: Emprend., DOM y Tránsito</div>
     </div>
   `;
 }
@@ -647,6 +655,75 @@ function updatePg2(){
   renderP2summary(b);
 }
 
+// ─── PAGE 3: SERVICIO AL VECINO & ANÁLISIS ──────────
+function initPg3(){
+  // Satisfacción vecinal por dirección (barra vertical)
+  CH.satDir=new Chart(document.getElementById('sat_dir'),{type:'bar',
+    data:{labels:DIR_CIT.map(k=>DIRS[k].ab),
+      datasets:[
+        {label:'% satisfacción vecinal',data:DIR_CIT.map(k=>DIRS[k].sat),
+          backgroundColor:DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].sc]),borderRadius:2,
+          datalabels:{display:true,anchor:'end',align:'top',color:c=>COLOR[DIRS[DIR_CIT[c.dataIndex]].sc],font:{size:9,weight:'700'},formatter:v=>v+'%'}},
+        {label:'Meta ≥ 75%',data:Array(DIR_CIT.length).fill(75),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:0,max:100,title:{display:true,text:'%',font:{size:8}}},x:{ticks:{font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
+  });
+
+  // Radar cobertura por sector territorial
+  CH.cobRadar=new Chart(document.getElementById('cobertura_radar'),{type:'radar',
+    data:{labels:SECTORES,datasets:[
+      {label:'Cobertura actual',data:COBERTURA,borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,.18)',pointBackgroundColor:'#c0392b',borderWidth:2,
+        datalabels:{display:true,color:'#c0392b',font:{size:9,weight:'700'},align:'end',offset:2,formatter:v=>v+'%'}},
+      {label:'Meta 80%',data:Array(SECTORES.length).fill(80),borderColor:'#1a2e5a',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1.4,datalabels:{display:false}}
+    ]},
+    options:{maintainAspectRatio:false,
+      scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:7},backdropColor:'transparent'},pointLabels:{font:{size:8}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:8.5},boxWidth:8,padding:4}}}}
+  });
+
+  // Scatter / bubble: ejecución vs satisfacción
+  CH.scatterES=new Chart(document.getElementById('scatter_es'),{type:'bubble',
+    data:{datasets:DIR_CIT.map(k=>{const d=DIRS[k];return{
+      label:d.ab,
+      data:[{x:d.ejec,y:d.sat,r:Math.max(5,Math.sqrt(d.alloc)/11)}],
+      backgroundColor:(d.ejec<90&&d.sat<75)?'rgba(192,57,43,.55)':'rgba(247,168,0,.6)',
+      borderColor:(d.ejec<90&&d.sat<75)?'#c0392b':'#c57f00',borderWidth:1.2,
+      datalabels:{display:true,color:'#1a2332',font:{size:8,weight:'700'},align:'top',offset:2,formatter:()=>d.ab}
+    };})},
+    options:{maintainAspectRatio:false,
+      scales:{x:{min:40,max:100,title:{display:true,text:'% ejecución ppto. (meta ≥90%)',font:{size:8}},ticks:{font:{size:8}}},
+              y:{min:40,max:90,title:{display:true,text:'% satisfacción (meta ≥75%)',font:{size:8}},ticks:{font:{size:8}}}},
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': ejec '+c.raw.x+'% · satisf '+c.raw.y+'%'}}}}
+  });
+
+  // Variación personas beneficiadas por dirección
+  CH.benDir=new Chart(document.getElementById('ben_dir'),{type:'bar',
+    data:{labels:DIR_CIT.map(k=>DIRS[k].ab),
+      datasets:[
+        {label:'% variación beneficiarios',data:DIR_CIT.map(k=>DIRS[k].ben),
+          backgroundColor:DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].bc]),borderRadius:2,
+          datalabels:{display:true,anchor:c=>c.dataset.data[c.dataIndex]>=0?'end':'start',
+            align:c=>c.dataset.data[c.dataIndex]>=0?'top':'bottom',
+            color:c=>COLOR[DIRS[DIR_CIT[c.dataIndex]].bc],font:{size:9,weight:'700'},
+            formatter:v=>(v>=0?'+':'−')+Math.abs(v)+'%'}},
+        {label:'Meta ≥ 5%',data:Array(DIR_CIT.length).fill(5),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:-8,max:10,title:{display:true,text:'%',font:{size:8}},grid:{color:c=>c.tick.value===0?'#9298a8':'#eef0f5'}},x:{ticks:{font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8},boxWidth:8,padding:4}}}}
+  });
+}
+
+function updatePg3(){
+  CH.satDir.data.datasets[0].backgroundColor=DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].sc]);
+  CH.satDir.update('none');
+  CH.benDir.data.datasets[0].backgroundColor=DIR_CIT.map(k=>k===ST.dir?'#1a2e5a':COLOR[DIRS[k].bc]);
+  CH.benDir.update('none');
+}
+
 // ─── FILTER HANDLER ──────────────────────────────────
 function onFilter(key,val){
   ST[key]=key==='year'?parseInt(val):val;
@@ -655,6 +732,7 @@ function onFilter(key,val){
   if(t)t.classList.add('active');
   if(INITED.pg1) updatePg1();
   if(INITED.pg2) updatePg2();
+  if(INITED.pg3) updatePg3();
 }
 
 // ─── TAB SWITCHING ───────────────────────────────────
@@ -668,6 +746,7 @@ function switchPg(id,btn){
     setTimeout(()=>{
       if(id==='pg1') initPg1();
       else if(id==='pg2') initPg2();
+      else if(id==='pg3') initPg3();
     },50);
   }
 }
@@ -683,6 +762,7 @@ function fitToViewport(){
   root.style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+s+')';
 }
 window.addEventListener('resize',fitToViewport);
+buildDirFilter();
 fitToViewport();
 window.addEventListener('load',()=>{INITED.pg1=true;initPg1();});
 </script>
