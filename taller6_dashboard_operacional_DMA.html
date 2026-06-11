@@ -211,48 +211,67 @@ html,body{width:100%;height:100%;overflow:hidden;position:relative;
 
       <!-- ══ PAGE 1: Resumen ══ -->
       <div id="pg1" class="page on">
-        <div class="row" style="flex:0 0 175px">
-          <div class="panel" style="flex:0 0 480px">
-            <div class="panel-hdr"><span class="accent"></span><span id="p1-trend-title">Satisfacción vecinal vs. tasa de reclamos — Q1 2026</span></div>
-            <div class="panel-body"><canvas id="trend"></canvas></div>
-          </div>
-          <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent v"></span>Semáforo indicadores DMA</div>
-            <div class="panel-body" style="padding:4px 6px;overflow-y:auto">
-              <table class="tbl" id="tbl1"><thead><tr><th>Perspect.</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+        <div style="flex:1;display:flex;gap:7px;min-height:0;min-width:0">
+          <!-- LEFT: charts -->
+          <div style="flex:1;display:flex;flex-direction:column;gap:7px;min-height:0;min-width:0">
+            <div class="row" style="flex:0 0 175px">
+              <div class="panel" style="flex:0 0 340px">
+                <div class="panel-hdr"><span class="accent"></span><span id="p1-trend-title">Satisfacción vecinal vs. tasa de reclamos — Q1 2026</span></div>
+                <div class="panel-body"><canvas id="trend"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent r"></span>Diagnóstico DMA — la brecha en cifras</div>
+                <div class="panel-body" style="padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:5px">
+                  <div style="font-size:9px;color:#4a5068;line-height:1.3">La DMA <b>no convierte</b> su presupuesto en servicio percibido por el vecino:</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px">
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">71%</span> <span style="font-size:7.5px;color:#6c7280">ejec. ppto. (meta ≥90%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">68%</span> <span style="font-size:7.5px;color:#6c7280">satisf. vecinal (≥75%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">14%</span> <span style="font-size:7.5px;color:#6c7280">abandono trám. (&lt;10%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">65%</span> <span style="font-size:7.5px;color:#6c7280">cobertura prog. (≥80%)</span></div>
+                  </div>
+                  <div style="font-size:8px;color:#9298a8;line-height:1.3">5/19 indicadores bajo meta — brecha presente en las 4 perspectivas BSC.</div>
+                </div>
+              </div>
+            </div>
+            <div class="row" style="flex:0 0 175px">
+              <div class="panel" style="flex:0 0 230px">
+                <div class="panel-hdr"><span class="accent r"></span>Proyección cierre presupuestario 2026 — ¿alcanzamos el 90%?</div>
+                <div class="panel-body"><canvas id="proyeccion"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 200px">
+                <div class="panel-hdr"><span class="accent o"></span>Radar BSC — desempeño vs. meta por perspectiva</div>
+                <div class="panel-body"><canvas id="radar_bsc"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent"></span>Indicadores en alerta — evolución últimas 4 semanas</div>
+                <div class="panel-body"><canvas id="alertas_trend"></canvas></div>
+              </div>
+            </div>
+            <div class="row" style="flex:1">
+              <div class="panel" style="flex:0 0 180px">
+                <div class="panel-hdr"><span class="accent o"></span>Ejecuc. acumulada 2026 vs. prog. (%)</div>
+                <div class="panel-body"><canvas id="presup_mini"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 120px">
+                <div class="panel-hdr"><span class="accent r"></span>Brecha vs. prog. ($MM)</div>
+                <div class="panel-body"><canvas id="brecha_mini"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent"></span>Estado ind. BSC por perspectiva</div>
+                <div class="panel-body"><canvas id="bsc_bar"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 100px">
+                <div class="panel-hdr"><span class="accent v"></span>Distribución</div>
+                <div class="panel-body"><canvas id="donut_est"></canvas></div>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="row" style="flex:0 0 175px">
-          <div class="panel" style="flex:0 0 340px">
-            <div class="panel-hdr"><span class="accent r"></span>Proyección cierre presupuestario 2026 — ¿alcanzamos el 90%?</div>
-            <div class="panel-body"><canvas id="proyeccion"></canvas></div>
-          </div>
-          <div class="panel" style="flex:0 0 300px">
-            <div class="panel-hdr"><span class="accent o"></span>Radar BSC — desempeño vs. meta por perspectiva</div>
-            <div class="panel-body"><canvas id="radar_bsc"></canvas></div>
-          </div>
-          <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent"></span>Indicadores en alerta — evolución últimas 4 semanas</div>
-            <div class="panel-body"><canvas id="alertas_trend"></canvas></div>
-          </div>
-        </div>
-        <div class="row" style="flex:1">
-          <div class="panel" style="flex:0 0 260px">
-            <div class="panel-hdr"><span class="accent o"></span>Ejecuc. acumulada 2026 vs. prog. (%)</div>
-            <div class="panel-body"><canvas id="presup_mini"></canvas></div>
-          </div>
-          <div class="panel" style="flex:0 0 175px">
-            <div class="panel-hdr"><span class="accent r"></span>Brecha vs. prog. ($MM)</div>
-            <div class="panel-body"><canvas id="brecha_mini"></canvas></div>
-          </div>
-          <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent"></span>Estado ind. BSC por perspectiva</div>
-            <div class="panel-body"><canvas id="bsc_bar"></canvas></div>
-          </div>
-          <div class="panel" style="flex:0 0 140px">
-            <div class="panel-hdr"><span class="accent v"></span>Distribución</div>
-            <div class="panel-body"><canvas id="donut_est"></canvas></div>
+          <!-- RIGHT: Semáforo de indicadores, full height -->
+          <div class="panel" style="flex:0 0 440px">
+            <div class="panel-hdr"><span class="accent v"></span>Semáforo de indicadores DMA</div>
+            <div class="panel-body" style="padding:4px 6px">
+              <table class="tbl" id="tbl1"><thead><tr><th>Perspect.</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+            </div>
           </div>
         </div>
       </div>
@@ -626,17 +645,20 @@ function initPg1(){
 
   CH.bmini=new Chart(document.getElementById('brecha_mini'),{type:'bar',
     data:{labels:b.bl,datasets:[{label:'$MM',data:b.brecha,
-      backgroundColor:b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f')}]},
+      backgroundColor:b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f'),
+      datalabels:{display:true,anchor:'end',align:v=>v.dataset.data[v.dataIndex]<0?'bottom':'top',
+        color:v=>v.dataset.data[v.dataIndex]<0?'#c0392b':'#1a2332',font:{size:8,weight:'700'},formatter:v=>v}}]},
     options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'$MM',font:{size:8}}}},
       plugins:{legend:{display:false}}}
   });
 
   const bd=bscData(u);
+  const bscDL={display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:9,weight:'700'},anchor:'center',align:'center'};
   CH.bsc=new Chart(document.getElementById('bsc_bar'),{type:'bar',
     data:{labels:PERSP,datasets:[
-      {label:'En meta',data:bd.v,backgroundColor:'#1db14f'},
-      {label:'Alerta',data:bd.o,backgroundColor:'#f7a800'},
-      {label:'Bajo meta',data:bd.r,backgroundColor:'#c0392b'}
+      {label:'En meta',data:bd.v,backgroundColor:'#1db14f',datalabels:bscDL},
+      {label:'Alerta',data:bd.o,backgroundColor:'#f7a800',datalabels:bscDL},
+      {label:'Bajo meta',data:bd.r,backgroundColor:'#c0392b',datalabels:bscDL}
     ]},
     options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° ind.',font:{size:8}}}},
       plugins:{legend:{position:'top'}}}
@@ -647,7 +669,8 @@ function initPg1(){
   const cr=u.sem.filter(r=>r.e==='r').length;
   CH.donut=new Chart(document.getElementById('donut_est'),{type:'doughnut',
     data:{labels:['En meta','Alerta','Bajo meta'],datasets:[{data:[cv,co,cr],
-      backgroundColor:['#1db14f','#f7a800','#c0392b'],borderWidth:2,borderColor:'#fff'}]},
+      backgroundColor:['#1db14f','#f7a800','#c0392b'],borderWidth:2,borderColor:'#fff',
+      datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:10,weight:'700'}}}]},
     options:{maintainAspectRatio:false,cutout:'58%',
       plugins:{legend:{position:'bottom',labels:{font:{size:9}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed}}}}
   });
@@ -655,11 +678,16 @@ function initPg1(){
   const ejActual=[6,12,18,33,45,null,null,null,null,null,null,null];
   const ejProy=[null,null,null,null,45,54,63,70,75,78,80,82];
   const ejIdeal=[null,null,null,null,58,66.7,75,83.3,90,95,98.3,100];
+  const lastPointDL=color=>({display:c=>{
+      const d=c.dataset.data;let last=-1;
+      for(let i=d.length-1;i>=0;i--){if(d[i]!=null){last=i;break;}}
+      return c.dataIndex===last;
+    },align:'top',offset:4,color,font:{size:8.5,weight:'700'},formatter:v=>Math.round(v)+'%'});
   CH.proyec=new Chart(document.getElementById('proyeccion'),{
     data:{labels:MESES,datasets:[
-      {type:'line',label:'Ejec. real',data:ejActual,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696',borderWidth:2},
-      {type:'line',label:'Proyección (ritmo actual)',data:ejProy,borderColor:'#f7a800',borderDash:[6,3],tension:.2,pointRadius:2,pointBackgroundColor:'#f7a800',borderWidth:1.5},
-      {type:'line',label:'Ideal ≥ 90%',data:ejIdeal,borderColor:'#1db14f',borderDash:[3,3],tension:.2,pointRadius:0,borderWidth:1.5}
+      {type:'line',label:'Ejec. real',data:ejActual,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696',borderWidth:2,datalabels:lastPointDL('#2d4696')},
+      {type:'line',label:'Proyección (ritmo actual)',data:ejProy,borderColor:'#f7a800',borderDash:[6,3],tension:.2,pointRadius:2,pointBackgroundColor:'#f7a800',borderWidth:1.5,datalabels:lastPointDL('#c57f00')},
+      {type:'line',label:'Ideal ≥ 90%',data:ejIdeal,borderColor:'#1db14f',borderDash:[3,3],tension:.2,pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
     ]},
     options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       scales:{y:{min:0,max:100,title:{display:true,text:'% acum.',font:{size:8}},ticks:{callback:v=>v+'%'}}},
@@ -674,8 +702,9 @@ function initPg1(){
   CH.radar=new Chart(document.getElementById('radar_bsc'),{type:'radar',
     data:{labels:['Comunitaria','Financiera','Procesos\nInternos','Aprend. y\nCrecimiento'],
       datasets:[
-        {label:'% ind. en meta',data:rData,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.18)',pointBackgroundColor:'#2d4696',pointRadius:3,borderWidth:2},
-        {label:'Meta (100%)',data:[100,100,100,100],borderColor:'rgba(29,177,79,.5)',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1}
+        {label:'% ind. en meta',data:rData,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.18)',pointBackgroundColor:'#2d4696',pointRadius:3,borderWidth:2,
+          datalabels:{display:true,color:'#2d4696',backgroundColor:'#fff',borderRadius:2,padding:2,font:{size:8,weight:'700'},formatter:v=>v+'%'}},
+        {label:'Meta (100%)',data:[100,100,100,100],borderColor:'rgba(29,177,79,.5)',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1,datalabels:{display:false}}
       ]},
     options:{maintainAspectRatio:false,scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:8},callback:v=>v+'%'},
       pointLabels:{font:{size:8.5}}}},
@@ -685,9 +714,9 @@ function initPg1(){
   const S4=['S18','S19','S20','S21'];
   CH.alerta=new Chart(document.getElementById('alertas_trend'),{
     data:{labels:S4,datasets:[
-      {type:'line',label:'Satisf. gestión DMA (%)',data:[71,72,71,73],borderColor:'#f7a800',backgroundColor:'rgba(247,168,0,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y',borderWidth:2},
-      {type:'line',label:'Abandono trámites (%)',data:[13,14,13,12],borderColor:'#c0392b',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2},
-      {type:'line',label:'Cobertura prog. (%)',data:[72,73,73,74],borderColor:'#2d4696',tension:.3,pointRadius:3,yAxisID:'y',borderWidth:1.5,borderDash:[4,3]}
+      {type:'line',label:'Satisf. gestión DMA (%)',data:[73,71,69,68],borderColor:'#f7a800',backgroundColor:'rgba(247,168,0,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y',borderWidth:2,datalabels:lastPointDL('#c57f00')},
+      {type:'line',label:'Abandono trámites (%)',data:[11,12,13,14],borderColor:'#c0392b',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2,datalabels:{...lastPointDL('#c0392b'),align:'bottom'}},
+      {type:'line',label:'Cobertura prog. (%)',data:[74,71,68,65],borderColor:'#2d4696',tension:.3,pointRadius:3,yAxisID:'y',borderWidth:1.5,borderDash:[4,3],datalabels:lastPointDL('#2d4696')}
     ]},
     options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       scales:{y:{min:60,max:100,title:{display:true,text:'%',font:{size:8}}},
