@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <title>DMA · Tablero Operacional · Municipalidad de Ñuñoa</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{width:1280px;height:720px;overflow:hidden;
+html,body{width:100%;height:100%;overflow:hidden;
   font-family:'Segoe UI',Tahoma,sans-serif;font-size:11px;
   background:#4a5068;display:flex;justify-content:center;align-items:center}
-.root{width:1280px;height:720px;overflow:hidden;display:flex;flex-direction:column;background:#f0f2f6}
+.root{width:1280px;height:720px;overflow:hidden;display:flex;flex-direction:column;background:#f0f2f6;flex-shrink:0;transform-origin:center center}
 
 /* ── HEADER ── */
 .hdr{height:42px;background:#1a2e5a;display:flex;align-items:center;
@@ -291,7 +292,7 @@ html,body{width:1280px;height:720px;overflow:hidden;
       <div id="pg3" class="page">
         <div class="row" style="flex:0 0 255px">
           <div class="panel" style="flex:1">
-            <div class="panel-hdr"><span class="accent"></span><span id="p3-title">Ejecución acumulada vs. programada — 2026 · % y $MM mensual</span></div>
+            <div class="panel-hdr"><span class="accent"></span><span id="p3-title">Ejecución Presupuestaria — acumulada vs. programada 2026 · % y $MM mensual</span></div>
             <div class="panel-body"><canvas id="presup_acum"></canvas></div>
           </div>
           <div class="panel" style="flex:0 0 215px">
@@ -415,10 +416,12 @@ html,body{width:1280px;height:720px;overflow:hidden;
 </div><!-- /root -->
 
 <script>
+Chart.register(ChartDataLabels);
 Chart.defaults.font.family="'Segoe UI',Tahoma,sans-serif";
 Chart.defaults.font.size=9.5;
 Chart.defaults.plugins.legend.labels.boxWidth=9;
 Chart.defaults.plugins.legend.labels.padding=7;
+Chart.defaults.set('plugins.datalabels',{display:false});
 
 // ─── DATA ───────────────────────────────────────────
 const WK=['S10','S11','S12','S13','S14','S15','S16','S17','S18','S19','S20','S21'];
@@ -426,25 +429,25 @@ const MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','
 
 const UNITS={
   'Completa':{
-    ejec:'71%',ejec_c:'r',sat:'73%',sat_c:'o',av:'9,3 m²',av_c:'v',ab:'12%',ab_c:'o',rec:'3,8%',rec_c:'v',
-    ejec_b:'Bajo meta',sat_b:'Alerta',av_b:'En meta',ab_b:'Alerta',rec_b:'En meta',
+    ejec:'71%',ejec_c:'r',sat:'68%',sat_c:'r',av:'9,3 m²',av_c:'v',ab:'14%',ab_c:'r',rec:'3,8%',rec_c:'v',
+    ejec_b:'Bajo meta',sat_b:'Bajo meta',av_b:'En meta',ab_b:'Bajo meta',rec_b:'En meta',
     t_sat:[5.6,5.5,5.4,5.5,5.3,5.4,5.3,5.2,5.3,5.2,5.1,5.2],
     t_rec:[2.9,3.1,3.0,3.4,3.6,3.5,3.9,4.1,3.8,4.0,3.9,3.8],
     sem:[
       {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',    v:'68%',   m:'≥ 70%',    e:'o'},
       {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio', v:'3,8%',  m:'< 5%',     e:'v'},
-      {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',     v:'73%',   m:'≥ 75%',    e:'o'},
+      {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',     v:'68%',   m:'≥ 75%',    e:'r'},
       {p:'Comunitaria',    i:'% población accede a servicios DMA',     v:'87%',   m:'≥ 85%',    e:'v'},
-      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',     v:'12%',   m:'< 10%',    e:'o'},
+      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',     v:'14%',   m:'< 10%',    e:'r'},
       {p:'Comunitaria',    i:'Índice distrib. inversión por sector',   v:'76%',   m:'≥ 80%',    e:'o'},
       {p:'Financiera',     i:'Costo per cápita servicios DMA',         v:'−8%',   m:'red. ≥10%',e:'o'},
-      {p:'Financiera',     i:'Variación personas beneficiadas',        v:'9%',    m:'≥ 7%',     e:'v'},
+      {p:'Financiera',     i:'Variación personas beneficiadas',        v:'4%',    m:'≥ 7%',     e:'r'},
       {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',     v:'71%',   m:'≥ 90%',    e:'r'},
       {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',      v:'5,2',   m:'≥ 5,5',    e:'o'},
       {p:'Procesos Int.',  i:'% servicios que cumplen SLA',            v:'88%',   m:'≥ 90%',    e:'o'},
       {p:'Procesos Int.',  i:'M² áreas verdes per cápita',             v:'9,3 m²',m:'≥ 9 m²',  e:'v'},
       {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',   v:'82%',   m:'≥ 80%',    e:'v'},
-      {p:'Procesos Int.',  i:'% cobertura programas focalizados',      v:'74%',   m:'≥ 80%',    e:'o'},
+      {p:'Procesos Int.',  i:'% cobertura programas focalizados',      v:'65%',   m:'≥ 80%',    e:'r'},
       {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas',v:'0,82',  m:'↑ alza',   e:'v'},
       {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',     v:'5,5',   m:'≥ 5,7',    e:'o'},
       {p:'Aprend. y Crec.',i:'% funcionarios en integración',          v:'84%',   m:'> 80%',    e:'v'},
@@ -492,7 +495,7 @@ const UNITS={
       {p:'Comunitaria',    i:'Tasa reclamos formales aseo',           v:'4,1%',  m:'< 5%',     e:'v'},
       {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',    v:'58%',   m:'≥ 90%',    e:'r'},
       {p:'Procesos Int.',  i:'% servicios que cumplen SLA',           v:'86%',   m:'≥ 90%',    e:'o'},
-      {p:'Procesos Int.',  i:'% cobertura puntos limpios',            v:'80%',   m:'≥ 100%',   e:'o'},
+      {p:'Procesos Int.',  i:'% cobertura puntos limpios',            v:'65%',   m:'≥ 100%',   e:'r'},
       {p:'Aprend. y Crec.',i:'% funcionarios en integración',         v:'82%',   m:'> 80%',    e:'v'}
     ]
   }
@@ -523,18 +526,18 @@ const ITEMS={
 const FULL_SEM=[
   {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',     f:'Σ puntajes 6–7 dim. amb. / encuestados',   v:'68%',   m:'≥ 70%',  u:'65–70%', fr:'Anual',     e:'o'},
   {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio', f:'Reclamos formales / servicios entregados', v:'3,8%',  m:'< 5%',   u:'4,0–5,0',fr:'Trimestral',e:'v'},
-  {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',      f:'Σ puntajes 6–7 gestión DMA / encuestados', v:'73%',   m:'≥ 75%',  u:'70–75%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',      f:'Σ puntajes 6–7 gestión DMA / encuestados', v:'68%',   m:'≥ 75%',  u:'70–75%', fr:'Anual',     e:'r'},
   {p:'Comunitaria',    i:'% población accede a servicios DMA',      f:'Personas acceden / población objetivo',    v:'87%',   m:'≥ 85%',  u:'80–85%', fr:'Semestral', e:'v'},
-  {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',      f:'(Iniciados − finalizados) / iniciados',    v:'12%',   m:'< 10%',  u:'10–15%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',      f:'(Iniciados − finalizados) / iniciados',    v:'14%',   m:'< 10%',  u:'10–15%', fr:'Anual',     e:'r'},
   {p:'Comunitaria',    i:'Índice distrib. inversión por sector',    f:'Sectores ±15% del promedio / total sect.', v:'76%',   m:'≥ 80%',  u:'75–80%', fr:'Semestral', e:'o'},
   {p:'Financiera',     i:'Costo per cápita servicios DMA',          f:'Σ gastos servicio / residentes benef.',    v:'−8%',   m:'red. ≥10%',u:'5–10%',fr:'Semestral', e:'o'},
-  {p:'Financiera',     i:'Variación personas beneficiadas',         f:'(PBt − PBt-1) / PBt-1',                    v:'9%',    m:'≥ 7%',   u:'5–7%',   fr:'Semestral', e:'v'},
+  {p:'Financiera',     i:'Variación personas beneficiadas',         f:'(PBt − PBt-1) / PBt-1',                    v:'4%',    m:'≥ 7%',   u:'5–7%',   fr:'Semestral', e:'r'},
   {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',      f:'Ppto. ejec. en plazo / ppto. programado',  v:'71%',   m:'≥ 90%',  u:'75–90%', fr:'Semestral', e:'r'},
   {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',       f:'Σ encuesta post-atención 1–7 / encuestas', v:'5,2',   m:'≥ 5,5',  u:'4,5–5,5',fr:'Trimestral',e:'o'},
   {p:'Procesos Int.',  i:'% servicios que cumplen SLA',             f:'Servicios cumplen SLA / total catastrados',v:'88%',   m:'≥ 90%',  u:'80–90%', fr:'Semestral', e:'o'},
   {p:'Procesos Int.',  i:'M² áreas verdes per cápita',              f:'m² áreas verdes mantenidas / habitantes',  v:'9,3 m²',m:'≥ 9 m²', u:'8,0–9,0',fr:'Anual',     e:'v'},
   {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',    f:'m² infra. buen estado / m² catastrada',    v:'82%',   m:'≥ 80%',  u:'75–80%', fr:'Anual',     e:'v'},
-  {p:'Procesos Int.',  i:'% cobertura programas focalizados',       f:'Beneficiarios efectivos / población obj.', v:'74%',   m:'≥ 80%',  u:'70–80%', fr:'Semestral', e:'o'},
+  {p:'Procesos Int.',  i:'% cobertura programas focalizados',       f:'Beneficiarios efectivos / población obj.', v:'65%',   m:'≥ 80%',  u:'70–80%', fr:'Semestral', e:'r'},
   {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas', f:'Habilidades cubiertas / demandadas',       v:'0,82',  m:'↑ alza', u:'0,7–0,8',fr:'Semestral', e:'v'},
   {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',      f:'Promedio encuesta satisf. laboral 1–7',    v:'5,5',   m:'≥ 5,7',  u:'5,0–5,7',fr:'Semestral', e:'o'},
   {p:'Aprend. y Crec.',i:'% funcionarios en integración',          f:'Funcionarios participantes / total DMA',   v:'84%',   m:'> 80%',  u:'75–80%', fr:'Por activ.',e:'v'},
@@ -836,8 +839,9 @@ function initPg3(){
   const iv=ITEMS[ST.year];
   CH.items=new Chart(document.getElementById('items_pres'),{type:'bar',
     data:{labels:ITEMS.L,datasets:[
-      {label:'% ejecutado',data:iv,backgroundColor:iv.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b')},
-      {label:'% restante',data:iv.map(v=>100-v),backgroundColor:'#e4e8f0'}
+      {label:'% ejecutado',data:iv,backgroundColor:iv.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b'),
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',formatter:v=>v+'%',font:{size:9.5,weight:'700'}}},
+      {label:'% restante',data:iv.map(v=>100-v),backgroundColor:'#e4e8f0',datalabels:{display:false}}
     ]},
     options:{maintainAspectRatio:false,indexAxis:'y',
       scales:{x:{stacked:true,max:100,title:{display:true,text:'%',font:{size:8.5}}},y:{stacked:true}},
@@ -856,13 +860,13 @@ function initPg3(){
       plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
   });
 
-  // Variación personas beneficiadas por trimestre
-  const benV=[4,6,7,8,9];
+  // Variación personas beneficiadas por trimestre — tendencia a la baja (cobertura insuficiente)
+  const benV=[9,7,6,5,4];
   CH.varben=new Chart(document.getElementById('var_ben'),{type:'bar',
     data:{labels:['Q1 2025','Q2 2025','Q3 2025','Q4 2025','Q1 2026'],
       datasets:[
-        {label:'% variación anual',data:benV,backgroundColor:benV.map(v=>v>=7?'#1db14f':'#f7a800')},
-        {label:'Meta ≥ 7%',data:Array(5).fill(7),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+        {label:'% variación anual',data:benV,backgroundColor:benV.map(v=>v>=7?'#1db14f':v>=5?'#f7a800':'#c0392b')},
+        {label:'Meta ≥ 7%',data:Array(5).fill(7),type:'line',borderColor:'#6c7280',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
       ]},
     options:{maintainAspectRatio:false,
       scales:{y:{min:0,max:15,title:{display:true,text:'%',font:{size:8}},ticks:{callback:v=>v+'%'}}},
@@ -916,7 +920,7 @@ function updatePg3(){
   CH.items.data.datasets[0].backgroundColor=iv.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b');
   CH.items.data.datasets[1].data=iv.map(v=>100-v);
   CH.items.update();
-  document.getElementById('p3-title').textContent='Ejecución acumulada vs. programada — '+ST.year+' · % y $MM mensual';
+  document.getElementById('p3-title').textContent='Ejecución Presupuestaria — acumulada vs. programada '+ST.year+' · % y $MM mensual';
   renderP3summary(b);
 }
 
@@ -1091,6 +1095,15 @@ function switchPg(id,btn){
 }
 
 // ─── BOOT ────────────────────────────────────────────
+function fitToViewport(){
+  const root=document.querySelector('.root');
+  const sx=window.innerWidth/1280;
+  const sy=window.innerHeight/720;
+  const s=Math.min(sx,sy,1);
+  root.style.transform='scale('+s+')';
+}
+window.addEventListener('resize',fitToViewport);
+fitToViewport();
 window.addEventListener('load',()=>{INITED.pg1=true;initPg1();});
 </script>
 </body>
