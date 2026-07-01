@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>CMI Estratégico · Municipalidad de Ñuñoa</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:720px;overflow:hidden;
+  font-family:'Segoe UI',Tahoma,sans-serif;font-size:11px;
+  background:#4a5068;display:flex;justify-content:center;align-items:center}
+.root{width:1280px;height:720px;overflow:hidden;display:flex;flex-direction:column;background:#f0f2f6}
+
+/* HEADER */
+.hdr{height:42px;background:#1a2e5a;display:flex;align-items:center;
+  padding:0 12px;gap:10px;flex-shrink:0;color:#fff;border-bottom:2px solid #f7a800}
+.logo-svg{flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))}
+.hdr-mid{flex:1}
+.hdr-mid h1{font-size:13px;font-weight:700;letter-spacing:.01em}
+.hdr-mid .sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:1px}
+.hdr-right{font-size:9px;color:rgba(255,255,255,.8);line-height:1.5;flex-shrink:0;text-align:right}
+.hdr-right strong{color:#fff}
+.aviso-hdr{font-size:9px;background:#f7a800;color:#3a2000;padding:2px 8px;border-radius:2px;margin-left:8px;white-space:nowrap}
+
+/* BODY */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{width:162px;background:#fff;border-right:1px solid #d0d4e0;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sb-header{background:#2d4696;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:7px 10px;display:flex;align-items:center;gap:5px}
+.sb-section{padding:8px 10px 6px;border-bottom:1px solid #e8eaf0}
+.sb-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#4a5068;margin-bottom:4px}
+.sb-opt{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer;font-size:10px;color:#2a3050}
+.sb-opt input[type=radio]{accent-color:#2d4696;width:11px;height:11px;cursor:pointer}
+.sb-opt.active{color:#2d4696;font-weight:600}
+.sb-filter-note{font-size:8.5px;color:#8890a0;padding:8px 10px;line-height:1.5}
+
+/* PILARES estratégicos como chips */
+.pilares{padding:7px 10px 6px;border-bottom:1px solid #e8eaf0}
+.pilar-chip{font-size:8px;font-weight:700;padding:2px 6px;border-radius:2px;margin:2px 0;cursor:pointer;display:block;text-align:center;border:1px solid}
+.pilar-chip.p1{background:#eef2ff;color:#2d4696;border-color:#2d4696}
+.pilar-chip.p2{background:#fff3cc;color:#7a5200;border-color:#f7a800}
+.pilar-chip.p3{background:#d4f0df;color:#138a3a;border-color:#1db14f}
+.pilar-chip.on{opacity:1}.pilar-chip:not(.on){opacity:.5}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* KPI STRIP */
+.kpi-strip{height:52px;background:#fff;border-bottom:1px solid #d0d4e0;display:flex;align-items:stretch;flex-shrink:0}
+.kpi-box{flex:1;padding:5px 10px;border-right:1px solid #e8eaf0;display:flex;flex-direction:column;justify-content:center}
+.kpi-box:last-child{border-right:none}
+.kb-lbl{font-size:8.5px;color:#6c7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px}
+.kb-val{font-size:19px;font-weight:700;line-height:1;color:#1a2332}
+.kb-val.r{color:#c0392b}.kb-val.o{color:#c57f00}.kb-val.v{color:#138a3a}
+.kb-sub{font-size:8px;color:#9298a8;margin-top:1px;display:flex;align-items:center;gap:3px}
+.kb-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;color:#fff}
+.kb-badge.r{background:#c0392b}.kb-badge.o{background:#f7a800;color:#3a2000}.kb-badge.v{background:#1db14f}
+
+/* PAGES */
+.pages{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;display:none;padding:7px;gap:7px;flex-direction:column}
+.page.on{display:flex}
+.row{display:flex;gap:7px}
+
+/* PANEL */
+.panel{background:#fff;border:1px solid #d4d8e4;display:flex;flex-direction:column;overflow:hidden}
+.panel-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:#2d4696;padding:5px 8px 4px;border-bottom:1px solid #e4e8f2;flex-shrink:0;
+  display:flex;align-items:center;gap:5px;background:#f7f8fc}
+.panel-hdr .accent{width:3px;height:10px;border-radius:1px;background:#2d4696;flex-shrink:0}
+.panel-hdr .accent.v{background:#1db14f}.panel-hdr .accent.o{background:#f7a800}.panel-hdr .accent.r{background:#c0392b}
+.panel-body{flex:1;padding:6px;overflow:hidden;position:relative}
+.panel-body canvas{width:100%!important;height:100%!important}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:9.5px}
+.tbl thead tr{background:#2d4696}
+.tbl th{color:#fff;padding:4px 6px;text-align:left;font-size:8.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.tbl td{padding:3px 6px;border-bottom:1px solid #edf0f5;color:#1a2332}
+.tbl tr:nth-child(even) td{background:#f7f8fc}
+.tbl tr:hover td{background:#edf2ff}
+.tag{display:inline-block;font-size:8px;font-weight:700;padding:1px 6px;border-radius:2px;color:#fff;white-space:nowrap}
+.tag.v{background:#1db14f}.tag.o{background:#f7a800;color:#3a2000}.tag.r{background:#c0392b}
+
+/* MAPA ESTRATÉGICO */
+.mapa{display:flex;flex-direction:column;gap:4px;padding:6px;height:100%}
+.mapa-persp{display:flex;gap:4px;align-items:stretch}
+.mapa-lbl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;writing-mode:vertical-rl;transform:rotate(180deg);padding:4px 3px;color:#fff;border-radius:2px;flex-shrink:0;text-align:center}
+.mapa-lbl.c{background:#2d4696}.mapa-lbl.f{background:#c0392b}.mapa-lbl.p{background:#f7a800;color:#3a2000}.mapa-lbl.a{background:#1db14f}
+.mapa-objs{display:flex;gap:3px;flex:1;flex-wrap:wrap;align-content:flex-start}
+.mapa-obj{font-size:7.5px;font-weight:600;padding:3px 6px;border-radius:2px;border:1px solid;line-height:1.3;cursor:default;display:flex;align-items:center;gap:3px}
+.mapa-obj.v{background:#d4f0df;border-color:#1db14f;color:#138a3a}
+.mapa-obj.o{background:#fff3cc;border-color:#f7a800;color:#7a5200}
+.mapa-obj.r{background:#fde8e8;border-color:#c0392b;color:#c0392b}
+.dot-s{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot-s.v{background:#1db14f}.dot-s.o{background:#f7a800}.dot-s.r{background:#c0392b}
+
+/* INICIATIVAS */
+.ini-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;height:100%;overflow:hidden}
+.ini-item{border:1px solid #d4d8e4;background:#fff;padding:5px 7px;display:flex;flex-direction:column;gap:3px}
+.ini-name{font-size:8.5px;font-weight:700;color:#1a2332;line-height:1.2}
+.ini-pilar{font-size:7.5px;font-weight:700;padding:1px 5px;border-radius:2px;align-self:flex-start}
+.ini-pilar.p1{background:#eef2ff;color:#2d4696}
+.ini-pilar.p2{background:#fff3cc;color:#7a5200}
+.ini-pilar.p3{background:#d4f0df;color:#138a3a}
+.ini-bar-wrap{height:10px;background:#e8eaf0;border-radius:1px;overflow:hidden;margin-top:1px}
+.ini-bar{height:100%;border-radius:1px;transition:.3s}
+.ini-bar.v{background:#1db14f}.ini-bar.o{background:#f7a800}.ini-bar.r{background:#c0392b}
+.ini-meta{font-size:7.5px;color:#9298a8;display:flex;justify-content:space-between}
+
+/* TABS */
+.tab-bar{height:28px;background:#1a2e5a;display:flex;align-items:flex-end;padding:0 8px;flex-shrink:0;gap:2px}
+.tab-btn{background:#243d6e;color:rgba(255,255,255,.6);border:none;font-family:inherit;font-size:10px;
+  padding:5px 16px;cursor:pointer;border-radius:3px 3px 0 0;transition:.1s;white-space:nowrap}
+.tab-btn.on{background:#f0f2f6;color:#2d4696;font-weight:700}
+.tab-btn:hover:not(.on){color:#fff;background:#2d4fa0}
+.tab-right{margin-left:auto;display:flex;align-items:center;gap:12px;padding-bottom:4px}
+.tab-right span{font-size:8.5px;color:rgba(255,255,255,.5)}
+</style>
+</head>
+<body>
+<div class="root">
+
+<!-- HEADER -->
+<div class="hdr">
+  <svg class="logo-svg" width="110" height="38" viewBox="0 0 300.88 129.94" xmlns="http://www.w3.org/2000/svg">
+    <defs><style>.c1{fill:#fc0}.c2{fill:#fff}.c3{fill:#2d60a9}</style></defs>
+    <path class="c1" d="M64.97,0C29.09,0,0,29.09,0,64.97s29.09,64.97,64.97,64.97,64.97-29.09,64.97-64.97S100.85,0,64.97,0Z"/>
+    <path class="c2" d="M165.82,25.17c.29,0,.56.05.84.15.27.1.62.29,1.05.58,1.17.69,2.23,1.03,3.17,1.03,1.2,0,2.25-.38,3.15-1.14.75-.63,1.4-1.52,1.96-2.67.2-.4.04-.89-.36-1.09l-2.39-1.22c-.37-.19-.83-.08-1.05.26-.24.36-.47.63-.69.8-.33.26-.71.39-1.14.39-.29,0-.58-.06-.88-.19-.3-.13-.61-.29-.92-.49-.63-.34-1.2-.61-1.72-.81-.51-.2-1.06-.3-1.63-.3-1.2,0-2.24.39-3.11,1.16-.71.63-1.34,1.48-1.89,2.55-.21.41-.05.91.35,1.11l2.45,1.24c.36.18.79.06,1.03-.26.53-.72,1.12-1.08,1.76-1.08"/>
+    <path class="c2" d="M172.79,46.41l-11.53-15.67c-.15-.21-.4-.33-.66-.33h-4.48c-.45,0-.82.37-.82.82v27.57c0,.45.37.82.82.82h4.63c.45,0,.82-.37.82-.82v-14.7c0-.79,1-1.12,1.47-.49l11.58,15.67c.15.21.4.33.66.33h4.43c.45,0,.82-.37.82-.82v-27.57c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v14.71c0,.79-1.01,1.12-1.47.48"/>
+    <path class="c2" d="M203.43,47.6c0,2.03-.47,3.61-1.41,4.74-.94,1.13-2.33,1.69-4.16,1.69s-3.22-.56-4.18-1.69c-.96-1.13-1.44-2.71-1.44-4.74v-16.38c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v16.25c0,2.8.46,5.14,1.37,7.01.91,1.87,2.25,3.28,4.01,4.22,1.76.94,3.92,1.41,6.5,1.41s4.74-.47,6.5-1.41c1.76-.94,3.09-2.35,4.01-4.22.91-1.87,1.37-4.21,1.37-7.01v-16.25c0-.45-.37-.82-.82-.82h-4.67c-.45,0-.82.37-.82.82v16.38Z"/>
+    <path class="c2" d="M232.66,46.41l-11.53-15.67c-.15-.21-.4-.33-.66-.33h-4.48c-.45,0-.82.37-.82.82v27.57c0,.45.37.82.82.82h4.63c.45,0,.82-.37.82-.82v-14.7c0-.79,1-1.12,1.47-.49l11.58,15.67c.15.21.4.33.66.33h4.43c.45,0,.82-.37.82-.82v-27.57c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v14.71c0,.79-1.01,1.12-1.47.48"/>
+    <path class="c2" d="M225.69,25.17c.29,0,.56.05.84.15.27.1.62.29,1.05.58,1.17.69,2.23,1.03,3.17,1.03,1.2,0,2.25-.38,3.15-1.14.75-.63,1.4-1.52,1.96-2.67.2-.4.04-.89-.36-1.09l-2.39-1.22c-.37-.19-.83-.08-1.05.26-.24.36-.47.63-.69.8-.33.26-.71.39-1.14.39-.29,0-.58-.06-.88-.19-.3-.13-.61-.29-.92-.49-.63-.34-1.2-.61-1.72-.81-.51-.2-1.06-.3-1.63-.3-1.2,0-2.24.39-3.11,1.16-.71.63-1.34,1.48-1.89,2.55-.21.41-.05.91.35,1.11l2.45,1.24c.36.18.79.06,1.03-.26.53-.72,1.12-1.08,1.76-1.08"/>
+    <path class="c2" d="M273.27,38.96c-.73-1.84-1.77-3.44-3.11-4.8-1.34-1.36-2.94-2.41-4.78-3.15-1.84-.74-3.85-1.12-6.03-1.12s-4.26.37-6.09,1.12c-1.83.74-3.42,1.79-4.76,3.15-1.34,1.36-2.38,2.96-3.11,4.8-.73,1.84-1.09,3.87-1.09,6.07s.36,4.22,1.09,6.07c.73,1.84,1.76,3.45,3.11,4.8,1.34,1.36,2.93,2.4,4.76,3.13,1.83.73,3.86,1.09,6.09,1.09s4.18-.36,6.03-1.09c1.84-.73,3.44-1.77,4.78-3.13,1.34-1.36,2.38-2.96,3.11-4.8.73-1.84,1.09-3.87,1.09-6.07s-.36-4.22-1.09-6.07M266.85,49.75c-.74,1.34-1.77,2.39-3.07,3.13-1.3.74-2.78,1.11-4.44,1.11s-3.18-.37-4.48-1.11c-1.3-.74-2.32-1.79-3.07-3.13-.74-1.34-1.12-2.92-1.12-4.72s.37-3.41,1.12-4.74c.74-1.33,1.76-2.37,3.07-3.11,1.3-.74,2.79-1.12,4.48-1.12s3.14.36,4.44,1.09c1.3.73,2.32,1.77,3.07,3.11.74,1.34,1.12,2.92,1.12,4.72s-.37,3.42-1.12,4.76"/>
+    <path class="c2" d="M295.37,59.61h4.61c.56,0,.95-.55.77-1.08l-9.31-27.57c-.11-.33-.42-.55-.77-.55h-5.74c-.35,0-.65.22-.77.54l-9.8,27.57c-.19.53.21,1.09.77,1.09h4.57c.35,0,.66-.22.77-.55l1.5-4.35c.11-.33.42-.55.77-.55h9.7c.35,0,.67.23.78.57l1.38,4.31c.11.34.42.57.78.57M284.52,47.29l2.47-7.18c.26-.74,1.31-.73,1.55.02l2.3,7.18c.17.53-.22,1.06-.78,1.06h-4.77c-.56,0-.95-.55-.77-1.08"/>
+    <rect class="c2" x="155.31" y="87.47" width="145.49" height="1.65"/>
+    <path class="c3" d="M72.93,48.87c1.33-13.26,12.22-23.7,25.68-24.32.69-.03,1.27.52,1.24,1.21-.59,13-10.34,23.61-22.96,25.53-.21.03-.43,0-.63-.08-.85-.35-1.73-.74-2.64-1.15-.46-.21-.74-.69-.69-1.19Z"/>
+    <path class="c3" d="M63.9,12.51c.47-.52,1.29-.54,1.77-.02,8.67,9.44,9.43,23.55,2.25,33.81-.33.48-.97.64-1.5.39-2.05-.97-3.9-1.82-5.62-2.57-.24-.11-.45-.29-.58-.52-5.39-9.88-4.17-22.41,3.67-31.09Z"/>
+    <path class="c3" d="M31.7,24.1c10.02.56,18.58,6.57,22.78,15.12.54,1.09-.45,2.32-1.63,2-2.74-.74-5.34-1.08-8.22-1.08-2.53,0-4.92.37-7.14,1.09-.57.18-1.19,0-1.56-.46-3.32-4.23-5.41-9.46-5.73-15.17-.05-.84.65-1.54,1.5-1.5Z"/>
+    <path class="c3" d="M61.48,100.58c-6.23-4.75-13.52-10.31-23.42-17.74-.59-.44-1.43-.02-1.43.71v16.03c0,.49-.4.89-.89.89h-8.7c-.49,0-.89-.4-.89-.89v-27.94c0-.49.4-.89.89-.89h9.36c.19,0,.37.06.52.17,3.74,2.67,9.64,7.1,14.17,10.26.59.41,1.4-.01,1.4-.74l-.05-19c0-.65.67-1.09,1.26-.81,2.39,1.11,5.08,2.49,7.52,3.68.38.18.75.35,1.12.52.32.15.52.46.52.81l.05,34.24c0,.74-.84,1.16-1.43.71Z"/>
+    <path class="c3" d="M103.79,100.83c0,.43-.5.68-.84.42-5.95-4.58-14.15-10.8-24.6-18.65-.35-.26-.84-.01-.84.42v17.12c0,.29-.24.53-.53.53h-9.43c-.29,0-.53-.24-.53-.53v-32.44c0-.38.39-.63.73-.48,3.65,1.55,6.53,2.7,9.61,3.43.07.02.13.05.19.09,2.75,2.08,6.39,4.52,10.12,7.33l4.85,3.63c.35.26.84.01.84-.42v-10.42c0-.23.15-.42.36-.5,3.09-1.06,5.8-2.77,8.03-5.1.38-.4.75-.82,1.1-1.25.31-.39.94-.17.94.33v36.48Z"/>
+    <path class="c3" d="M85.92,67.19c-6.23,0-11.84-1.46-22.59-6.45-7.32-3.58-13.09-6.86-18.7-6.86s-7.36,3.51-7.81,11.93c-.04.72-.64,1.29-1.36,1.29l-8.04.02c-.76,0-1.37-.61-1.37-1.37-.09-14.68,8.14-22.16,18.57-22.16,6.54,0,11.53,2.03,21.97,7.01,7.95,3.74,13.71,6.54,19.48,6.54,5.32,0,7.06-4.06,7.36-11.77.03-.73.63-1.31,1.36-1.31h7.72c.75,0,1.35.6,1.37,1.35.26,16.39-8.55,21.77-17.96,21.77Z"/>
+  </svg>
+  <div class="hdr-mid">
+    <h1>Dashboard Estratégico CMI · Municipalidad de Ñuñoa</h1>
+    <div class="sub">Tablero Nivel 1–2 · Alcaldía / Gabinete · Reunión estratégica · Execution Premium (Kaplan &amp; Norton)</div>
+  </div>
+  <span class="aviso-hdr">⚠ Datos simulados</span>
+  <div class="hdr-right">
+    <div><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2</div>
+    <div>CMI Corporativo · 32 ind. · 4 perspectivas · Año 2025</div>
+  </div>
+</div>
+
+<!-- BODY -->
+<div class="body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-header">⚙ Filtros</div>
+
+    <div class="sb-section">
+      <div class="sb-lbl">Perspectiva BSC</div>
+      <label class="sb-opt active" id="f-persp-Todas"><input type="radio" name="persp" value="Todas" checked onchange="onFilter('persp',this.value)"> Todas (32 ind.)</label>
+      <label class="sb-opt" id="f-persp-Comunitaria"><input type="radio" name="persp" value="Comunitaria" onchange="onFilter('persp',this.value)"> Comunitaria (8)</label>
+      <label class="sb-opt" id="f-persp-Financiera"><input type="radio" name="persp" value="Financiera" onchange="onFilter('persp',this.value)"> Financiera (5)</label>
+      <label class="sb-opt" id="f-persp-Procesos Int."><input type="radio" name="persp" value="Procesos Int." onchange="onFilter('persp',this.value)"> Procesos Int. (12)</label>
+      <label class="sb-opt" id="f-persp-Aprend. y Crec."><input type="radio" name="persp" value="Aprend. y Crec." onchange="onFilter('persp',this.value)"> Aprend. y Crec. (7)</label>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-lbl">Período</div>
+      <label class="sb-opt active" id="f-period-2025"><input type="radio" name="period" value="2025" checked onchange="onFilter('period',this.value)"> Anual 2025</label>
+      <label class="sb-opt" id="f-period-H1"><input type="radio" name="period" value="H1" onchange="onFilter('period',this.value)"> Semestral H1</label>
+      <label class="sb-opt" id="f-period-Q1"><input type="radio" name="period" value="Q1" onchange="onFilter('period',this.value)"> Trimestral Q1</label>
+      <label class="sb-opt" id="f-period-Q2"><input type="radio" name="period" value="Q2" onchange="onFilter('period',this.value)"> Trimestral Q2</label>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-lbl">Vista</div>
+      <label class="sb-opt active" id="f-view-Todos"><input type="radio" name="view" value="Todos" checked onchange="onFilter('view',this.value)"> Todos los ind.</label>
+      <label class="sb-opt" id="f-view-Alertas"><input type="radio" name="view" value="Alertas" onchange="onFilter('view',this.value)"> Solo alertas</label>
+    </div>
+
+    <div class="pilares">
+      <div class="sb-lbl" style="padding:0 0 4px">Pilares estratégicos</div>
+      <div class="pilar-chip p1 on">Orient. al vecino</div>
+      <div class="pilar-chip p2 on" style="margin-top:3px">Transparencia e Integridad</div>
+      <div class="pilar-chip p3 on" style="margin-top:3px">Eficiencia Operacional</div>
+    </div>
+
+    <div class="sb-filter-note">CMI Corporativo · Nivel 1–2<br>Estrategia de diferenciación<br>Responsable: Alcaldía / Gabinete<br><br>Visión al 2030: Comuna líder<br>en calidad de vida RM</div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- KPI STRIP -->
+    <div class="kpi-strip">
+      <div class="kpi-box">
+        <div class="kb-lbl">Índice Desarrollo Humano</div>
+        <div class="kb-val v" id="kb-idh">0,89</div>
+        <div class="kb-sub"><span class="kb-badge v">En meta</span> <span>meta ≥ 0,88</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Satisfacción confianza</div>
+        <div class="kb-val o" id="kb-conf">71%</div>
+        <div class="kb-sub"><span class="kb-badge o">Alerta</span> <span>meta ≥ 75%</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Ratio IPP / Ingresos</div>
+        <div class="kb-val r" id="kb-ipp">0,53</div>
+        <div class="kb-sub"><span class="kb-badge r">Bajo meta</span> <span>meta ≥ 0,55</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">% Ppto. ejecutado</div>
+        <div class="kb-val r" id="kb-ppto">74%</div>
+        <div class="kb-sub"><span class="kb-badge r">Bajo meta</span> <span>meta ≥ 90%</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Áreas verdes p/c</div>
+        <div class="kb-val v" id="kb-av">9,3 m²</div>
+        <div class="kb-sub"><span class="kb-badge v">En meta</span> <span>meta ≥ 9 m²</span></div>
+      </div>
+      <div class="kpi-box" style="border-right:2px solid #2d4696">
+        <div class="kb-lbl">Estado CMI corporativo</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
+          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">11</span><span style="font-size:9px;color:#6c7280">meta</span>
+          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">16</span><span style="font-size:9px;color:#6c7280">alerta</span>
+          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">5</span><span style="font-size:9px;color:#6c7280">bajo</span>
+        </div>
+        <div class="kb-sub" id="kb-total">32 indicadores · CMI corporativo</div>
+      </div>
+    </div>
+
+    <!-- PAGES -->
+    <div class="pages">
+
+      <!-- PAGE 1: Mapa Estratégico / Resumen -->
+      <div id="pg1" class="page on">
+        <div class="row" style="flex:0 0 255px">
+          <!-- Mapa estratégico visual -->
+          <div class="panel" style="flex:0 0 460px">
+            <div class="panel-hdr"><span class="accent"></span>Mapa estratégico — Municipalidad de Ñuñoa 2025</div>
+            <div class="panel-body" style="padding:0;overflow:hidden">
+              <div class="mapa" id="mapa-div">
+                <div class="mapa-persp">
+                  <div class="mapa-lbl c">Comunitaria</div>
+                  <div class="mapa-objs">
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Bienestar e IDH</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Confianza vecinal</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Acceso efectivo</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Calidad servicios</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Equidad territorial</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Oportunidad trámites</div>
+                    <div class="mapa-obj r"><span class="dot-s r"></span>Participación ciudadana</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Seguridad percibida</div>
+                  </div>
+                </div>
+                <div class="mapa-persp">
+                  <div class="mapa-lbl f">Financiera</div>
+                  <div class="mapa-objs">
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Costo per cápita</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Variación beneficiados</div>
+                    <div class="mapa-obj r"><span class="dot-s r"></span>Sostenib. IPP</div>
+                    <div class="mapa-obj r"><span class="dot-s r"></span>Ratio IPP/Ingresos</div>
+                    <div class="mapa-obj r"><span class="dot-s r"></span>% Ppto. ejecutado</div>
+                  </div>
+                </div>
+                <div class="mapa-persp">
+                  <div class="mapa-lbl p">Procesos Int.</div>
+                  <div class="mapa-objs">
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Estándar calidad</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Gestión trámites</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Recaudación IPP</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Control corporaciones</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Infraestructura AV</div>
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Cobertura focalizada</div>
+                  </div>
+                </div>
+                <div class="mapa-persp">
+                  <div class="mapa-lbl a">Aprend. y Crec.</div>
+                  <div class="mapa-objs">
+                    <div class="mapa-obj o"><span class="dot-s o"></span>Capital humano</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Ambiente laboral</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Sistemas TI</div>
+                    <div class="mapa-obj v"><span class="dot-s v"></span>Cultura integridad</div>
+                    <div class="mapa-obj r"><span class="dot-s r"></span>Quejas válidas</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Radar BSC -->
+          <div class="panel" style="flex:0 0 240px">
+            <div class="panel-hdr"><span class="accent v"></span>Radar BSC — % ind. en meta</div>
+            <div class="panel-body"><canvas id="radar"></canvas></div>
+          </div>
+          <!-- Tendencia semestral -->
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Evolución indicadores clave — 2024–2025</div>
+            <div class="panel-body"><canvas id="trend"></canvas></div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <!-- Estado por perspectiva -->
+          <div class="panel" style="flex:0 0 300px">
+            <div class="panel-hdr"><span class="accent"></span>Estado por perspectiva BSC</div>
+            <div class="panel-body"><canvas id="bsc_bar"></canvas></div>
+          </div>
+          <!-- Donut -->
+          <div class="panel" style="flex:0 0 160px">
+            <div class="panel-hdr"><span class="accent v"></span>Distribución</div>
+            <div class="panel-body"><canvas id="donut"></canvas></div>
+          </div>
+          <!-- Financiero -->
+          <div class="panel" style="flex:0 0 240px">
+            <div class="panel-hdr"><span class="accent r"></span>Ejecución presupuestaria comunal (%)</div>
+            <div class="panel-body"><canvas id="ppto"></canvas></div>
+          </div>
+          <!-- IPP sostenibilidad -->
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent r"></span>Sostenibilidad financiera — IPP y dependencia FCM</div>
+            <div class="panel-body"><canvas id="ipp_trend"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE 2: CMI Corporativo — Indicadores -->
+      <div id="pg2" class="page">
+        <div class="row" style="flex:0 0 220px">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent"></span>Indicadores por perspectiva — semáforo CMI corporativo</div>
+            <div class="panel-body" style="padding:4px 6px;overflow-y:auto">
+              <table class="tbl" id="tbl-cmi">
+                <thead><tr><th>Perspect.</th><th>Objetivo estratégico</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Frec.</th><th>Estado</th></tr></thead>
+                <tbody id="tbl-cmi-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent v"></span>% cumplimiento de meta por perspectiva</div>
+            <div class="panel-body"><canvas id="cumpl_bar"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 280px">
+            <div class="panel-hdr"><span class="accent o"></span>Brecha indicadores: valor vs. meta (perspectiva financiera)</div>
+            <div class="panel-body"><canvas id="fin_bar"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 240px">
+            <div class="panel-hdr"><span class="accent"></span>Distribución por estado y perspectiva</div>
+            <div class="panel-body"><canvas id="heat_bar"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE 3: Iniciativas Estratégicas -->
+      <div id="pg3" class="page">
+        <div class="row" style="flex:0 0 38px;align-items:center">
+          <div style="background:#fff;border:1px solid #d4d8e4;padding:5px 12px;display:flex;gap:20px;align-items:center;flex:1">
+            <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#2d4696">10 Iniciativas Estratégicas 2025 · Plan de implementación</span>
+            <span style="font-size:9px;color:#9298a8">Pilares: <b style="color:#2d4696">■ Orient. vecino</b> &nbsp;<b style="color:#f7a800">■ Transparencia</b> &nbsp;<b style="color:#1db14f">■ Eficiencia</b></span>
+            <span style="margin-left:auto;font-size:9px;color:#9298a8">▓ Avance real &nbsp;░ Pendiente</span>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent"></span>Avance iniciativas — % ejecución acumulada a mayo 2025</div>
+            <div class="panel-body"><canvas id="ini_chart"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 380px">
+            <div class="panel-hdr"><span class="accent v"></span>Ficha detalle iniciativas</div>
+            <div class="panel-body" style="padding:0;overflow:hidden">
+              <div class="ini-grid" id="ini-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pages -->
+
+    <!-- TABS -->
+    <div class="tab-bar">
+      <button class="tab-btn on" onclick="switchPg('pg1',this)">🗺 Mapa estratégico</button>
+      <button class="tab-btn" onclick="switchPg('pg2',this)">📊 CMI Corporativo</button>
+      <button class="tab-btn" onclick="switchPg('pg3',this)">🎯 Iniciativas estratégicas</button>
+      <div class="tab-right">
+        <span>3 Pilares · 4 Perspectivas BSC · 32 indicadores · 10 iniciativas</span>
+        <span>Prof. Alicia Núñez · FEN — Universidad de Chile</span>
+        <span>Taller 6 · Control de Gestión · Grupo 2</span>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /body -->
+</div><!-- /root -->
+
+<script>
+Chart.defaults.font.family="'Segoe UI',Tahoma,sans-serif";
+Chart.defaults.font.size=9.5;
+Chart.defaults.plugins.legend.labels.boxWidth=9;
+Chart.defaults.plugins.legend.labels.padding=7;
+
+// ─── DATA ──────────────────────────────────────────────────
+const PERSP=['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'];
+const tag=e=>`<span class="tag ${e}">${e==='v'?'En meta':e==='o'?'Alerta':'Bajo meta'}</span>`;
+
+const CMI_IND=[
+  // Comunitaria
+  {p:'Comunitaria',    obj:'Incrementar bienestar',             i:'Índice Desarrollo Humano (IDH)',        v:'0,89',  m:'≥ 0,88',   fr:'Anual',    e:'v'},
+  {p:'Comunitaria',    obj:'Incrementar bienestar',             i:'Índice percepción seguridad',           v:'0,38',  m:'≥ 0,40',   fr:'Anual',    e:'o'},
+  {p:'Comunitaria',    obj:'Acceso efectivo al servicio',       i:'% población accede a servicios',        v:'87%',   m:'≥ 85%',    fr:'Semestral',e:'v'},
+  {p:'Comunitaria',    obj:'Fortalecer confianza',              i:'% satisfacción encuesta confianza',     v:'71%',   m:'≥ 75%',    fr:'Anual',    e:'o'},
+  {p:'Comunitaria',    obj:'Servicios de calidad',              i:'Tasa reclamos formales',                v:'4,1%',  m:'≤ 5%',     fr:'Trimestral',e:'v'},
+  {p:'Comunitaria',    obj:'Servicios equitativos',             i:'Índice distribución inversión',         v:'78%',   m:'≥ 80%',    fr:'Semestral',e:'o'},
+  {p:'Comunitaria',    obj:'Oportunidad de servicios',          i:'Tasa abandono de trámites',             v:'12%',   m:'< 10%',    fr:'Anual',    e:'o'},
+  {p:'Comunitaria',    obj:'Participación ciudadana',           i:'% participación en instancias',         v:'24%',   m:'≥ 30%',    fr:'Anual',    e:'r'},
+  // Financiera
+  {p:'Financiera',     obj:'Reducir costo per cápita',         i:'Variación costo per cápita',            v:'−7%',   m:'red. ≥10%',fr:'Semestral',e:'o'},
+  {p:'Financiera',     obj:'Reducir costo per cápita',         i:'Variación personas beneficiadas',       v:'8%',    m:'≥ 7%',     fr:'Semestral',e:'v'},
+  {p:'Financiera',     obj:'Sostenibilidad IPP',               i:'Variación % ingresos propios (IPP)',    v:'3,2%',  m:'≥ 5%',     fr:'Anual',    e:'r'},
+  {p:'Financiera',     obj:'Sostenibilidad IPP',               i:'Ratio IPP / ingresos totales',          v:'0,53',  m:'≥ 0,55',   fr:'Anual',    e:'r'},
+  {p:'Financiera',     obj:'Cumplir ejecución presupuestaria', i:'% ppto. ejecutado en plazo',            v:'74%',   m:'≥ 90%',    fr:'Semestral',e:'r'},
+  // Procesos Internos
+  {p:'Procesos Int.',  obj:'Estándares de calidad',            i:'% satisfacción post-atención (nota)',   v:'5,3',   m:'≥ 5,5',    fr:'Trimestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Estándares de calidad',            i:'% servicios cumplen SLA',               v:'86%',   m:'≥ 90%',    fr:'Semestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Gestión de trámites',              i:'Tiempo prom. resolución (variación)',   v:'−12%',  m:'red. ≥20%',fr:'Semestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Gestión de trámites',              i:'% servicios disponibles multicanal',   v:'75%',   m:'≥ 80%',    fr:'Anual',    e:'o'},
+  {p:'Procesos Int.',  obj:'Gestión recaudación IPP',          i:'% morosos notificados',                 v:'92%',   m:'≥ 90%',    fr:'Trimestral',e:'v'},
+  {p:'Procesos Int.',  obj:'Gestión recaudación IPP',          i:'% pagos IPP por campañas',              v:'38%',   m:'≥ 40%',    fr:'Anual',    e:'o'},
+  {p:'Procesos Int.',  obj:'Control corporaciones',            i:'% cumplimiento metas operativas corp.', v:'82%',   m:'≥ 85%',    fr:'Semestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Control corporaciones',            i:'% ejecución ppto. corporaciones',       v:'88%',   m:'≥ 90%',    fr:'Trimestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Infraestructura y AV',             i:'M² áreas verdes per cápita',            v:'9,3 m²',m:'≥ 9 m²',   fr:'Anual',    e:'v'},
+  {p:'Procesos Int.',  obj:'Infraestructura y AV',             i:'% infraestructura en buen estado',      v:'82%',   m:'≥ 80%',    fr:'Anual',    e:'v'},
+  {p:'Procesos Int.',  obj:'Cobertura focalizada',             i:'% servicios distribuidos por perfil',   v:'87%',   m:'≥ 90%',    fr:'Trimestral',e:'o'},
+  {p:'Procesos Int.',  obj:'Cobertura focalizada',             i:'% cobertura programas RSH',             v:'76%',   m:'≥ 80%',    fr:'Semestral',e:'o'},
+  // Aprendizaje y Crecimiento
+  {p:'Aprend. y Crec.',obj:'Fortalecer capital humano',        i:'Ratio funcionarios capacitados',        v:'0,79',  m:'≥ 0,83',   fr:'Semestral',e:'o'},
+  {p:'Aprend. y Crec.',obj:'Ambiente laboral sano',            i:'% participación actividades integrac.', v:'78%',   m:'> 75%',    fr:'Actividad',e:'v'},
+  {p:'Aprend. y Crec.',obj:'Ambiente laboral sano',            i:'Satisfacción laboral (nota)',            v:'5,4',   m:'≥ 5,5',    fr:'Semestral',e:'o'},
+  {p:'Aprend. y Crec.',obj:'Sistemas de información',          i:'% uptime sistemas',                     v:'94%',   m:'≥ 80%',    fr:'Trimestral',e:'v'},
+  {p:'Aprend. y Crec.',obj:'Sistemas de información',          i:'% información obtenible en sistemas',   v:'0,83',  m:'≥ 0,80',   fr:'Trimestral',e:'v'},
+  {p:'Aprend. y Crec.',obj:'Cultura integridad',               i:'Puntaje código de conducta (nota)',     v:'6,1',   m:'≥ 6,0',    fr:'Semestral',e:'v'},
+  {p:'Aprend. y Crec.',obj:'Cultura integridad',               i:'N° quejas válidas recibidas',           v:'6',     m:'≤ 5',      fr:'Semanal',  e:'r'}
+];
+
+const INICIATIVAS=[
+  {n:'Prog. vinculación y experiencia vecinal',  p:'p1',avance:42,meta:70,e:'o'},
+  {n:'Plan eficiencia financiera (LEAN acc.)',   p:'p3',avance:35,meta:60,e:'o'},
+  {n:'Sist. Integrado Medición Exp. Vecinal',    p:'p1',avance:58,meta:80,e:'o'},
+  {n:'Plan cobertura digital y multicanalidad',  p:'p3',avance:61,meta:75,e:'v'},
+  {n:'Plan gestión cobranza municipal IPP',      p:'p3',avance:70,meta:80,e:'o'},
+  {n:'Convenios desempeño corporaciones',        p:'p2',avance:80,meta:90,e:'o'},
+  {n:'Mapa necesidades por unidad territorial',  p:'p1',avance:55,meta:65,e:'v'},
+  {n:'Plan identidad comunal por barrio',        p:'p1',avance:30,meta:50,e:'v'},
+  {n:'Prog. cuidado y creación áreas verdes',    p:'p3',avance:65,meta:75,e:'v'},
+  {n:'Plan de personal experto (perfiles)',       p:'p2',avance:50,meta:70,e:'o'}
+];
+
+// Tendencia KPIs clave (anual 2021→2025)
+const ANIOS=['2021','2022','2023','2024','2025'];
+const T_IDH=[0.84,0.85,0.86,0.88,0.89];
+const T_CONF=[65,68,70,72,71];
+const T_IPP=[0.50,0.51,0.52,0.53,0.53];
+// IPP variación
+const T_IPPV=[2.1,3.8,2.5,4.1,3.2];
+const T_FCM=[6.2,5.9,5.6,5.3,5.31];
+
+// ─── STATE ──────────────────────────────────────────────────
+const ST={persp:'Todas',period:'2025',view:'Todos'};
+const CH={};
+const INITED={pg1:false,pg2:false,pg3:false};
+
+function bscCount(){
+  const res={};
+  PERSP.forEach(p=>{
+    const rows=CMI_IND.filter(x=>x.p===p);
+    res[p]={v:rows.filter(x=>x.e==='v').length,o:rows.filter(x=>x.e==='o').length,r:rows.filter(x=>x.e==='r').length};
+  });
+  return res;
+}
+
+// ─── TABLE CMI ──────────────────────────────────────────────
+function renderTblCMI(){
+  let rows=CMI_IND;
+  if(ST.persp!=='Todas') rows=rows.filter(r=>r.p===ST.persp);
+  if(ST.view==='Alertas') rows=rows.filter(r=>r.e!=='v');
+  document.getElementById('tbl-cmi-body').innerHTML=rows.map(r=>
+    `<tr><td>${r.p}</td><td style="max-width:160px;white-space:normal;line-height:1.2">${r.obj}</td><td style="max-width:200px;white-space:normal;line-height:1.2">${r.i}</td><td><b>${r.v}</b></td><td>${r.m}</td><td>${r.fr}</td><td>${tag(r.e)}</td></tr>`
+  ).join('')||'<tr><td colspan="7" style="text-align:center;color:#9298a8;padding:8px">Sin resultados</td></tr>';
+}
+
+// ─── INICIATIVAS ────────────────────────────────────────────
+function renderIniGrid(){
+  document.getElementById('ini-grid').innerHTML=INICIATIVAS.map(d=>`
+    <div class="ini-item">
+      <div class="ini-name">${d.n}</div>
+      <div class="ini-pilar ${d.p}">${d.p==='p1'?'Orient. vecino':d.p==='p2'?'Transparencia':'Eficiencia oper.'}</div>
+      <div class="ini-bar-wrap"><div class="ini-bar ${d.e}" style="width:${d.avance}%"></div></div>
+      <div class="ini-meta"><span>${d.avance}% ejecutado</span><span>meta: ${d.meta}%</span></div>
+    </div>`).join('');
+}
+
+// ─── PAGE 1 ──────────────────────────────────────────────────
+function initPg1(){
+  const bc=bscCount();
+  // Radar BSC
+  const rData=PERSP.map(p=>{
+    const rows=CMI_IND.filter(x=>x.p===p);
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar=new Chart(document.getElementById('radar'),{type:'radar',
+    data:{labels:['Comunitaria','Financiera','Procesos\nInternos','Aprend. y\nCrecimiento'],
+      datasets:[
+        {label:'% en meta',data:rData,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.18)',pointBackgroundColor:'#2d4696',pointRadius:3,borderWidth:2},
+        {label:'Meta 100%',data:[100,100,100,100],borderColor:'rgba(29,177,79,.45)',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:8},callback:v=>v+'%'},pointLabels:{font:{size:8.5}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:8.5},boxWidth:8,padding:5}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.r+'%'}}}}
+  });
+
+  // Tendencia KPIs
+  CH.trend=new Chart(document.getElementById('trend'),{
+    data:{labels:ANIOS,datasets:[
+      {type:'line',label:'IDH (eje izq.)',data:T_IDH,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.07)',fill:true,tension:.3,pointRadius:3,yAxisID:'y',borderWidth:2},
+      {type:'line',label:'Satisfac. confianza %',data:T_CONF,borderColor:'#f7a800',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2},
+      {type:'line',label:'Ratio IPP',data:T_IPP.map(v=>Math.round(v*100)/100),borderColor:'#c0392b',borderDash:[4,3],tension:.3,pointRadius:3,yAxisID:'y',borderWidth:1.5}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:0.45,max:0.95,title:{display:true,text:'IDH / Ratio IPP',font:{size:8}}},
+              y1:{position:'right',min:50,max:85,grid:{drawOnChartArea:false},title:{display:true,text:'% confianza',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  // BSC stacked bar
+  CH.bsc=new Chart(document.getElementById('bsc_bar'),{type:'bar',
+    data:{labels:PERSP,
+      datasets:[
+        {label:'En meta',data:PERSP.map(p=>bc[p].v),backgroundColor:'#1db14f'},
+        {label:'Alerta',data:PERSP.map(p=>bc[p].o),backgroundColor:'#f7a800'},
+        {label:'Bajo meta',data:PERSP.map(p=>bc[p].r),backgroundColor:'#c0392b'}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° ind.',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  // Donut
+  const tot=CMI_IND.length;
+  const cv=CMI_IND.filter(r=>r.e==='v').length;
+  const co=CMI_IND.filter(r=>r.e==='o').length;
+  const cr=CMI_IND.filter(r=>r.e==='r').length;
+  CH.donut=new Chart(document.getElementById('donut'),{type:'doughnut',
+    data:{labels:['En meta','Alerta','Bajo meta'],datasets:[{data:[cv,co,cr],
+      backgroundColor:['#1db14f','#f7a800','#c0392b'],borderWidth:2,borderColor:'#fff'}]},
+    options:{maintainAspectRatio:false,cutout:'58%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:9}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed}}}}
+  });
+
+  // Presupuesto anual
+  const meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  CH.ppto=new Chart(document.getElementById('ppto'),{
+    data:{labels:meses,datasets:[
+      {type:'line',label:'Prog.',data:[8.3,16.7,25,41.7,58.3,66.7,75,83.3,90,95,98.3,100],borderColor:'#9298a8',borderDash:[4,3],tension:.2,pointRadius:0},
+      {type:'line',label:'Ejec.',data:[6.5,13,20,32,44,null,null,null,null,null,null,null],borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.09)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696'}
+    ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{max:100,title:{display:true,text:'%',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  // IPP vs FCM
+  CH.ipp=new Chart(document.getElementById('ipp_trend'),{
+    data:{labels:ANIOS,datasets:[
+      {type:'bar',label:'Var. IPP (%)',data:T_IPPV,backgroundColor:'rgba(45,70,150,.3)',borderColor:'#2d4696',borderWidth:1,yAxisID:'y'},
+      {type:'line',label:'Dependencia FCM (%)',data:T_FCM,borderColor:'#c0392b',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{title:{display:true,text:'Var. IPP %',font:{size:8}}},
+              y1:{position:'right',min:4,max:8,grid:{drawOnChartArea:false},title:{display:true,text:'% dep. FCM',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+}
+
+function updatePg1(){
+  // BSC bar reactivo al filtro de perspectiva (si se filtra, muestra solo esa)
+  const bc=bscCount();
+  CH.bsc.data.datasets[0].data=PERSP.map(p=>bc[p].v);
+  CH.bsc.data.datasets[1].data=PERSP.map(p=>bc[p].o);
+  CH.bsc.data.datasets[2].data=PERSP.map(p=>bc[p].r);
+  CH.bsc.update('none');
+  const rData=PERSP.map(p=>{
+    const rows=CMI_IND.filter(x=>x.p===p);
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar.data.datasets[0].data=rData;
+  CH.radar.update('none');
+}
+
+// ─── PAGE 2 ──────────────────────────────────────────────────
+function initPg2(){
+  renderTblCMI();
+
+  // % cumplimiento por perspectiva (barras horizontales)
+  const pcts=PERSP.map(p=>{
+    const rows=CMI_IND.filter(x=>x.p===p);
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.cumpl=new Chart(document.getElementById('cumpl_bar'),{type:'bar',
+    data:{labels:PERSP,datasets:[
+      {label:'% en meta',data:pcts,backgroundColor:pcts.map(v=>v>=70?'#1db14f':v>=40?'#f7a800':'#c0392b')},
+      {label:'% fuera de meta',data:pcts.map(v=>100-v),backgroundColor:'#e4e8f0'}
+    ]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{stacked:true,max:100,title:{display:true,text:'%',font:{size:8.5}},ticks:{callback:v=>v+'%'}},y:{stacked:true}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.x+'%'}}}}
+  });
+
+  // Perspectiva financiera — valor vs meta (radar de brecha)
+  const fin=CMI_IND.filter(x=>x.p==='Financiera');
+  CH.fin=new Chart(document.getElementById('fin_bar'),{type:'bar',
+    data:{labels:fin.map(r=>r.i.length>22?r.i.slice(0,22)+'…':r.i),
+      datasets:[{label:'Estado',data:fin.map(r=>r.e==='v'?3:r.e==='o'?2:1),
+        backgroundColor:fin.map(r=>r.e==='v'?'#1db14f':r.e==='o'?'#f7a800':'#c0392b')}]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{min:0,max:3,ticks:{callback:v=>['','Bajo','Alerta','Meta'][v]||''},grid:{color:'rgba(0,0,0,.05)'}},y:{ticks:{font:{size:8.5}}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const f=fin[c.dataIndex];return f.i+': '+f.v+' (meta '+f.m+')';}}}}}
+  });
+
+  // Heatmap de estados (stacked normalizado)
+  const pctV=PERSP.map(p=>{const r=CMI_IND.filter(x=>x.p===p);return Math.round(r.filter(x=>x.e==='v').length/r.length*100);});
+  const pctO=PERSP.map(p=>{const r=CMI_IND.filter(x=>x.p===p);return Math.round(r.filter(x=>x.e==='o').length/r.length*100);});
+  const pctR=PERSP.map(p=>{const r=CMI_IND.filter(x=>x.p===p);return Math.round(r.filter(x=>x.e==='r').length/r.length*100);});
+  CH.heat=new Chart(document.getElementById('heat_bar'),{type:'bar',
+    data:{labels:PERSP,datasets:[
+      {label:'En meta %',data:pctV,backgroundColor:'#1db14f'},
+      {label:'Alerta %',data:pctO,backgroundColor:'#f7a800'},
+      {label:'Bajo meta %',data:pctR,backgroundColor:'#c0392b'}
+    ]},
+    options:{maintainAspectRatio:false,
+      scales:{x:{stacked:true},y:{stacked:true,max:100,ticks:{callback:v=>v+'%'},title:{display:true,text:'%',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+}
+
+function updatePg2(){
+  renderTblCMI();
+}
+
+// ─── PAGE 3 ──────────────────────────────────────────────────
+function initPg3(){
+  renderIniGrid();
+  const colores={'p1':'#2d4696','p2':'#f7a800','p3':'#1db14f'};
+  CH.ini=new Chart(document.getElementById('ini_chart'),{type:'bar',
+    data:{labels:INICIATIVAS.map(d=>d.n.length>32?d.n.slice(0,32)+'…':d.n),
+      datasets:[
+        {label:'% ejecutado',data:INICIATIVAS.map(d=>d.avance),backgroundColor:INICIATIVAS.map(d=>colores[d.p]),borderWidth:0},
+        {label:'% pendiente',data:INICIATIVAS.map(d=>d.meta-d.avance),backgroundColor:'rgba(180,185,200,.35)',borderWidth:0}
+      ]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{stacked:true,max:100,ticks:{callback:v=>v+'%'},title:{display:true,text:'% ejecución acumulada',font:{size:8.5}}},y:{stacked:true,ticks:{font:{size:8.5}}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=INICIATIVAS[c.dataIndex];return `${d.avance}% ejec. (meta ${d.meta}%)`;}}}}
+    }
+  });
+}
+
+// ─── FILTER ──────────────────────────────────────────────────
+function onFilter(key,val){
+  ST[key]=val;
+  document.querySelectorAll(`[id^="f-${key}-"]`).forEach(el=>el.classList.remove('active'));
+  const t=document.getElementById(`f-${key}-${val}`);
+  if(t) t.classList.add('active');
+  if(INITED.pg1) updatePg1();
+  if(INITED.pg2) updatePg2();
+}
+
+// ─── TAB ─────────────────────────────────────────────────────
+function switchPg(id,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  btn.classList.add('on');
+  if(!INITED[id]){
+    INITED[id]=true;
+    setTimeout(()=>{
+      if(id==='pg1') initPg1();
+      else if(id==='pg2') initPg2();
+      else if(id==='pg3') initPg3();
+    },50);
+  }
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────
+window.addEventListener('load',()=>{INITED.pg1=true; initPg1();});
+</script>
+</body>
+</html>
