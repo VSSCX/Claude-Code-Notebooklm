@@ -367,8 +367,8 @@ function vistaCubicador(){
         <select data-cub-pallet>${c.pallets_disponibles.map(n => `<option value="${n}" ${n === c.pallet_visto ? 'selected' : ''}>Pallet ${n} de ${c.pallets_disponibles.length}</option>`).join('')}</select></label>` : ''}
       <span class="spacer"></span>
       ${c.visor_json ? `<div class="row tight">
-        <button class="btn sm" data-cub="pdf-todos" title="PDF de todos los camiones">${ICON.file} PDF todos</button>
-        <button class="btn sm" data-cub="pdf-actual" title="PDF del camión que estás viendo">PDF este</button>
+        <button class="btn sm" data-cub="pdf-todos" title="Un PDF por camión, cada uno con sus dos vistas">${ICON.file} PDF por camión</button>
+        <button class="btn sm" data-cub="pdf-actual" title="PDF del camión que estás viendo, con sus dos vistas">PDF este camión</button>
         ${c.visor ? `<a class="btn sm" href="${esc(c.visor)}" target="_blank" rel="noopener" title="Abrir el visor en otra pestaña">${ICON.external} Aparte</a>` : ''}</div>` : ''}
     </div>`;
 
@@ -381,7 +381,14 @@ function vistaCubicador(){
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
       <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${m3(v.vol_m3)} m³</span></span></button>`;
   }).join('');
-  const resumen = camiones.length ? `<div class="resumen">
+  const mp = enPallet ? c.mapa_pallet : null;
+  const resumen = mp ? `<div class="resumen">
+      <div class="res-linea">Pallet <b class="num">${mp.actual}</b> de <b class="num">${(c.pallets_disponibles || []).length}</b>
+        <span class="sep"></span>camión <b class="num">${mp.camion.numero}</b> · ${esc(mp.camion.tipo)}
+        <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>
+        <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div>
+      ${mapaCamion(mp)}</div>`
+    : camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${enPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
         ${(c.unidades || 0) !== unidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(unidades)} unidades` : ''}
         <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}
@@ -430,10 +437,29 @@ function vistaCubicador(){
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>
+        ${herramientasVisor()}
         ${UI.cubCalculando || UI.cubOcupado ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
       </div>
     </div>
   </div>`;
+}
+
+/* Mapa del camión visto desde arriba, con todos sus pallets numerados: el que se está viendo va destacado y cualquiera
+   se elige con un clic. La cabina queda a la izquierda (el X = 0 del cubicaje es el frente). Medidas en cm. */
+function mapaCamion(m){
+  const cam = m.camion, L = cam.L, W = cam.w, CAB = 230, M = 16;
+  const ruedas = [0.62, 0.76, 0.90].map(f => [f * L - 45, -16]).concat([0.62, 0.76, 0.90].map(f => [f * L - 45, W - 14]));
+  return `<figure class="mapa-camion">
+    <svg viewBox="${-CAB - M} ${-26} ${L + CAB + 2 * M} ${W + 52}" role="group" aria-label="Pallets del camión ${cam.numero}, vistos desde arriba. Cabina a la izquierda.">
+      ${ruedas.map(([x, y]) => `<rect class="mc-rueda" x="${x}" y="${y}" width="90" height="30" rx="6"/>`).join('')}
+      <rect class="mc-cab" x="${-CAB}" y="14" width="${CAB - 10}" height="${W - 28}" rx="26"/>
+      <rect class="mc-vidrio" x="${-CAB + 14}" y="${W / 2 - 62}" width="46" height="124" rx="8"/>
+      <rect class="mc-caja" x="0" y="0" width="${L}" height="${W}"/>
+      ${m.pallets.map(p => `<g class="mc-pal ${p.n === m.actual ? 'sel' : ''}" role="button" tabindex="0" data-cub-pal="${p.n}" aria-pressed="${p.n === m.actual}" aria-label="Pallet ${p.n}">
+        <rect x="${p.x + 3}" y="${p.y + 3}" width="${p.dl - 6}" height="${p.dw - 6}" rx="4"/>
+        <text x="${p.x + p.dl / 2}" y="${p.y + p.dw / 2}">${p.n}</text></g>`).join('')}
+    </svg>
+    <figcaption>Camión ${cam.numero} · ${esc(cam.tipo)} · visto desde arriba. Haz clic en un pallet para verlo.</figcaption></figure>`;
 }
 
 /* Productos que no están en la Base de Medidas: no se cubican (no se inventan medidas) y se dice cuáles son,
@@ -472,8 +498,18 @@ document.addEventListener('click', ev => {
   else if (d.cub === 'vaciar'){ vaciarCub(); }
   else if (d.cub === 'quitar-reparto'){ quitarRepartoCub(); }
   else if (d.cub === 'traer'){ const el = document.querySelector('[data-cubped]'); traerPedido(el ? el.value : ''); }
-  else if (d.cub === 'pdf-todos'){ Visor.pdf(false); }
+  else if (d.cub === 'pdf-todos'){
+    const n = (UI.cub && UI.cub.camiones || []).length;
+    if (n > 1) toast(`Se descargarán ${n} PDF, uno por camión. Si el navegador pregunta, permite las descargas múltiples.`);
+    Visor.pdf(false);
+  }
   else if (d.cub === 'pdf-actual'){ Visor.pdf(true); }
+});
+function elegirPalletMapa(g){ if (UI.cubIn && g){ UI.cubIn.pallet_n = +g.dataset.cubPal; pedirCalculo(); } }
+document.addEventListener('click', ev => elegirPalletMapa(ev.target.closest && ev.target.closest('[data-cub-pal]')));
+document.addEventListener('keydown', ev => {
+  const g = ev.target.closest && ev.target.closest('[data-cub-pal]');
+  if (g && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); elegirPalletMapa(g); }
 });
 document.addEventListener('input', ev => {
   const el = ev.target; if (!el.matches) return;

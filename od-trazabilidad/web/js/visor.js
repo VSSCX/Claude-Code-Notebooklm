@@ -4,6 +4,14 @@
      "libre"        → resultado del cubicador   (UI.cub)
      "pedido:<n°>"  → cubicaje de un pedido     (UI.cubicaje[n°]) */
 const Visor = {
+  /* Qué se lee sobre las cajas del 3D: la descripción del producto o su letra. La letra sirve cuando el PDF se imprime
+     en blanco y negro, donde los colores no distinguen un producto de otro. Queda recordado en este equipo. */
+  etiqueta: (() => { try { return localStorage.getItem('od_etiqueta') === 'letra' ? 'letra' : 'desc'; } catch(e){ return 'desc'; } })(),
+  etiquetar(modo){
+    this.etiqueta = modo === 'letra' ? 'letra' : 'desc';
+    try { localStorage.setItem('od_etiqueta', this.etiqueta); } catch(e){ /* sin almacenamiento: vale para esta sesión */ }
+    this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'});
+  },
   listos: new WeakSet(),       // iframes que ya avisaron "listo"
   enviado: new WeakMap(),      // último dato enviado a cada iframe
   frames(){ return [...document.querySelectorAll('iframe[data-visor]')]; },
@@ -21,6 +29,7 @@ const Visor = {
       if (!json || this.enviado.get(f) === json) continue;
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
+      this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'}, f);
       const libre = f.dataset.visor === 'libre';
       this.camion(libre ? UI.cubCam : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
       if (libre) this.mandar({tipo: 'od-visor-filtro', cod: UI.cubFiltro || null}, f);       // el visor limpia su filtro al recibir datos
@@ -45,3 +54,15 @@ function camionVacioJSON(vista){
   return JSON.stringify({titulo: 'Order Desk - Cubicaje B2B', esSda: false, pedido: '', camiones: [
     {idx: 1, tipo, L, W, H, volTot: 0, volCap: +(L * W * H / 1e6).toFixed(2), ocupVol: 0, pesoTot: 0, items: [], cajas: [], pallets: []}]});
 }
+
+/* Interruptor pequeño sobre el visor: "Cajas  [Descripción | Letra]" */
+function herramientasVisor(){
+  const e = Visor.etiqueta;
+  return `<div class="vis-tools" role="group" aria-label="Texto sobre las cajas"><span>Cajas</span><div class="seg sm">
+    <button type="button" data-vis-etiqueta="desc" aria-pressed="${e === 'desc'}">Descripción</button>
+    <button type="button" data-vis-etiqueta="letra" aria-pressed="${e === 'letra'}" title="La letra de cada producto se lee en una impresión en blanco y negro">Letra</button></div></div>`;
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-vis-etiqueta]');
+  if (b){ Visor.etiquetar(b.dataset.visEtiqueta); render(); }
+});

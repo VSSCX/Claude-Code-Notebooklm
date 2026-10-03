@@ -295,6 +295,7 @@ function visorPedido(p, cb, alto){
   return `<div class="visor-caja" style="min-height:${alto}px;flex:none;height:${alto}px">
     ${vivo ? `<iframe data-k="visor-ped" data-visor="pedido:${esc(p.pedido)}" src="${esc(cb.visor_vivo)}#solo3d" title="Visor 3D del pedido ${esc(p.pedido)}"></iframe>`
            : `<iframe data-k="visor-ped" src="${esc(cb.visor)}" title="Visor 3D del pedido ${esc(p.pedido)}"></iframe>`}
+    ${herramientasVisor()}
     <a class="btn sm abrir" href="${esc(cb.visor)}" target="_blank" rel="noopener" style="position:absolute;right:10px;bottom:10px">${ICON.external} Aparte</a></div>`;
 }
 function fichasCamion(p, cb){

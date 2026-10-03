@@ -46,7 +46,8 @@ def _medidas(placed: list[Placement]):
 
 
 def construir_json(placed: list[Placement], camiones, es_sda: bool = False,
-                   pallets: list[dict] | None = None, tarima: float = 14.5) -> str:
+                   pallets: list[dict] | None = None, tarima: float = 14.5,
+                   cliente: str = "", modo: str = "") -> str:
     """ConstruirJson: mismo formato que consume Plantilla_Visor.html."""
     med = _medidas(placed)
     letras, colores = _letras_colores(placed)
@@ -55,7 +56,8 @@ def construir_json(placed: list[Placement], camiones, es_sda: bool = False,
     for c, cam in enumerate(camiones, start=1):
         partes.append(_camion_json(c, cam, placed, med, letras, colores, pallets or [], tarima))
     return ('{"titulo":"Order Desk - Cubicaje B2B","esSda":' + ("true" if es_sda else "false") +
-            ',"pedido":"' + pedido + '","camiones":[' + ",".join(partes) + "]}")
+            ',"pedido":"' + pedido + '","cliente":"' + _js(cliente) + '","modo":"' + _js(modo) +
+            '","camiones":[' + ",".join(partes) + "]}")
 
 
 def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=14.5) -> str:

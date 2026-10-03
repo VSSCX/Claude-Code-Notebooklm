@@ -482,7 +482,8 @@ def _cubicar(numero: str, body: dict, s: Session):
         from ..cubicaje.mda import Camion as _Cam
         # Sin carga no se dibuja una plantilla en blanco: se muestra la rampla vacía
         cams = r.camiones or [_Cam(numero=1, tipo="Rampla 53", L=1540, w=245, h=230)]
-        datos_visor = construir_json(r.placed, cams, es_sda=bool(r.pallets), pallets=r.pallets)
+        datos_visor = construir_json(r.placed, cams, es_sda=bool(r.pallets), pallets=r.pallets,
+                                      cliente=cliente, modo=r.modo)
         html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob(f"pedido_{numero}_*.html"):        # deja solo el último
             viejo.unlink(missing_ok=True)
@@ -766,6 +767,14 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                               "sucursal": (geo or {}).get("sucursal", "")}]
             doc["pallet_visto"] = n_pal
             doc["pallets_disponibles"] = todos
+            # Mapa del camión: dónde queda este pallet entre los demás de su camión (el visor solo muestra uno)
+            cam_de = next((c for c in doc["camiones"] if geo and c["numero"] == geo.get("vehiculo")), None)
+            if cam_de:
+                doc["mapa_pallet"] = {
+                    "camion": {"numero": cam_de["numero"], "tipo": cam_de["tipo"], "L": cam_de["L"], "w": cam_de["w"]},
+                    "pallets": [{"n": x["numero"], "x": x["x"], "y": x["y"], "dl": x["dl"], "dw": x["dw"]}
+                                for x in doc["pallets_detalle"] if x.get("vehiculo") == cam_de["numero"]],
+                    "actual": n_pal}
             if n_pal:
                 doc["camiones"] = [{"numero": n_pal, "tipo": "Pallet", "L": pallet[1],
                                     "w": pallet[0], "h": pallet[2],
@@ -787,7 +796,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     [_Cam(numero=1, tipo=camiones[0].tipo, L=camiones[0].L, w=camiones[0].w,
                           h=camiones[0].h)])
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
-        datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor)
+        datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor, modo=modo)
         html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob("libre_*.html"):
             viejo.unlink(missing_ok=True)
