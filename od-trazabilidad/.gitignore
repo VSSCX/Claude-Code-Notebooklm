@@ -4,3 +4,7 @@ __pycache__/
 .env
 data/*.db
 .pytest_cache/
+data/visores/
+data/archivos/
+data/respaldos/
+web/vendor/xlsx.full.min.js

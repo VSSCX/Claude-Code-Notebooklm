@@ -9,12 +9,10 @@ Se conservan los nombres del VBA en los comentarios para poder auditar línea a 
 """
 from __future__ import annotations
 
-import copy
 import math
 from dataclasses import dataclass, field
 
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
 
 from .vb import ceil_neg_int, vb_int
 
@@ -106,6 +104,9 @@ class _Estado:
     pesoTop: np.ndarray = field(init=False)
     sopTop: np.ndarray = field(init=False)
     cand: list = field(default_factory=lambda: [(0, 0)])
+    # Franjas de gx donde un producto (según clave) no tiene ninguna posición válida.
+    # Se mantienen hasta que una colocación toca sus filas (ver invalidar_franjas).
+    vacias: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.hm = np.zeros((self.nx, self.ny), dtype=float)
@@ -113,7 +114,18 @@ class _Estado:
         self.sopTop = np.ones((self.nx, self.ny), dtype=bool)
 
     def copia(self) -> "_Estado":
-        return copy.deepcopy(self)
+        otra = _Estado.__new__(_Estado)
+        otra.nx, otra.ny = self.nx, self.ny
+        otra.hm, otra.pesoTop, otra.sopTop = self.hm.copy(), self.pesoTop.copy(), self.sopTop.copy()
+        otra.cand = list(self.cand)
+        otra.vacias = {k: set(v) for k, v in self.vacias.items()}
+        return otra
+
+    def invalidar_franjas(self, x0: int, x1: int) -> None:
+        """Una colocación cambió las filas [x0, x1): las franjas que las leen dejan de valer."""
+        for clave, franjas in self.vacias.items():
+            cx = clave[0]                     # una franja [a, b) lee las filas [a, b + cx - 1)
+            franjas.difference_update([f for f in franjas if f[0] < x1 and f[1] + cx - 1 > x0])
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +324,7 @@ def _colocar_columnas_sku(it: Item, cL: float, cW: float, ch: float, restric: Re
         est.hm[bx:bx + bcx, by:by + bcy] = z_top
         est.pesoTop[bx:bx + bcx, by:by + bcy] = it.peso
         est.sopTop[bx:bx + bcx, by:by + bcy] = it.apilable
+        est.invalidar_franjas(bx, bx + bcx)
         placed.append(Placement(
             cod=it.cod, desc=it.desc, ped=it.ped, container=0, fila=it.fila,
             x=bx * CELL, y=by * CELL, z=bz, oL=bOL, oW=bOW, oH=bOH, n=cap_z,
@@ -401,26 +414,72 @@ def _suma_ventana(mask: np.ndarray, cx: int, cy: int) -> np.ndarray:
     return (ii[cx:, cy:] - ii[:-cx, cy:] - ii[cx:, :-cy] + ii[:-cx, :-cy])
 
 
+def _max_ventana(a: np.ndarray, k: int, eje: int) -> np.ndarray:
+    """Máximo de cada ventana de k celdas seguidas a lo largo de `eje`.
+
+    Mismo resultado que sliding_window_view(...).max(), pero por doblado: cada paso
+    combina la ventana con su copia desplazada, así el costo es O(N log k) y no O(N k).
+    """
+    if k <= 1:
+        return a
+
+    def cortar(x, desde, hasta):
+        idx = [slice(None)] * x.ndim
+        idx[eje] = slice(desde, hasta)
+        return x[tuple(idx)]
+
+    m, p = a, 1                              # m[i] = max(a[i : i + p])
+    while p * 2 <= k:
+        m = np.maximum(cortar(m, 0, m.shape[eje] - p), cortar(m, p, None))
+        p *= 2
+    if p < k:
+        d = k - p
+        m = np.maximum(cortar(m, 0, m.shape[eje] - d), cortar(m, d, None))
+    return m
+
+
 def _mejor_colocacion_bf(it: Item, ch: float, restric: Restric, est: _Estado, x_min_cell: int):
-    """MejorColocacionBF: best-fit por columna sobre toda la grilla, sin rotar.
+    """MejorColocacionBF: best-fit por columna sobre la grilla, sin rotar.
 
     Orden de búsqueda: gx ascendente, luego gy ascendente; la primera válida gana.
-    Se evalúan todas las posiciones a la vez (mismo criterio, mucho más rápido):
-    para cada altura de apoyo se calculan soporte, apilabilidad y peso con imágenes
-    integrales, en vez de recorrer la huella posición por posición.
+    La grilla se recorre por franjas de gx y se corta en la primera franja con una
+    posición válida: en un camión que se va llenando de adelante hacia atrás, casi
+    siempre aparece cerca del frente y no hace falta mirar el resto. Dentro de cada
+    franja se evalúan todas las posiciones a la vez (soporte, apilabilidad y peso con
+    imágenes integrales). El resultado es idéntico a recorrer la grilla completa.
     """
     cx = max(ceil_neg_int(it.L / CELL), 1)
     cy = max(ceil_neg_int(it.w / CELL), 1)
-    oH = it.h
     if cx > est.nx or cy > est.ny:
         return None
-    # winmax(gx, gy) = max del heightmap en la huella (separable: primero Y, luego X)
-    rowmax = sliding_window_view(est.hm, cy, axis=1).max(axis=2)       # (nx, ny-cy+1)
-    winmax = sliding_window_view(rowmax, cx, axis=0).max(axis=2)       # (nx-cx+1, ny-cy+1)
     gx0 = max(x_min_cell, 0)
-    if gx0 > est.nx - cx:
+    gx_fin = est.nx - cx + 1                      # posiciones gx válidas: [gx0, gx_fin)
+    if gx0 >= gx_fin:
         return None
-    sub = winmax[gx0:]
+    # El resultado de una franja depende solo de lo que se pregunta y de las filas que lee
+    clave = (cx, cy, it.h, it.apilable, ch, restric.usaApilable, restric.usaPeso,
+             it.peso if restric.usaPeso else 0.0)
+    vacias = est.vacias.setdefault(clave, set())
+    paso = max(4 * cx, 48)
+    a = gx0
+    while a < gx_fin:
+        b = min(a + paso, gx_fin)
+        if (a, b) not in vacias:
+            r = _mejor_en_franja(it, ch, restric, est, a, b, cx, cy)
+            if r is not None:
+                return r
+            vacias.add((a, b))
+        a = b
+    return None
+
+
+def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
+                     a: int, b: int, cx: int, cy: int):
+    """Primera posición válida con gx en [a, b), o None. Solo lee las filas que necesita."""
+    oH = it.h
+    hm = est.hm[a:b + cx - 1]
+    rowmax = _max_ventana(hm, cy, 1)                         # (b-a+cx-1, ny-cy+1)
+    sub = _max_ventana(rowmax, cx, 0)                        # (b-a, ny-cy+1)
     ok = sub + oH <= ch + EPS
     if not it.apilable:
         ok &= sub <= EPS
@@ -433,27 +492,27 @@ def _mejor_colocacion_bf(it: Item, ch: float, restric: Restric, est: _Estado, x_
         cnt = cx * cy
         if alturas.size > 60:                     # demasiadas alturas: cae al chequeo directo
             for gx_rel, gy in np.argwhere(ok):
-                gx, gy = gx0 + int(gx_rel), int(gy)
-                z = float(winmax[gx, gy])
+                gx, gy = a + int(gx_rel), int(gy)
+                z = float(sub[gx_rel, gy])
                 if _soporte_ok(it, restric, est, gx, gy, cx, cy, z):
                     return (gx, gy, z, it.L, it.w, oH, cx, cy)
             return None
+        sop = est.sopTop[a:b + cx - 1]
+        peso = est.pesoTop[a:b + cx - 1]
         for z in alturas:
-            apoya = est.hm >= z - EPS             # z es el máximo de la ventana
-            onn = _suma_ventana(apoya, cx, cy)[gx0:]
-            bien = (onn / cnt) >= 0.7
+            apoya = hm >= z - EPS                 # z es el máximo de la ventana
+            bien = (_suma_ventana(apoya, cx, cy) / cnt) >= 0.7
             if restric.usaApilable:
-                bien &= _suma_ventana(apoya & ~est.sopTop, cx, cy)[gx0:] == 0
+                bien &= _suma_ventana(apoya & ~sop, cx, cy) == 0
             if restric.usaPeso:
-                liviano = apoya & (est.pesoTop < it.peso - 1e-6)
-                bien &= _suma_ventana(liviano, cx, cy)[gx0:] == 0
+                liviano = apoya & (peso < it.peso - 1e-6)
+                bien &= _suma_ventana(liviano, cx, cy) == 0
             valido |= ok & (sub == z) & bien
     if not valido.any():
         return None
     idx = int(np.argmax(valido))                  # primera en orden gx asc, gy asc
     gx_rel, gy = divmod(idx, valido.shape[1])
-    gx = gx0 + gx_rel
-    return (gx, gy, float(winmax[gx, gy]), it.L, it.w, oH, cx, cy)
+    return (a + gx_rel, gy, float(sub[gx_rel, gy]), it.L, it.w, oH, cx, cy)
 
 
 def _frontera_x(hm: np.ndarray) -> int:
