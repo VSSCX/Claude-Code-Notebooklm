@@ -295,7 +295,10 @@ def get_cubicaje(numero: str, s: Session = Depends(get_session)):
     c = s.get(Config, _clave_cubicaje(numero))
     if c is None:
         raise HTTPException(404, "Este pedido todavía no está cubicado.")
-    return _json.loads(c.valor)
+    doc = _json.loads(c.valor)
+    if doc.get("visor_vivo"):
+        doc["visor_json"] = _datos_visor(f"pedido_{numero}_datos")
+    return doc
 
 
 @router.post("/cubicaje/{numero}")
@@ -381,7 +384,8 @@ def _cubicar(numero: str, body: dict, s: Session):
     try:
         from pathlib import Path as _Path
         from ..config import BASE_DIR as _BD, settings as _st
-        from ..cubicaje.visor import asegurar_visor_vivo, html_visor, preparar_carpeta
+        from ..cubicaje.visor import (asegurar_visor_vivo, guardar_datos_visor, html_visor,
+                                      preparar_carpeta)
         carpeta = _BD / "data" / "visores"
         faltan = preparar_carpeta(carpeta, _st.visor_assets)
         if faltan:
@@ -401,11 +405,13 @@ def _cubicar(numero: str, body: dict, s: Session):
         doc["visor"] = f"/visor/{nombre_fs}"
         # para la página: visor de dirección fija + los datos de este cálculo
         doc["visor_vivo"] = asegurar_visor_vivo(carpeta, plantilla)
-        doc["visor_json"] = datos_visor
+        guardar_datos_visor(carpeta, f"pedido_{numero}_datos", datos_visor)
     except Exception as e:  # noqa: BLE001 - el cubicaje vale aunque el visor falle
         doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor 3D: {str(e)[:150]}"]
-    domain.guardar_config(s, _clave_cubicaje(numero), doc)
+    domain.guardar_config(s, _clave_cubicaje(numero), doc)      # sin visor_json: va en su archivo
     _commit(s)
+    if doc.get("visor_vivo"):
+        doc["visor_json"] = datos_visor
     return doc
 
 
@@ -444,7 +450,15 @@ def get_cubicaje_libre(s: Session = Depends(get_session)):
     doc = _json.loads(c.valor) if c else {"lineas": [], "cliente": "", "modo": "MDA",
                                           "vista": "rampla"}
     doc["visor_vivo"] = _visor_vivo()        # la página abre el visor antes del primer cálculo
+    if doc["visor_vivo"] and doc.get("lineas"):
+        doc["visor_json"] = _datos_visor("libre_datos")
     return doc
+
+
+def _datos_visor(nombre: str) -> str:
+    from ..config import BASE_DIR as _BD
+    from ..cubicaje.visor import leer_datos_visor
+    return leer_datos_visor(_BD / "data" / "visores", nombre)
 
 
 def _visor_vivo() -> str:
@@ -638,7 +652,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         from ..config import BASE_DIR as _BD, settings as _st
         from ..cubicaje.mda import Camion as _Cam
         from ..cubicaje.sda import TARIMA
-        from ..cubicaje.visor import asegurar_visor_vivo, html_visor, preparar_carpeta
+        from ..cubicaje.visor import (asegurar_visor_vivo, guardar_datos_visor, html_visor,
+                                      preparar_carpeta)
         carpeta = _BD / "data" / "visores"
         preparar_carpeta(carpeta, _st.visor_assets)
         pallets_visor = doc["pallets_detalle"]
@@ -691,13 +706,15 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         (carpeta / nombre_fs).write_text(html, encoding="utf-8")
         doc["visor"] = f"/visor/{nombre_fs}"
         doc["visor_vivo"] = asegurar_visor_vivo(carpeta, plantilla)
-        doc["visor_json"] = datos_visor
+        guardar_datos_visor(carpeta, "libre_datos", datos_visor)
     except Exception as e:  # noqa: BLE001
         doc["visor"] = ""
         doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor: {str(e)[:150]}"]
 
-    domain.guardar_config(s, "cubicaje_libre", doc)
+    domain.guardar_config(s, "cubicaje_libre", doc)             # sin visor_json: va en su archivo
     _commit(s)
+    if doc.get("visor_vivo"):
+        doc["visor_json"] = datos_visor
     return doc
 
 

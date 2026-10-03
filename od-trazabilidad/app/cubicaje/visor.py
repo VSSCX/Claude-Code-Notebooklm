@@ -109,21 +109,53 @@ def html_visor(plantilla: str, json_cubicaje: str) -> str:
 
 
 VISOR_VIVO = "visor_vivo.html"
+_vivo_escrito: dict = {}      # carpeta -> huella de la plantilla con la que se escribió el visor vivo
+
+
+def _escribir_atomico(ruta, texto: str) -> None:
+    """Escribe en un temporal y lo renombra: nadie lee un archivo a medio escribir."""
+    import os
+    tmp = ruta.with_name(ruta.name + ".tmp")
+    tmp.write_text(texto, encoding="utf-8")
+    os.replace(tmp, ruta)
 
 
 def asegurar_visor_vivo(carpeta, plantilla: str) -> str:
     """Visor sin datos con una dirección fija. La plataforma lo abre una sola vez y le manda
     cada cálculo nuevo por postMessage, en vez de recargar una página distinta en cada cambio.
-    Se reescribe solo si la plantilla cambió. Devuelve la URL pública."""
+    Solo se escribe si la plantilla cambió. Devuelve la URL pública, o "" si no se pudo dejar listo."""
+    import hashlib
     from pathlib import Path
     ruta = Path(carpeta) / VISOR_VIVO
-    html = html_visor(plantilla, '{"camiones":[]}')
+    huella = hashlib.md5(plantilla.encode("utf-8")).hexdigest()
+    if _vivo_escrito.get(str(ruta)) == huella and ruta.exists():
+        return f"/visor/{VISOR_VIVO}"
     try:
+        html = html_visor(plantilla, '{"camiones":[]}')
         if not ruta.exists() or ruta.read_text(encoding="utf-8") != html:
-            ruta.write_text(html, encoding="utf-8")
+            _escribir_atomico(ruta, html)
+        _vivo_escrito[str(ruta)] = huella
+    except (OSError, ValueError):
+        return ""
+    return f"/visor/{VISOR_VIVO}"
+
+
+def guardar_datos_visor(carpeta, nombre: str, json_visor: str) -> None:
+    """Los datos del visor de un cálculo viven en un archivo aparte, no en la base de datos:
+    son miles de cajas y la base solo necesita el resultado del cubicaje."""
+    from pathlib import Path
+    try:
+        _escribir_atomico(Path(carpeta) / f"{nombre}.json", json_visor)
     except OSError:
         pass
-    return f"/visor/{VISOR_VIVO}"
+
+
+def leer_datos_visor(carpeta, nombre: str) -> str:
+    from pathlib import Path
+    try:
+        return (Path(carpeta) / f"{nombre}.json").read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 # ---------------------------------------------------------------------------

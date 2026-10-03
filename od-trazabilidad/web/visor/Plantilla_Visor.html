@@ -705,7 +705,7 @@ window.addEventListener('message',function(ev){
   if(!m)return;
   if(m.tipo==='od-visor-datos')cargarDatos(typeof m.datos==='string'?JSON.parse(m.datos):m.datos);
   else if(m.tipo==='od-visor-camion'&&CAM[m.idx]){filtroTipo=null;filtroVal=null;buildScene(m.idx);renderTabs();renderStats();renderLegend();}
-  else if(m.tipo==='od-visor-filtro'){setFiltro(m.cod?'cod':null,m.cod||null);}
+  else if(m.tipo==='od-visor-filtro'){filtroTipo=m.cod?'cod':null;filtroVal=m.cod||null;buildScene(cur);renderLegend();}
   else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);
 });
 window.addEventListener('load',init);

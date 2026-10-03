@@ -4,6 +4,7 @@
 /* ============ Diálogos ============ */
 const dlg = $('#dlg');
 function abrirDlg(titulo, cuerpo, pie){
+  delete dlg.dataset.excesoOk;
   dlg.innerHTML = `<div class="dlg-h"><h3>${esc(titulo)}</h3><button class="btn quiet icon" data-close aria-label="Cerrar">${ICON.x}</button></div>
     <div class="dlg-b">${cuerpo}</div><div class="dlg-f"><span class="err" id="dlgErr" style="margin-right:auto" role="alert"></span><button class="btn" data-close>Cancelar</button>${pie}</div>`;
   if (!dlg.open) dlg.showModal();

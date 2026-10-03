@@ -27,7 +27,7 @@ function vistaBandeja(){
    calcula una sola vez más con lo último: gana siempre la edición más reciente. */
 UI.cubIn = null; UI.cub = null; UI.cubError = ''; UI.cubCalculando = false; UI.cubSucio = false;
 UI.cubSug = []; UI.cubQ = ''; UI.cubSel = 0; UI.cubInfo = {}; UI.cubFoco = null; UI.cubCam = 0;
-UI.cubIniciado = false; UI.cubFiltro = null; UI.cubFalta = false; UI.ajustes = null; UI.verAjustes = false; UI.vistaCamion = 'rampla';
+UI.cubIniciado = false; UI.cubFiltro = null; UI.cubFalta = false; UI.cubGen = 0; UI.cubOcupado = false; UI.ajustes = null; UI.verAjustes = false; UI.vistaCamion = 'rampla';
 
 const VISTAS = [['rampla', 'Rampla 53'], ['camion50', 'Camión 50'], ['pallet', 'Un pallet']];
 const PALETA_CUB = ['#E8534E','#F2C94C','#56A3D9','#27AE60','#9B59B6','#E67E22',
@@ -83,16 +83,18 @@ async function correrCalculos(){
       // "Por sucursal" sin reparto no se puede calcular: se avisa en vez de pedir algo que va a fallar
       UI.cubFalta = /PREDISTRIBUIDO/.test(UI.cubIn.modo) && !(UI.cubIn.predistribuido || []).length;
       if (UI.cubFalta){ renderSoon(); continue; }
+      const gen = UI.cubGen;
       try {
         const r = await api('POST', '/cubicaje-libre', clone(UI.cubIn));
-        if (!UI.cubSucio){ UI.cub = r; UI.cubError = ''; }     // si ya hay una edición más nueva, este resultado ya no vale
-      } catch(e){ if (!UI.cubSucio) UI.cubError = e.message; }
+        // si hay una edición más nueva, o se importó otra carga mientras tanto, este resultado ya no vale
+        if (!UI.cubSucio && gen === UI.cubGen){ UI.cub = r; UI.cubError = ''; }
+      } catch(e){ if (!UI.cubSucio && gen === UI.cubGen) UI.cubError = e.message; }
       renderSoon();
     }
   } finally { UI.cubCalculando = false; renderSoon(); }
 }
 /* Importar y "traer pedido" reemplazan toda la carga: el servidor devuelve el documento completo */
-function adoptarDoc(doc){ UI.cubIn = entradaDe(doc); UI.cub = doc; UI.cubError = ''; UI.cubCam = 0; }
+function adoptarDoc(doc){ UI.cubGen++; UI.cubSucio = false; UI.cubIn = entradaDe(doc); UI.cub = doc; UI.cubError = ''; UI.cubCam = 0; UI.cubFiltro = null; }
 
 /* ---- Agregar productos ---- */
 let _sugSeq = 0, _sugTimer = 0, _qtyTimer = 0;
@@ -116,9 +118,12 @@ function agregarSku(sku, qty){
   const ya = l.find(x => x.sku === sku);
   if (ya) ya.qty = (+ya.qty || 0) + (+qty || 1); else l.push({sku, qty: +qty || 1});
   UI.cubQ = ''; UI.cubSug = []; UI.cubSel = 0; UI.cubFoco = sku; ++_sugSeq;
+  vaciarBuscador();
   pedirCalculo();
   render();                       // la fila y el foco en sus unidades aparecen ya, sin esperar al cálculo
 }
+/* El campo enfocado manda sobre el redibujado: hay que vaciarlo a mano */
+function vaciarBuscador(){ const q = document.querySelector('[data-cub-q]'); if (q) q.value = ''; }
 /* Pegar una lista desde Excel: "SKU  unidades" por línea */
 function pegarLista(texto){
   let n = 0;
@@ -132,7 +137,7 @@ function pegarLista(texto){
     n++;
   }
   if (!n) return toast('No encontré líneas con SKU y unidades');
-  UI.cubQ = ''; UI.cubSug = [];
+  UI.cubQ = ''; UI.cubSug = []; vaciarBuscador();
   toast(`${n} producto(s) agregados`);
   pedirCalculo();
 }
@@ -141,7 +146,11 @@ function cambiarQty(i, v){
   l.qty = Math.max(0, Math.round(+v || 0));
   pedirCalculo();
 }
-function quitarLinea(i){ UI.cubIn.lineas.splice(i, 1); pedirCalculo(); }
+function quitarLinea(i){
+  const [q] = UI.cubIn.lineas.splice(i, 1);
+  if (q && q.sku === UI.cubFiltro) UI.cubFiltro = null;
+  pedirCalculo();
+}
 
 /* ---- Opciones: el modo del motor son dos preguntas, cómo va la carga y a quién va ---- */
 function modoDe(tipo, destino){
@@ -183,7 +192,7 @@ function vaciarCub(){
 async function importarCarga(input){
   const f = input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
-  UI.cubCalculando = true; renderSoon();
+  UI.cubOcupado = true; renderSoon();
   try {
     const r = await fetch('/api/cubicaje-libre/importar', {method: 'POST', body: fd,
       headers: Usuario.get() ? {'X-Usuario': Usuario.get()} : {}});
@@ -198,14 +207,14 @@ async function importarCarga(input){
     Avisos.agregar(avisos.length ? 'info' : 'ok',
       `${d.importadas} producto(s) importados` + (reparto.length ? ` · reparto en ${sucs} sucursales` : ''), avisos.join(' | '), []);
   } catch(e){ toast(e.message); }
-  UI.cubCalculando = false; render();
+  UI.cubOcupado = false; render();
 }
 async function traerPedido(numero){
   if (!numero) return;
-  UI.cubCalculando = true; renderSoon();
+  UI.cubOcupado = true; renderSoon();
   try { adoptarDoc(await api('POST', '/cubicaje-libre/desde-pedido', {pedido: String(numero).trim()})); toast(`Pedido ${numero} cargado`); }
   catch(e){ toast(e.message); }
-  UI.cubCalculando = false; render();
+  UI.cubOcupado = false; render();
 }
 
 /* ---- Tras cada render: foco de la carga producto por producto ---- */
@@ -375,9 +384,9 @@ function vistaCubicador(){
       ${resumen}
       ${faltaMedidas ? `<div class="panel empty"><h3>Falta la Base de Medidas</h3><p>El cubicaje necesita las medidas de los productos. Se cargan una vez y quedan guardadas.</p><button class="btn primary" data-go="config">Ir a Configuración</button></div>` : ''}
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
-      <div class="visor-caja ${UI.cubCalculando ? 'calculando' : ''}" aria-busy="${UI.cubCalculando}">
+      <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>
-        ${UI.cubCalculando ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
+        ${UI.cubCalculando || UI.cubOcupado ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
       </div>
     </div>
   </div>`;

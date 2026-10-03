@@ -21,7 +21,9 @@ const Visor = {
       if (!json || this.enviado.get(f) === json) continue;
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
-      this.camion(f.dataset.visor === 'libre' ? UI.cubCam : 0, f);
+      const libre = f.dataset.visor === 'libre';
+      this.camion(libre ? UI.cubCam : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
+      if (libre) this.mandar({tipo: 'od-visor-filtro', cod: UI.cubFiltro || null}, f);       // el visor limpia su filtro al recibir datos
     }
   },
   mandar(msg, f){ (f ? [f] : this.frames()).forEach(x => this.listos.has(x) && x.contentWindow && x.contentWindow.postMessage(msg, location.origin)); },

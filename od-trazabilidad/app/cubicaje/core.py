@@ -459,6 +459,8 @@ def _mejor_colocacion_bf(it: Item, ch: float, restric: Restric, est: _Estado, x_
     # El resultado de una franja depende solo de lo que se pregunta y de las filas que lee
     clave = (cx, cy, it.h, it.apilable, ch, restric.usaApilable, restric.usaPeso,
              it.peso if restric.usaPeso else 0.0)
+    if clave not in est.vacias and len(est.vacias) >= 48:
+        est.vacias.pop(next(iter(est.vacias)))          # tope: solo es una cache, se puede descartar
     vacias = est.vacias.setdefault(clave, set())
     paso = max(4 * cx, 48)
     a = gx0

@@ -30,3 +30,22 @@ def test_las_librerias_danadas_se_restauran_aunque_sean_mas_nuevas(tmp_path):
     os.utime(falsa, (futuro, futuro))
     preparar_carpeta(destino, origen)
     assert falsa.read_text(encoding="utf-8") == "// libreria real " * 50
+
+
+def test_visor_vivo_no_se_reescribe_ni_se_corrompe(tmp_path):
+    from app.cubicaje import visor
+    visor._vivo_escrito.clear()
+    asegurar_visor_vivo(tmp_path, "uno __CUBICAJE_JSON__")
+    assert not list(tmp_path.glob("*.tmp"))                        # escritura atomica: sin temporales
+    ruta = tmp_path / VISOR_VIVO
+    ruta.write_text("alguien lo cambio", encoding="utf-8")        # distinto al esperado, mismo huella en memoria
+    visor._vivo_escrito.clear()                                    # nuevo arranque: se detecta y se repara
+    asegurar_visor_vivo(tmp_path, "uno __CUBICAJE_JSON__")
+    assert ruta.read_text(encoding="utf-8") == 'uno {"camiones":[]}'
+
+
+def test_datos_del_visor_van_en_su_archivo(tmp_path):
+    from app.cubicaje.visor import guardar_datos_visor, leer_datos_visor
+    assert leer_datos_visor(tmp_path, "libre_datos") == ""
+    guardar_datos_visor(tmp_path, "libre_datos", '{"camiones":[1]}')
+    assert leer_datos_visor(tmp_path, "libre_datos") == '{"camiones":[1]}'

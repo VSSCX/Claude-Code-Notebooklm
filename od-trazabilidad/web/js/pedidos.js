@@ -301,7 +301,9 @@ async function cargarCubicaje(pedido){
   render();
 }
 async function cubicar(pedido, opts){
-  UI.cubicaje[pedido] = {cargando:true}; render();
+  const previo = UI.cubicaje[pedido];
+  // con un resultado a la vista se conserva (y su visor): solo se marca que se está recalculando
+  UI.cubicaje[pedido] = previo && previo.camiones ? {...previo, recalculando:true} : {cargando:true}; render();
   try {
     UI.cubicaje[pedido] = await api('POST', `/cubicaje/${encodeURIComponent(pedido)}`, opts || {});
     if (UI.cubicaje[pedido].visor) UI.verVisorCub = true;      // el visor nuevo queda a la vista
@@ -346,7 +348,7 @@ function panelVisorVivo(p){
   if (!cb){ setTimeout(() => cubicar(p.pedido, {}), 0); return '<div class="panel" style="margin-bottom:16px"><div class="panel-b stack"><span class="skel" style="width:35%"></span><span class="skel"></span></div></div>'; }
   if (cb.cargando) return '<p class="small muted" style="margin-bottom:12px">Recalculando el camión…</p>';
   if (cb.error || !cb.camiones) return `<p class="small" style="margin-bottom:12px"><span class="tag warn">Camión</span> ${esc(cb.error || 'sin cubicaje')}</p>`;
-  return `<div class="panel" style="margin-bottom:16px"><div class="panel-b">
+  return `<div class="panel ${cb.recalculando ? 'busy' : ''}" style="margin-bottom:16px" aria-busy="${!!cb.recalculando}"><div class="panel-b">
     <div class="row"><b>Camión en vivo</b> <span class="small muted">se rearma al cambiar la carga</span><span class="spacer"></span>
       <button class="btn quiet sm" data-act="ocultarVivo">${UI.visorVivo === false ? 'Mostrar' : 'Ocultar'}</button></div>
     ${cb.camiones.length ? fichasCamion(p, cb) : '<span class="tag">Sin unidades</span>'}
