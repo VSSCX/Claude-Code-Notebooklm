@@ -787,3 +787,158 @@ def test_pedido_con_productos_sin_medidas_tambien_alerta(datos):
     assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("9001", 20)]
     x = c.get("/api/cubicaje/4005100000/faltantes.xlsx")
     assert [f[0] for f in list(load_workbook(BytesIO(x.content)).worksheets[0].iter_rows(values_only=True))[1:]] == ["9001"]
+
+
+# ---------- cruce pedido ↔ orden de compra ----------
+class _Sql:
+    """Base de 'Pedidos Ingresados' simulada: registra la consulta y sus parámetros."""
+    def __init__(self, filas):
+        self.filas, self.llamadas = filas, []
+
+    def __call__(self, sql, params=()):
+        self.llamadas.append((" ".join(sql.split()), params))
+        return self.filas
+
+
+FILAS_SQL = [   # (fechaCreacion, pedidoVenta, ordenCompra, fechaVencimiento), como las devuelve SQL Server
+    ("2026-09-22", "4005175955", "", "2026-10-04"),                  # una posición sin OC: no sirve
+    ("2026-09-22", "0004005175955", " 4500123 ", "2026-10-04"),     # con ceros delante y espacios
+    ("2026-09-22", "4005175955", "4500123", "2026-10-04"),           # la misma OC en otra posición
+    ("2026-09-20", "4005170000", "4500-999", "2026-10-01"),
+]
+
+
+def test_la_oc_de_un_pedido_se_consulta_dirigida_y_normalizada(monkeypatch):
+    sql = _Sql(FILAS_SQL)
+    monkeypatch.setattr(bases, "_filas", sql)
+    assert bases.oc_de("004005175955") == "4500123"                  # ceros a la izquierda y espacios
+    consulta, params = sql.llamadas[0]
+    assert "pedidoVenta IN (?, ?)" in consulta and "WHERE" in consulta
+    assert "YEAR(" not in consulta and "RETAIL" not in consulta       # ya no se baja el año completo ni solo RETAIL
+    assert params == ("4005175955", "4005175955")
+    assert bases.oc_de("4005179999") == ""                           # pedido que aún no aparece
+    d = bases.datos_pedido("4005175955")
+    assert d == {"oc": "4500123", "fecha": "2026-09-22", "vence": "2026-10-04"}
+
+
+def test_sin_conexion_la_oc_queda_vacia_y_no_falla(monkeypatch):
+    def cae(*a, **k):
+        raise RuntimeError("Falta la conexión a SQL Server")
+    monkeypatch.setattr(bases, "_filas", cae)
+    assert bases.oc_de("4005175955") == ""
+    assert bases.datos_pedido("") == {"oc": "", "fecha": "", "vence": ""}
+
+
+def test_un_pedido_con_dos_oc_toma_la_que_mas_se_repite(monkeypatch):
+    monkeypatch.setattr(bases, "_filas", _Sql([
+        ("2026-09-22", "4005175955", "AAA1", ""), ("2026-09-22", "4005175955", "BBB2", ""),
+        ("2026-09-22", "4005175955", "bbb-2", "")]))              # BBB2 y bbb-2 son la misma OC
+    assert bases.oc_de("4005175955").upper().replace("-", "") == "BBB2"
+
+
+def test_buscar_por_oc_en_varios_pedidos_devuelve_todos_para_elegir(monkeypatch):
+    sql = _Sql([("2026-09-22", "4005175955", "4500123", "2026-10-04"),
+                ("2026-09-25", "4005176001", "4500123", "2026-10-08"),
+                ("2026-09-25", "4005176001", "4500123", "2026-10-08")])      # duplicado: una sola vez
+    monkeypatch.setattr(bases, "_filas", sql)
+    r = bases.buscar_pedido("4500-123")                               # con otro formato de la misma OC
+    assert [x["pedido"] for x in r] == ["4005175955", "4005176001"]
+    assert r[0]["fecha"] == "2026-09-22" and r[0]["vence"] == "2026-10-04"
+    assert len(sql.llamadas) == 1                                    # lo exacto alcanza: sin búsqueda por contenido
+
+
+def test_buscar_por_numero_de_pedido_y_por_texto_de_la_oc(monkeypatch):
+    sql = _Sql([("2026-09-22", "4005175955", "4500123", "")])
+    monkeypatch.setattr(bases, "_filas", sql)
+    assert [x["oc"] for x in bases.buscar_pedido("4005175955")] == ["4500123"]
+    sql.filas = []                                                    # sin exactos: se busca la OC que contenga el texto
+    assert bases.buscar_pedido("45001") == []
+    assert "ordenCompra LIKE ?" in sql.llamadas[-1][0] and sql.llamadas[-1][1] == ("%45001%",)
+    n = len(sql.llamadas)
+    assert bases.buscar_pedido("45") == [] and len(sql.llamadas) == n + 1      # muy corto: no se busca por contenido
+    assert bases.buscar_pedido("   ") == []
+
+
+def test_completar_oc_no_pisa_una_escrita_a_mano():
+    p = Pedido(pedido="1", oc="")
+    assert domain.completar_oc(p, " 4500123 ") and p.oc == "4500123"
+    p = Pedido(pedido="2", oc="ESCRITA-A-MANO")
+    assert not domain.completar_oc(p, "4500123") and p.oc == "ESCRITA-A-MANO"
+    p = Pedido(pedido="3", oc="")
+    assert not domain.completar_oc(p, "") and p.oc == ""
+
+
+def test_la_oc_tambien_sale_del_reporte_zsd001_03():
+    from app.analisis import oc_de_zsd
+    zsd = [{"Documento de Ventas": "4005171502", "Orden de compra": "527512", "Nombre Codigo de Material": "X"},
+           {"Documento de Ventas": 4005175956, "Orden de compra": "529853"},
+           {"Documento de Ventas": "4005175956", "Orden de compra": "529853"},
+           {"Documento de Ventas": "4005175956", "Orden de compra": ""}]
+    assert oc_de_zsd(zsd, "4005175956") == "529853"
+    assert oc_de_zsd(zsd, "004005171502") == "527512"
+    assert oc_de_zsd(zsd, "4009999999") == ""
+    assert oc_de_zsd([{"Doc. Ventas": "x"}], "4005175956") == ""
+
+
+def _correr_analisis(c, monkeypatch, oc_sql, zsd_filas, numero="4005100000", cliente="PARIS"):
+    from app.integrations import base_medidas, sap
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(
+        posiciones=[SimpleNamespace(sku="9000", qty_entrega=10, qty_pendiente=10)], aviso=""))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: zsd_filas)
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g: {"9000": {"plan": 100, "vendido": 0, "pdte_mes": 0, "tipo": "CONSENSO"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "oc_de", lambda p: oc_sql)
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {"9000": {"desc": "9000 PRODUCTO A", "max_camion": 100}})
+    r = c.post(f"/api/analisis/{numero}", json={"puesto": "PN01", "cliente": cliente, "fecha": "2026-10-01"})
+    assert r.status_code == 202, r.text
+    t = _esperar(c, r.json()["id"])
+    assert t["estado"] == "ok", t
+    return t
+
+
+def test_el_analisis_toma_la_oc_de_sql_y_si_no_esta_del_reporte(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        s.get(Pedido, 1).oc = ""
+        s.commit()
+    zsd = [{"Documento de Ventas": "4005100000", "Orden de compra": "ZSD-77", "Nombre Codigo de Material": "PRODUCTO A", "Qty. En Entrega": 0}]
+    t = _correr_analisis(c, monkeypatch, "SQL-55", zsd)
+    assert t["datos"]["oc"] == "SQL-55" and t["datos"]["oc_origen"] == "Pedidos Ingresados"
+    assert c.get("/api/estado").json()["pedidos"][0]["oc"] == "SQL-55"
+    with SessionLocal() as s:
+        s.get(Pedido, 1).oc = ""
+        s.commit()
+    t = _correr_analisis(c, monkeypatch, "", zsd)                    # SQL no la tiene: el reporte sí
+    assert t["datos"]["oc"] == "ZSD-77" and t["datos"]["oc_origen"] == "ZSD001_03"
+    assert c.get("/api/analisis/4005100000").json()["oc_sap"] == "ZSD-77"
+
+
+def test_una_oc_escrita_a_mano_no_se_pisa_y_el_conflicto_queda_en_el_analisis(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        s.get(Pedido, 1).oc = "MANUAL-1"
+        s.commit()
+    _correr_analisis(c, monkeypatch, "SQL-55", [])
+    assert c.get("/api/estado").json()["pedidos"][0]["oc"] == "MANUAL-1"       # no se reemplaza sola
+    a = c.get("/api/analisis/4005100000").json()
+    assert a["oc_sap"] == "SQL-55" and a["oc_origen"] == "Pedidos Ingresados"    # la web ofrece "Usar la OC de SAP"
+
+
+def test_el_endpoint_de_busqueda_responde_con_los_resultados_o_el_error(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    monkeypatch.setattr(bases, "_filas", _Sql([("2026-09-22", "4005175955", "4500123", "2026-10-04")]))
+    r = c.get("/api/pedidos-sap", params={"q": "4500123"}).json()
+    assert r["ok"] and r["resultados"][0] == {"fecha": "2026-09-22", "pedido": "4005175955", "oc": "4500123", "vence": "2026-10-04"}
+
+    def cae(*a, **k):
+        raise RuntimeError("Falta la conexión a SQL Server")
+    monkeypatch.setattr(bases, "_filas", cae)
+    r = c.get("/api/pedidos-sap", params={"q": "4500123"}).json()
+    assert r["ok"] is False and "conexión" in r["error"]

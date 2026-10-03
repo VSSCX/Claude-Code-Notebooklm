@@ -50,6 +50,8 @@ function toast(msg, accion){
   t.classList.toggle('con-acc', !!accion);
   t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), accion ? 7000 : 2600);
 }
+/* OC comparable: sin espacios ni signos, en mayúsculas y sin ceros a la izquierda (igual que el servidor) */
+const claveOc = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+/, '');
 /* Decimales con coma, como el resto de los números de la plataforma */
 const m3 = (x, d = 1) => (+x || 0).toFixed(d).replace('.', ',');
 
@@ -333,7 +335,36 @@ function addLog(e, txt){ e.log = [{at: nowISO(), txt}, ...(e.log || [])].slice(0
 const UI = { view:'pedidos', sel:null, sub:'entregas', q:'', soloAbiertos:true, cliente:'', open:new Set(),
   pDesde: new Date(Date.now() - 7*864e5).toISOString().slice(0,10), pHasta: '', pPorConf:true, imp:null };
 
-function go(view){ UI.view = view; render(); }
+/* Entrada suave del contenido al cambiar de pestaña o de vista: solo opacidad y un desplazamiento mínimo (160 ms, ease-out).
+   Es de entrada y no de salida, para no sumar espera. Se dispara al cambiar de pestaña, no en cada redibujado: los datos que
+   llegan en vivo no deben parpadear. Con "reducir movimiento" queda el fundido sin desplazamiento. */
+const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
+function entrar(el, dx = 0, dy = 0){
+  if (!el || !el.animate) return;
+  const reducido = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const previas = el.getAnimations();
+  const desde = previas.length ? +getComputedStyle(el).opacity : 0;       // si se interrumpe, parte de lo que ya se ve
+  previas.forEach(a => a.cancel());
+  el.animate([{opacity: desde, transform: reducido ? 'none' : `translate(${dx}px, ${dy}px)`}, {opacity: 1, transform: 'none'}],
+             {duration: 160, easing: EASE_OUT});
+}
+function go(view){
+  const cambia = UI.view !== view;
+  UI.view = view; render();
+  if (cambia) entrar($('#app'), 0, 4);
+}
+
+/* Indicador de la pestaña activa: una sola barra que se desliza (transform, sin tocar el layout) en vez de saltar */
+function moverIndicador(){
+  const sel = document.querySelector('.tabs [aria-selected="true"]'), ind = document.querySelector('.tabs .tab-ind');
+  if (!sel || !ind) return;
+  const mover = `translateX(${sel.offsetLeft}px) scaleX(${sel.offsetWidth})`;
+  if (!ind.style.transform){                                        // primera vez: aparece en su lugar, sin recorrerlo
+    ind.style.transition = 'none'; ind.style.transform = mover; void ind.offsetWidth; ind.style.transition = '';
+  } else if (ind.style.transform !== mover) ind.style.transform = mover;
+  UI.tabInd = mover;
+}
+window.addEventListener('resize', moverIndicador);
 const NAV = [['pedidos','Pedidos'], ['bandeja','Por hacer'], ['cubicador','Cubicador'],
              ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
 function renderNav(){

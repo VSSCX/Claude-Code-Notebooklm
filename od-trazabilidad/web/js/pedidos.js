@@ -64,6 +64,16 @@ function vistaPedidos(){
 
 const TABS_PEDIDO = [['analisis', 'Análisis'], ['cubicaje', 'Cubicador'], ['entregas', 'Entregas'], ['grupos', 'Grupos'], ['pendientes', 'Pendientes']];
 
+/* Cambiar de pestaña: el contenido entra desde el lado hacia el que se avanza y la barra se desliza hasta la nueva */
+function cambiarSub(nueva){
+  const orden = TABS_PEDIDO.map(t => t[0]), dir = Math.sign(orden.indexOf(nueva) - orden.indexOf(UI.sub));
+  if (nueva === UI.sub) return;
+  UI.sub = nueva;
+  document.documentElement.classList.add('anim-tabs');          // solo en clics de pestaña: elegir otro pedido no anima la barra
+  clearTimeout(cambiarSub._t); cambiarSub._t = setTimeout(() => document.documentElement.classList.remove('anim-tabs'), 300);
+  render();
+  entrar(document.querySelector('.tab-body'), 10 * dir, dir ? 0 : 4);
+}
 function flujoHTML(f){
   return `<div class="ruta flujo" role="group" aria-label="Flujo del pedido">${f.pasos.map((s, i) =>
     `<button class="paso ${s.hecho ? 'done' : ''} ${s.sig ? 'next' : ''} ${s.omit ? 'fixed' : ''}" data-flujo="${s.k}" aria-current="${!!s.sig}"
@@ -75,9 +85,8 @@ function avanzarFlujo(k){
   const p = UI.sel && Store.get('pedidos', UI.sel); if (!p) return;
   const f = flujoDe(p), paso = f.pasos.find(x => x.k === k);
   if (k === 'analisis' && !(paso && paso.hecho)){ abrirLecturaSap('analizar'); return; }
-  UI.sub = f.tab[k];
   if (k === 'cubicaje' && !f.cb) UI.autoCub[p.pedido] = false;      // al entrar se cubica solo, una vez
-  render();
+  cambiarSub(f.tab[k]);
 }
 
 function detallePedido(p){
@@ -135,7 +144,7 @@ function detallePedido(p){
     <div class="label-files">${listaArchivos(p.pedido, '')}</div>
   </div>
   <div class="tabs" role="tablist" aria-label="Secciones del pedido">${TABS_PEDIDO.map(([k, t]) =>
-    `<button role="tab" data-sub="${k}" aria-selected="${UI.sub === k}">${t}${cuenta[k] !== undefined && cuenta[k] !== '' ? `<span class="tcount">${cuenta[k]}</span>` : ''}</button>`).join('')}</div>
+    `<button role="tab" data-sub="${k}" aria-selected="${UI.sub === k}">${t}${cuenta[k] !== undefined && cuenta[k] !== '' ? `<span class="tcount">${cuenta[k]}</span>` : ''}</button>`).join('')}<i class="tab-ind" aria-hidden="true"${UI.tabInd ? ` style="transform:${UI.tabInd}"` : ''}></i></div>
   <div class="tab-body">${cuerpo}</div>`;
 }
 

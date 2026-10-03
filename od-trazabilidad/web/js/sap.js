@@ -33,6 +33,7 @@ function abrirLecturaSap(modo){
       <label class="f">Fecha de picking<input type="date" name="lsFecha" value="${new Date().toISOString().slice(0,10)}"></label>
       <label class="f">Cliente<input type="text" name="lsCliente" list="dl-cli2" value="${esc(p ? p.cliente : (UI.cliente || 'PARIS'))}"></label>
     </div>
+    <div class="oc-res" data-oc-res aria-live="polite"></div>
     <datalist id="dl-cli2">${[...new Set([...clientes(), 'PARIS', 'HITES'])].map(c => `<option value="${esc(c)}">`).join('')}</datalist>`,
     `<button class="btn primary" data-act="${analizar ? 'analizarSap' : 'leerSap'}">${analizar ? 'Analizar' : 'Leer desde SAP'}</button>`);
 }
@@ -87,6 +88,10 @@ function avisosAnalisis(p, a, r){
     out.push(`<div class="aviso warn"><div><b>Este análisis es de ${esc(a.cliente)}, pero el pedido ahora es de ${esc(p.cliente || 'sin cliente')}.</b>
       El plan SOP, lo facturado y la Qty en entrega siguen siendo los del cliente anterior.</div>
       <button class="btn primary sm" data-act="reanalizarCliente">Analizar con ${esc(p.cliente || 'el cliente')}</button></div>`);
+  if (a.oc_sap && p.oc && claveOc(p.oc) !== claveOc(a.oc_sap))
+    out.push(`<div class="aviso warn"><div><b>La OC de SAP (${esc(a.oc_sap)}) no coincide con la del pedido (${esc(p.oc)}).</b>
+      La de SAP viene de ${esc(a.oc_origen || 'SAP')}; la del pedido se escribió a mano y no se reemplaza sola.</div>
+      <button class="btn sm" data-act="usarOcSap">Usar la OC de SAP</button></div>`);
   if ((r.zsd_sin_cruce || []).length)
     out.push(`<div class="aviso warn"><div><b>ZSD001_03 trajo ${r.zsd_sin_cruce.length} producto${r.zsd_sin_cruce.length === 1 ? '' : 's'} que no calzan por nombre con ningún SKU del pedido:</b>
       ${r.zsd_sin_cruce.map(esc).join(' · ')}. Su Qty en entrega no se descontó del saldo: revisa si corresponde a algún producto del pedido.</div></div>`);
@@ -135,7 +140,7 @@ function vistaAnalisis(p){
   }).join('');
   const cuenta = k => r.filas.filter(f => f.alerta === k).length;
   return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)} · grupo SOP ${esc(a.grupo_sop)} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
@@ -151,18 +156,36 @@ function vistaAnalisis(p){
     </tr></thead><tbody>${filas}</tbody></table></div>
     <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado. Subirla por sobre el plan SOP queda registrado a tu nombre.</p>`;
 }
+/* Resultados de Pedidos Ingresados dentro del diálogo: uno por línea, para elegir cuando una OC está en varios pedidos */
+const filaPedidoSap = x => `<li><button type="button" data-oc-pedido="${esc(x.pedido)}"><span class="code">${esc(x.pedido)}</span>
+  <span class="oc">OC <b>${esc(x.oc || '—')}</b></span><span class="f">${x.fecha ? 'creado ' + esc(fmtFecha(x.fecha)) : ''}${x.vence ? ' · vence ' + esc(fmtFecha(x.vence)) : ''}</span></button></li>`;
+function mostrarPedidosSap(html){ const c = dlg.querySelector('[data-oc-res]'); if (c) c.innerHTML = html; }
 async function buscarPorOc(valor){
   if (!valor) return;
   const campo = dlg.querySelector('[name="lsPedido"]');
+  mostrarPedidosSap('<p class="small muted">Buscando…</p>');
   try {
     const r = await api('GET', '/pedidos-sap?q=' + encodeURIComponent(valor));
-    if (!r.ok) return dErr('No se pudo consultar los pedidos ingresados: ' + r.error);
-    if (!r.resultados.length) return dErr(`No se encontró un pedido con la OC ${valor}.`);
-    if (r.resultados.length > 1) return dErr(`Hay ${r.resultados.length} pedidos con esa OC: ` +
-      r.resultados.slice(0, 5).map(x => x.pedido).join(', '));
-    campo.value = r.resultados[0].pedido;
+    if (!r.ok){ mostrarPedidosSap(''); return dErr('No se pudo consultar los pedidos ingresados: ' + r.error); }
+    if (!r.resultados.length){ mostrarPedidosSap(''); return dErr(`No se encontró un pedido con la OC ${valor}. Si es muy reciente, puede no estar en Pedidos Ingresados todavía.`); }
     dErr('');
-  } catch(e){ dErr(e.message); }
+    if (r.resultados.length === 1){
+      campo.value = r.resultados[0].pedido; mostrarPedidosSap(`<ul class="oc-lista">${filaPedidoSap(r.resultados[0])}</ul>`);
+      return;
+    }
+    mostrarPedidosSap(`<p class="small">La OC está en <b>${r.resultados.length}</b> pedidos. Elige uno:</p><ul class="oc-lista">${r.resultados.map(filaPedidoSap).join('')}</ul>`);
+  } catch(e){ mostrarPedidosSap(''); dErr(e.message); }
+}
+/* Al escribir el pedido se ve su OC de inmediato (sin que sea un error que todavía no aparezca) */
+async function vistaPreviaPedido(numero){
+  const n = String(numero || '').trim();
+  if (!/^\d{4,12}$/.test(n)) return mostrarPedidosSap('');
+  try {
+    const r = await api('GET', '/pedidos-sap?q=' + encodeURIComponent(n));
+    const exacto = (r.resultados || []).filter(x => String(x.pedido).replace(/^0+/, '') === n.replace(/^0+/, ''));
+    mostrarPedidosSap(r.ok && exacto.length ? `<ul class="oc-lista">${filaPedidoSap(exacto[0])}</ul>`
+      : '<p class="small muted">Este pedido todavía no está en Pedidos Ingresados: la OC se toma del reporte de SAP al analizar.</p>');
+  } catch(e){ mostrarPedidosSap(''); }
 }
 async function leerSap(){
   const body = {pedido:dval('lsPedido'), puesto:dval('lsPuesto').toUpperCase(), fecha:dval('lsFecha'), cliente:dval('lsCliente')};

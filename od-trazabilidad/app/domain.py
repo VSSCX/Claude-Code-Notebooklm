@@ -386,6 +386,15 @@ def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[d
             "posiciones": len(posiciones)}
 
 
+def completar_oc(p: Pedido, oc: str) -> bool:
+    """Pone la OC si el pedido no tiene. Una OC escrita a mano nunca se reemplaza."""
+    oc = str(oc or "").strip()[:40]
+    if not oc or p.oc:
+        return False
+    p.oc = oc
+    return True
+
+
 def borrar_archivos_por_nombre(s: Session, pedido: str, nombre: str, carpeta) -> int:
     """Quita versiones anteriores del mismo archivo (por ejemplo, el visor de un pedido)."""
     p = _get_pedido(s, pedido)

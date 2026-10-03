@@ -117,15 +117,33 @@ def cruzar_en_entrega(modelos: dict[str, str], en_entrega: dict[str, float]) -> 
     return qty, usado, sorted(k for k in ent if k not in reclamados)
 
 
+def _col(fila: dict, *nombres):
+    """Valor de una columna del reporte ZSD001_03, sin depender de tildes, puntos ni espacios del título."""
+    claves = {_norm(k).replace(".", "").replace(" ", ""): k for k in fila}
+    for n in nombres:
+        k = claves.get(_norm(n).replace(".", "").replace(" ", ""))
+        if k is not None:
+            return fila[k]
+    return None
+
+
+def oc_de_zsd(filas_zsd: list[dict], pedido: str) -> str:
+    """OC del pedido según el reporte ZSD001_03 (columnas Documento de Ventas y Orden de compra).
+    Respaldo de Pedidos Ingresados: el reporte ya se ejecuta en el análisis, así que no cuesta nada.
+    Si el pedido trae más de una OC, la que más se repite."""
+    numero = str(pedido or "").strip().lstrip("0")
+    cuentas: dict[str, int] = {}
+    for f in filas_zsd:
+        doc = re.sub(r"\D", "", str(_col(f, "Documento de Ventas", "Documento Ventas") or "")).lstrip("0")
+        oc = str(_col(f, "Orden de compra", "Orden Compra") or "").strip()
+        if doc == numero and oc:
+            cuentas[oc] = cuentas.get(oc, 0) + 1
+    return max(cuentas, key=cuentas.get) if cuentas else ""
+
+
 def en_entrega_por_modelo(filas_zsd: list[dict]) -> dict[str, float]:
     """SUMIF(Entregas!J:J, modelo, Entregas!M:M): Qty. En Entrega por nombre de material."""
-    def col(fila, *nombres):
-        claves = {_norm(k).replace(".", "").replace(" ", ""): k for k in fila}
-        for n in nombres:
-            k = claves.get(_norm(n).replace(".", "").replace(" ", ""))
-            if k is not None:
-                return fila[k]
-        return None
+    col = _col
     out: dict[str, float] = {}
     for f in filas_zsd:
         nombre = _clave(col(f, "Nombre Codigo de Material", "Nombre Código de Material") or "")

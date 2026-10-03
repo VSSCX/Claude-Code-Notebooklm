@@ -85,7 +85,7 @@ def analizar(numero: str, body: dict):
     import json as _json
     import re as _re
     from datetime import date as _date
-    from ..analisis import calcular, en_entrega_por_modelo
+    from ..analisis import calcular, en_entrega_por_modelo, oc_de_zsd
     from ..config import BASE_DIR
     from ..db import SessionLocal
     from ..integrations import base_medidas, sap
@@ -129,6 +129,12 @@ def analizar(numero: str, body: dict):
         avance("3/4 Calculando saldos y alertas")
         plan = bases.plan_sop(grupo)
         disp = bases.disponibilidad()
+        # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
+        oc, oc_origen = bases.oc_de(numero), "Pedidos Ingresados"
+        if not oc:
+            oc, oc_origen = oc_de_zsd(filas_zsd, numero), "ZSD001_03"
+        if not oc:
+            oc_origen = ""
         med = ({sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
                if filas_med else base_medidas.medidas())
         en_ent = en_entrega_por_modelo(filas_zsd)
@@ -148,13 +154,15 @@ def analizar(numero: str, body: dict):
                "plan": {k: plan[k] for k in skus if k in plan},
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
-               "stock": stock, "ajustes": {}, "resultado": res,
+               "stock": stock, "ajustes": {}, "resultado": res, "oc_sap": oc, "oc_origen": oc_origen,
                "generado": _date.today().isoformat()}
         with SessionLocal() as ses:
             domain.cargar_lectura_sap(ses, numero, cliente, posiciones)
             p_ped = domain._get_pedido(ses, numero)
             if p_ped is not None and p_ped.cliente != cliente:
                 p_ped.cliente = cliente                  # el análisis manda: el pedido queda con el cliente analizado
+            if p_ped is not None:
+                domain.completar_oc(p_ped, oc)           # solo si no tiene: no pisa una OC escrita a mano
             domain.guardar_config(ses, _clave_analisis(numero), doc)
             domain.anotar_flujo(ses, numero, analisis=domain.resumen_analisis(doc))
             ses.commit()
@@ -173,7 +181,7 @@ def analizar(numero: str, body: dict):
         return {"pedido": numero, "posiciones": len(posiciones), "alertadas": len(res["alertadas"]),
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
-                "sin_cruce": res.get("zsd_sin_cruce", []),
+                "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
                 "recubicado": recubicado}
 
     try:

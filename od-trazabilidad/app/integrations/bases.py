@@ -245,14 +245,70 @@ WHERE clasifPdto2 = 'CALEFONT'
   AND estadoComercial NOT IN ('Sin Estado');
 """
 
+# Pedidos Ingresados: pedido ↔ orden de compra. Se consulta lo que se necesita, con parámetros y sin
+# caché: antes se traían todos los pedidos RETAIL del año y se guardaban 10 minutos, así que un pedido
+# recién creado "no aparecía" y los de otro año o canal nunca. Un pedido puede tener varias filas (una
+# por posición) y una OC puede estar en varios pedidos.
 SQL_PEDIDOS = """
 SET NOCOUNT ON;
-SELECT fechaCreacion, pedidoVenta, ordenCompra, fechaVencimiento
+SELECT DISTINCT TOP 50 fechaCreacion, pedidoVenta, ordenCompra, fechaVencimiento
 FROM bi_base_pedidos_sap
-WHERE YEAR(fechaCreacion) = YEAR(GETDATE())
-  AND canal = '1._  RETAIL'
-ORDER BY fechaCreacion;
+WHERE {filtro}
+ORDER BY fechaCreacion DESC;
 """
+
+
+def clave_oc(v) -> str:
+    """OC comparable: sin espacios ni signos, en mayúsculas y sin ceros a la izquierda."""
+    return re.sub(r"[^A-Z0-9]", "", str(v or "").upper()).lstrip("0")
+
+
+def _fecha_iso(v) -> str:
+    return v.isoformat()[:10] if hasattr(v, "isoformat") else str(v or "")[:10]
+
+
+def _consultar_pedidos(filtro: str, params: tuple) -> list[dict]:
+    """Filas sin repetir (pedido, OC). `veces` dice cuántas filas de la base tenían esa pareja."""
+    filas: dict[tuple[str, str], dict] = {}
+    for f, p, o, v in _filas(SQL_PEDIDOS.format(filtro=filtro), params):
+        pedido, oc = _sku(p), str(o or "").strip()
+        if not pedido:
+            continue
+        clave = (pedido, clave_oc(oc))
+        if clave in filas:
+            filas[clave]["veces"] += 1
+        else:
+            filas[clave] = {"fecha": _fecha_iso(f), "pedido": pedido, "oc": oc, "vence": _fecha_iso(v), "veces": 1}
+    return list(filas.values())
+
+
+def _formas_pedido(pedido: str) -> tuple[str, str]:
+    """Cómo puede venir el número en la base: tal cual o con ceros a la izquierda hasta 10 dígitos."""
+    n = _sku(pedido)
+    return n, n.zfill(10)
+
+
+def datos_pedido(pedido: str) -> dict:
+    """OC (y fechas) de un pedido según Pedidos Ingresados. Vacío si aún no aparece o no hay conexión:
+    la OC es un dato de apoyo y su falta nunca detiene el análisis."""
+    vacio = {"oc": "", "fecha": "", "vence": ""}
+    n = _sku(pedido)
+    if not n:
+        return vacio
+    try:
+        filas = _consultar_pedidos("pedidoVenta IN (?, ?)", _formas_pedido(n))
+    except Exception:  # noqa: BLE001
+        return vacio
+    filas = [f for f in filas if f["pedido"] == n and f["oc"]]
+    if not filas:
+        return vacio
+    # si el pedido trae más de una OC manda la que más filas tiene (y, a igual, la primera: la más reciente)
+    mejor = max(filas, key=lambda f: f["veces"])
+    return {"oc": mejor["oc"], "fecha": mejor["fecha"], "vence": mejor["vence"]}
+
+
+def oc_de(pedido: str) -> str:
+    return datos_pedido(pedido)["oc"]
 
 
 def calefones() -> set[str]:
@@ -262,23 +318,23 @@ def calefones() -> set[str]:
     return _cache("calefones", cargar)
 
 
-def pedidos_ingresados() -> list[dict]:
-    """Pedidos del año con su orden de compra, para buscar por cualquiera de los dos."""
-    def cargar():
-        return [{"fecha": f.isoformat() if hasattr(f, "isoformat") else str(f or ""),
-                 "pedido": _sku(p), "oc": str(o or "").strip(),
-                 "vence": v.isoformat() if hasattr(v, "isoformat") else str(v or "")}
-                for f, p, o, v in _filas(SQL_PEDIDOS)]
-    return _cache("pedidos", cargar)
+def _sin_veces(filas: list[dict]) -> list[dict]:
+    return [{k: v for k, v in f.items() if k != "veces"} for f in filas]
 
 
 def buscar_pedido(texto: str) -> list[dict]:
-    """Busca por N° de pedido o por orden de compra (coincidencia exacta o parcial)."""
-    t = str(texto or "").strip().upper()
+    """Busca por N° de pedido o por orden de compra. Primero lo exacto (pedido y OC); solo si no hay,
+    una OC que contenga el texto. Los resultados llevan fecha y vencimiento para poder elegir."""
+    t = str(texto or "").strip()
     if not t:
         return []
-    filas = pedidos_ingresados()
-    exactos = [f for f in filas if _sku(f["pedido"]) == _sku(t) or f["oc"].upper() == t]
+    n = _sku(t)
+    filtro, params = "pedidoVenta IN (?, ?) OR LTRIM(RTRIM(ordenCompra)) = ?", (*_formas_pedido(n), t)
+    filas = _consultar_pedidos(filtro, params)
+    clave = clave_oc(t)
+    exactos = [f for f in filas if f["pedido"] == n or (clave and clave_oc(f["oc"]) == clave)]
     if exactos:
-        return exactos[:20]
-    return [f for f in filas if t in f["pedido"] or t in f["oc"].upper()][:20]
+        return _sin_veces(exactos[:20])
+    if len(t) < 3:
+        return []
+    return _sin_veces(_consultar_pedidos("ordenCompra LIKE ?", (f"%{t}%",))[:20])

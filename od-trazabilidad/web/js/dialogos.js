@@ -70,6 +70,22 @@ function parseLineas(txt){
   });
   return {lineas:[...out.values()], errs};
 }
+async function usarOcSap(){
+  const p = Store.get('pedidos', UI.sel), a = p && UI.analisis[p.pedido];
+  if (!p || !a || !a.oc_sap) return;
+  const cur = clone(p); cur.oc = a.oc_sap;
+  if (await save('pedidos', safeId(p.pedido), cur)) toast('OC actualizada con la de SAP');
+}
+/* Pedido nuevo a mano: si la OC está vacía se trae de Pedidos Ingresados (el pedido ya existe en SAP) */
+async function autocompletarOc(numero){
+  const oc = dlg.querySelector('[name="oc"]'); const n = String(numero || '').trim();
+  if (!oc || oc.value.trim() || !/^\d{4,12}$/.test(n)) return;
+  try {
+    const r = await api('GET', '/pedidos-sap?q=' + encodeURIComponent(n));
+    const x = (r.resultados || []).find(y => String(y.pedido).replace(/^0+/, '') === n.replace(/^0+/, '') && y.oc);
+    if (x && !oc.value.trim()){ oc.value = x.oc; toast(`OC ${x.oc} traída de Pedidos Ingresados`); }
+  } catch(e){ /* sin conexión a SQL: la OC se escribe a mano */ }
+}
 async function guardarPedido(id){
   const ped = dval('pedido'); if (!ped) return dErr('Ingresa el N° de pedido.');
   const nid = safeId(ped);
@@ -370,6 +386,7 @@ function render(){
     : vistaPedidos()));
   Visor.sincronizar();
   postRenderCub();
+  moverIndicador();
 }
 
 document.addEventListener('click', ev => {
@@ -377,8 +394,12 @@ document.addEventListener('click', ev => {
   if (t.dataset.go){ go(t.dataset.go); return; }
   if (t.hasAttribute('data-close')){ dlg.close(); return; }
   if (t.dataset.flujo){ avanzarFlujo(t.dataset.flujo); return; }
+  if (t.dataset.ocPedido){
+    const campo = dlg.querySelector('[name="lsPedido"]'); if (campo) campo.value = t.dataset.ocPedido;
+    mostrarPedidosSap(`<ul class="oc-lista">${t.closest('li').outerHTML}</ul>`); dErr(''); return;
+  }
   if (t.dataset.sel){ UI.sel = t.dataset.sel; const ps = Store.get('pedidos', t.dataset.sel); UI.sub = ps ? flujoDe(ps).tabSig : 'analisis'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
-  if (t.dataset.sub){ UI.sub = t.dataset.sub; render(); return; }
+  if (t.dataset.sub){ cambiarSub(t.dataset.sub); return; }
   if (t.closest && t.closest('[data-ajustes]')) UI.verAjustes = true;   // no se cierra al recalcular
   if (t.dataset.cerrarAviso){ Avisos.cerrar(t.dataset.cerrarAviso); return; }
   if (t.hasAttribute('data-pregunta-ok')){ responderPregunta(); return; }
@@ -446,6 +467,7 @@ document.addEventListener('click', ev => {
     case 'verArchivo': UI.verArchivo = UI.verArchivo === +t.dataset.id ? null : +t.dataset.id; render(); break;
     case 'desasignar': asignarArchivo(t.dataset.id, ''); break;
     case 'actualizarBases': actualizarBases(); break;
+    case 'usarOcSap': usarOcSap(); break;
     case 'reanalizarCliente': { const p = Store.get('pedidos', UI.sel); if (p) reanalizarPorCliente(p.pedido, ''); break; }
     case 'autorizarExceso': autorizarExceso(); break;
     case 'limitarAlPlan': limitarAlPlan(); break;
@@ -478,6 +500,8 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', async ev => {
   const el = ev.target;
   if (el.matches('[data-cliente]')){ UI.cliente = el.value; render(); }
+  else if (el.matches('[name="lsPedido"]') && dlg.open) vistaPreviaPedido(el.value);
+  else if (el.matches('[name="pedido"]') && dlg.open && !el.readOnly) autocompletarOc(el.value);
   else if (el.matches('[data-abiertos]')){ UI.soloAbiertos = el.checked; render(); }
   else if (el.matches('[data-pdesde]')){ UI.pDesde = el.value || '0000-00-00'; render(); }
   else if (el.matches('[data-phasta]')){ UI.pHasta = el.value; render(); }

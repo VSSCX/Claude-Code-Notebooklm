@@ -260,6 +260,7 @@ def test_analisis_en_un_clic(c, monkeypatch):
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900276671": {"plan": 126, "vendido": 78, "pdte_mes": 76, "saldo": 0, "tipo": "CONSENSO"},
                                                       "111": {"plan": 50, "vendido": 0, "pdte_mes": 0, "saldo": 0, "tipo": "CONSENSO"}})
     monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "oc_de", lambda pedido: "7788990011")        # OC de Pedidos Ingresados
     monkeypatch.setattr(base_medidas, "medidas", lambda: {"900276671": {"desc": "900276671 COCINA FM5SSC", "max_camion": 270},
                                                           "111": {"desc": "111 LAVADORA X", "max_camion": 100}})
     r = c.post("/api/analisis/4005171502", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-09-22"})
@@ -276,6 +277,7 @@ def test_analisis_en_un_clic(c, monkeypatch):
     f = {x["sku"]: x for x in a["resultado"]["filas"]}
     assert f["900276671"]["saldo"] == 48 and f["900276671"]["stock"]["cd30"] == 5
     assert _estado(c)["pedidos"][0]["cliente"] == "PARIS"
+    assert _estado(c)["pedidos"][0]["oc"] == "7788990011"        # la OC sale de Pedidos Ingresados
     # ajustar carga y volver al calculado
     a = c.put("/api/analisis/4005171502/carga", json={"sku": "111", "carga": 20}).json()
     assert {x["sku"]: x for x in a["resultado"]["filas"]}["111"]["carga"] == 20
