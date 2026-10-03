@@ -621,7 +621,10 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     from ..cubicaje.visor import construir_json
 
     cliente = str(body.get("cliente") or "").strip().upper()
-    modo = str(body.get("modo") or "MDA").strip().upper()
+    from ..cubicaje.motor import resolver_destino
+    piso_elegido = str(body.get("piso_pallet") or "")
+    modo_elegido = str(body.get("modo") or "MDA").strip().upper()        # lo que eligió el usuario, antes de Destino y de la vista
+    modo = resolver_destino(str(body.get("modo") or "MDA").strip().upper(), body.get("destino"))
     vista = str(body.get("vista") or "rampla").strip().lower()
     lineas = [x for x in (body.get("lineas") or []) if str(x.get("sku", "")).strip()]
 
@@ -636,8 +639,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     if vista == "pallet":
         # Un pallet solo: se cubica normal (en pallets) y después se muestra uno.
         # En MDA no existen pallets, así que para esta vista se usa el motor de pallets.
+        body = {**body, "piso_pallet": ""}          # ver un pallet exige pallets: "a piso" no aplica
         if "SDA" not in modo:
-            modo = "SDA STOCK"
+            modo = "SDA PREDISTRIBUIDO" if "PREDISTRIBUIDO" in modo else "SDA STOCK"
             # los modos SDA exigen indicar caja master: si no viene, se asume sin caja
             if not str(body.get("caja_master") or "").strip():
                 body = {**body, "caja_master": "SIN CAJA MASTER"}
@@ -710,10 +714,11 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
                             "apilable": d.apilable, "peso": d.peso,
                             "letra": letra, "color": color}
-    doc = {**base, "cliente": cliente, "modo": modo, "vista": vista, "lineas": lineas,
+    doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
-           "caja_master": str(body.get("caja_master") or ""), "piso_pallet": str(body.get("piso_pallet") or ""),
+           "caja_master": str(body.get("caja_master") or ""), "piso_pallet": piso_elegido,
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
+           "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,
            "desconocidos": desconocidos, "modo_usado": modo,
            "faltantes": _faltantes_de(lineas, lambda sku: cache.get(sku.lower()) is not None)}
@@ -864,6 +869,7 @@ def plantilla_carga(s: Session = Depends(get_session)):
 @router.post("/cubicaje-libre/importar")
 def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
                    modo: str = Form(""), caja_master: str = Form(""),
+                   piso_pallet: str = Form(""), destino: str = Form(""),
                    s: Session = Depends(get_session)):
     """Carga masiva: lee el Excel y deja los productos listos para cubicar."""
     import json as _json
@@ -931,7 +937,8 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto,
                           "cliente": anterior.get("cliente") or "", "modo": modo,
                           "caja_master": caja_master, "vista": anterior.get("vista") or "rampla",
-                          "piso_pallet": anterior.get("piso_pallet") or ""}, s)
+                          "piso_pallet": piso_pallet or anterior.get("piso_pallet") or "",
+                          "destino": destino or anterior.get("destino") or ""}, s)
     if aviso_modo:
         doc["avisos"] = [aviso_modo, *(doc.get("avisos") or [])]
     doc["importadas"] = len(lineas)

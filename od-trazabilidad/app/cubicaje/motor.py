@@ -51,7 +51,28 @@ def modo_efectivo(modo: str, a_pallet: bool) -> str:
     return {"MDA": "SDA STOCK", "MDA PREDISTRIBUIDO": "SDA PREDISTRIBUIDO"}.get(modo, modo)
 
 
+def _a_piso(e: Entrada) -> bool:
+    return str(e.piso_pallet or "").strip().upper() == "PISO"
+
+
+def resolver_destino(modo: str, destino: str) -> str:
+    """Destino (Stock | Por sucursal) manda sobre la mitad predistribuida del modo; vacío = lo que diga el modo."""
+    d = str(destino or "").strip().upper()
+    if d not in ("STOCK", "SUCURSAL"):
+        return modo
+    sda = "SDA" in modo
+    if d == "SUCURSAL":
+        return "SDA PREDISTRIBUIDO" if sda else "MDA PREDISTRIBUIDO"
+    return "SDA STOCK" if sda else "MDA"
+
+
 def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resultado:
+    if modo.startswith("SDA") and _a_piso(e):                 # PISO manda sobre un modo SDA
+        from .piso import cubicaje_sda_a_piso
+        if modo == "SDA PREDISTRIBUIDO" and not e.predistribuido:
+            raise ValueError("Falta la tabla Predistribuido (sucursal, SKU y unidades).")
+        return cubicaje_sda_a_piso(e.posiciones, e.medidas, e.camiones, str(e.caja_master).upper() == "CON CAJA MASTER",
+                                   e.predistribuido if modo == "SDA PREDISTRIBUIDO" else None, pasa_filtro, cam_offset)
     if modo == "MDA":
         return cubicaje_mda(e.posiciones, e.pedidos, e.medidas, e.camiones, pasa_filtro, cam_offset)
     if modo == "SDA STOCK":
@@ -123,7 +144,7 @@ def segmentar(e: Entrada) -> Resultado:
     else:
         res = _ejecutar_modo(modo, e, None, 0)
 
-    if a_piso:
-        avisos.append("H2 = PISO: se fuerza la carga a piso.")
+    if a_piso and not modo.startswith("SDA"):
+        avisos.append("Carga a piso: este modo ya va a piso.")
     res.avisos = avisos + res.avisos
     return res

@@ -59,7 +59,7 @@ const pctCub = x => (100 * (x || 0)).toFixed(1).replace('.', ',') + '%';
 
 function entradaDe(doc){
   return {cliente: doc.cliente || '', modo: doc.modo || 'MDA', vista: doc.vista || 'rampla',
-          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '',
+          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '',
           predistribuido: doc.predistribuido || [], pedido: doc.pedido || '',
           lineas: (doc.lineas || []).map(l => ({sku: String(l.sku), qty: +l.qty || 0})),
           pallet_n: doc.pallet_visto || 0};
@@ -98,7 +98,7 @@ async function correrCalculos(){
     while (UI.cubSucio){
       UI.cubSucio = false;
       // sin reparto, un modo predistribuido calcula una carga vacía: el panel pide el archivo
-      UI.cubFalta = /PREDISTRIBUIDO/.test(UI.cubIn.modo) && !(UI.cubIn.predistribuido || []).length;
+      UI.cubFalta = efectivoCub(UI.cubIn).pred && !(UI.cubIn.predistribuido || []).length;
       const gen = UI.cubGen;
       try {
         const r = await api('POST', '/cubicaje-libre', clone(UI.cubIn));
@@ -186,24 +186,36 @@ function quitarLinea(i){
 }
 
 /* ---- Opciones: el modo del motor decide cómo se arma la carga ---- */
+/* Lo que de verdad se cubica: el modo elegido, con Destino y Carga mandando sobre él (como H2 en el Excel):
+   MDA + "en pallets" se cubica en pallets, y SDA + "a piso" va directo al camión sin armar pallets. */
+function efectivoCub(inp){
+  const base = inp.modo || 'MDA', sda = /SDA/.test(base);
+  const pred = inp.destino === 'SUCURSAL' || (inp.destino !== 'STOCK' && /PREDISTRIBUIDO/.test(base));
+  const pallets = inp.piso_pallet === 'PALLET' || (inp.piso_pallet !== 'PISO' && sda);
+  const modo = (pallets ? 'SDA ' : 'MDA') + (pallets ? (pred ? 'PREDISTRIBUIDO' : 'STOCK') : (pred ? ' PREDISTRIBUIDO' : ''));
+  return {modo, pallets, pred, pideCaja: base !== 'MDA' || inp.piso_pallet === 'PALLET' || inp.destino === 'SUCURSAL',
+          texto: `${pallets ? 'En pallets' : 'A piso'} · ${pred ? 'por sucursal' : 'stock'}`};
+}
 function cambiarOpcionCub(campo, valor){
   const c = UI.cubIn;
   if (campo === 'caja_master') c.caja_master = valor;
   else if (campo === 'vista'){
     c.vista = valor;
     if (valor !== 'pallet') UI.vistaCamion = valor;             // a qué camión volver desde un pallet
-  } else if (campo === 'modo'){
-    c.modo = valor;
+  } else if (campo === 'modo') c.modo = valor;
+  else if (campo === 'carga') c.piso_pallet = valor;
+  else if (campo === 'destino') c.destino = valor;
+  if (campo === 'modo' || campo === 'carga' || campo === 'destino'){
     // fuera de MDA el motor exige indicar caja master: se parte en "sin" en vez de fallar
-    if (valor !== 'MDA' && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
+    if (efectivoCub(c).pideCaja && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
     // la vista de un solo pallet solo existe con pallets
-    if (!/SDA/.test(valor) && c.vista === 'pallet') c.vista = UI.vistaCamion || 'rampla';
+    if (!efectivoCub(c).pallets && c.vista === 'pallet') c.vista = UI.vistaCamion || 'rampla';
   }
   UI.cubCam = 0;
   pedirCalculo();
 }
 function quitarRepartoCub(){
-  UI.cubIn.predistribuido = []; UI.cubIn.modo = /SDA/.test(UI.cubIn.modo) ? 'SDA STOCK' : 'MDA';
+  UI.cubIn.predistribuido = []; UI.cubIn.destino = ''; UI.cubIn.modo = /SDA/.test(UI.cubIn.modo) ? 'SDA STOCK' : 'MDA';
   pedirCalculo();
 }
 function vaciarCub(){
@@ -218,6 +230,7 @@ async function importarCarga(input){
   const f = input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
   fd.append('modo', UI.cubIn.modo || ''); fd.append('caja_master', UI.cubIn.caja_master || '');
+  fd.append('piso_pallet', UI.cubIn.piso_pallet || ''); fd.append('destino', UI.cubIn.destino || '');
   UI.cubOcupado = true; renderSoon();
   try {
     const r = await fetch('/api/cubicaje-libre/importar', {method: 'POST', body: fd,
@@ -311,7 +324,7 @@ function vistaCubicador(){
   const aPiso = (c.filas04 || []).filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0);
   const faltaMedidas = /Base de Medidas/.test(UI.cubError || c.error || '');
   const enPallet = inp.vista === 'pallet';
-  const porSucursal = /PREDISTRIBUIDO/.test(inp.modo);
+  const ef = efectivoCub(inp), porSucursal = ef.pred;
   if (UI.cubCam >= camiones.length) UI.cubCam = 0;
 
   /* --- productos: uno por fila, con letra y color iguales a los del visor --- */
@@ -356,7 +369,7 @@ function vistaCubicador(){
       ${detalleReparto}</div>`
     : porSucursal ? `<div class="reparto pendiente">
       <b>Falta el reparto por sucursal</b>
-      <p class="small muted">${/SDA/.test(inp.modo) ? 'SDA' : 'MDA'} predistribuido arma la carga sucursal por sucursal. Sube el predistribuido del cliente tal como lo envía: se leen la sucursal, el producto y las unidades.</p>
+      <p class="small muted">Este modo arma la carga sucursal por sucursal. Sube el predistribuido del cliente tal como lo envía: se leen la sucursal, el producto y las unidades.</p>
       <div class="row tight">${botonImportar('Subir predistribuido')}<a class="btn quiet sm" href="/api/cubicaje-libre/plantilla">Plantilla</a></div></div>` : '';
 
   /* --- opciones, arriba del visor: se ven y se cambian sin bajar --- */
@@ -365,7 +378,9 @@ function vistaCubicador(){
       <label class="opt"><span>Cliente</span><select data-cub-cliente><option value="">Sin cliente</option>
         ${cls.map(n => `<option ${n === inp.cliente ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
       <div class="opt"><span>Modo de cubicaje</span>${seg('modo', inp.modo, MODOS_CUB)}</div>
-      ${inp.modo !== 'MDA' ? `<div class="opt"><span>Caja master</span>${seg('caja_master', inp.caja_master || '', [['CON CAJA MASTER', 'Con'], ['SIN CAJA MASTER', 'Sin']])}</div>` : ''}
+      <div class="opt"><span>Carga</span>${seg('carga', inp.piso_pallet || '', [['', 'Según modo', 'Lo que diga el modo: MDA a piso, SDA en pallets'], ['PISO', 'A piso', 'Fuerza la carga a piso, aunque el modo sea SDA'], ['PALLET', 'En pallets', 'Fuerza la carga en pallets, aunque el modo sea MDA']])}</div>
+      <div class="opt"><span>Destino</span>${seg('destino', inp.destino || '', [['', 'Según modo', 'Lo que diga el modo'], ['STOCK', 'Stock', 'Toda la carga junta'], ['SUCURSAL', 'Por sucursal', 'Se separa por sucursal según el reparto del cliente']])}</div>
+      ${ef.pideCaja ? `<div class="opt"><span>Caja master</span>${seg('caja_master', inp.caja_master || '', [['CON CAJA MASTER', 'Con'], ['SIN CAJA MASTER', 'Sin']])}</div>` : ''}
       <div class="opt"><span>Ver</span>${seg('vista', inp.vista || 'rampla', VISTAS)}</div>
       ${enPallet && (c.pallets_disponibles || []).length > 1 ? `<label class="opt"><span>Pallet</span>
         <select data-cub-pallet>${c.pallets_disponibles.map(n => `<option value="${n}" ${n === c.pallet_visto ? 'selected' : ''}>Pallet ${n} de ${c.pallets_disponibles.length}</option>`).join('')}</select></label>` : ''}
@@ -404,9 +419,9 @@ function vistaCubicador(){
 
   /* --- avisos: solo lo que hay que atender --- */
   const msgs = [
-    ...(UI.cubError && !faltaMedidas ? [['err', 'Error', UI.cubError]] : []),
+    ...(UI.cubError && !faltaMedidas && !UI.cubFalta ? [['err', 'Error', UI.cubError]] : []),
     ...((c.sin_medidas || []).length ? [['err', 'Sin medidas', c.sin_medidas.join(', ')]] : []),
-    ...(enPallet && c.modo_usado && c.modo_usado !== inp.modo ? [['info', 'Pallets', `Para ver pallets se cubicó en ${c.modo_usado}: en ${inp.modo} la carga va a piso.`]] : []),
+    ...(enPallet && !ef.pallets ? [['info', 'Pallets', 'Para ver un pallet se cubicó en pallets: con la carga a piso no hay pallets que mostrar.']] : []),
     ...((c.avisos || []).map(a => ['warn', 'Aviso', a])),
   ];
 
@@ -434,6 +449,7 @@ function vistaCubicador(){
 
     <div class="mesa-vista">
       ${opciones}
+      <p class="se-cubica small muted">Se cubica como <b>${ef.texto}</b>${inp.piso_pallet || inp.destino ? ' · la carga y el destino elegidos mandan sobre el modo' : ''}</p>
       ${resumen}
       ${faltaMedidas ? `<div class="panel empty"><h3>Falta la Base de Medidas</h3><p>El cubicaje necesita las medidas de los productos. Se cargan una vez y quedan guardadas.</p><button class="btn primary" data-go="config">Ir a Configuración</button></div>` : ''}
       ${alertaFaltantes(c.faltantes, '/api/cubicaje-libre/faltantes.xlsx', unidades)}

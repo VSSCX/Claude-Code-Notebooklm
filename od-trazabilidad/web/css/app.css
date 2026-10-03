@@ -439,6 +439,7 @@ dialog.angosto{width:min(460px,96vw)}
 .reparto.pendiente p{margin:0}
 .reparto.inactivo{opacity:.72}
 .reparto p{margin:4px 0 0}
+.se-cubica{margin:-2px 2px 0}
 .mc-pie{border-top:1px solid var(--hair);padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--paper-2)}
 .ajustes summary{margin-top:0}
 .ajustes .stack{margin-top:10px}

@@ -1066,3 +1066,54 @@ def test_reglas_del_reparto_avisan_lo_que_no_se_carga(datos):
     assert r.status_code == 200, r.text
     av = " ".join(r.json()["avisos"])
     assert "9000 (+6)" in av and "9001 (5 un.)" in av
+
+
+# --- Carga (piso / pallet) y destino mandan sobre el modo, como H2 en el Excel -------------------
+
+def _libre(c, **body):
+    r = c.post("/api/cubicaje-libre", json={"cliente": "", "caja_master": "SIN CAJA MASTER", **body})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_carga_manda_sobre_el_modo(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 A")
+        s.commit()
+    lineas = [{"sku": "9000", "qty": 60}]
+    sda = _libre(c, modo="SDA STOCK", lineas=lineas)
+    assert sda["pallets_detalle"] and sda["unidades"] == 60                   # SDA: en pallets
+
+    # SDA + "a piso": no se arman pallets y se carga todo directo al camión
+    piso = _libre(c, modo="SDA STOCK", lineas=lineas, piso_pallet="PISO")
+    assert not piso["pallets_detalle"] and piso["unidades"] == 60 and piso["camiones"]
+    assert piso["modo"] == "SDA STOCK" and piso["piso_pallet"] == "PISO"      # lo elegido se conserva
+
+    # MDA + "en pallets": manda la carga y se cubica en pallets
+    mda = _libre(c, modo="MDA", lineas=lineas)
+    assert not mda["pallets_detalle"]
+    pal = _libre(c, modo="MDA", lineas=lineas, piso_pallet="PALLET")
+    assert pal["pallets_detalle"] and pal["unidades"] == 60
+
+
+def test_sda_predistribuido_a_piso_va_por_sucursal_y_destino_manda(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 A")
+        s.commit()
+    reparto = [{"sucursal": "NORTE", "sku": "9000", "qty": 20}, {"sucursal": "SUR", "sku": "9000", "qty": 15}]
+    lineas = [{"sku": "9000", "qty": 35}]
+    d = _libre(c, modo="SDA PREDISTRIBUIDO", lineas=lineas, predistribuido=reparto, piso_pallet="PISO")
+    assert not d["pallets_detalle"] and d["unidades"] == 35
+    assert {f["sucursal"] for f in d["filas"]} == {"NORTE", "SUR"}
+    # Destino = Stock manda sobre un modo predistribuido: toda la carga junta, sin separar por sucursal
+    s2 = _libre(c, modo="SDA PREDISTRIBUIDO", lineas=lineas, predistribuido=reparto, destino="STOCK")
+    assert s2["unidades"] == 35 and not any(f.get("sucursal") for f in s2["filas"])
+    # Destino = Por sucursal sobre MDA usa el reparto
+    p = _libre(c, modo="MDA", lineas=lineas, predistribuido=reparto, destino="SUCURSAL")
+    assert {f["sucursal"] for f in p["filas"]} == {"NORTE", "SUR"}
