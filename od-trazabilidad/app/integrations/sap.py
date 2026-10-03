@@ -380,7 +380,7 @@ def _sumar_meses(d, meses: int):
     return d.replace(year=y, month=m, day=min(d.day, calendar.monthrange(y, m)[1]))
 
 
-def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str) -> list[dict]:
+def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str, avisar=None) -> list[dict]:
     """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios."""
     import datetime as dt
     from pathlib import Path
@@ -429,7 +429,10 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
         _presionar(ses, "wnd[0]/usr/btn%_SOCODMAT_%_APP_%-VALU_PUSH", 10)
         if _por_id(ses, "wnd[1]") is not None:
             _presionar(ses, "wnd[1]/tbar[0]/btn[16]", 3)
-            _cargar_multiseleccion(ses, materiales)
+            cargados = _cargar_multiseleccion(ses, materiales)
+            if cargados < len(materiales) and avisar:
+                avisar(f"Se cargaron {cargados} de {len(materiales)} materiales en el filtro de ZSD001_03: "
+                       "la Qty en entrega puede salir incompleta.")
             _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
             _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
 

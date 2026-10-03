@@ -49,11 +49,9 @@ Si `pip` falla por el proxy corporativo: `pip install --proxy http://usuario:cla
 
 Al terminar, cada macro envía su paquete a `http://127.0.0.1:8000/api/paquetes`. Si la plataforma está cerrada, el paquete queda copiado en el portapapeles (se carga con Ctrl+V en la web). En ambos casos se guarda una copia en `Trazabilidad_Web\*.json`, al lado del libro.
 
-**Ejecutar acciones desde la web**: importa también `vba/TrazWebAcciones.bas` y configura `MACROS_WORKBOOK` y `ACCIONES_HABILITADAS` en `.env`. El catálogo está en `app/integrations/acciones.py`: actualizar bases, cubicar, simular, visor 3D, leer pedido, crear entregas, crear grupos y limpiar. Corre una a la vez, solo las habilitadas, y `run.bat` debe estar abierto con tu usuario porque SAP GUI necesita tu sesión.
+**Acciones de SAP**: todo se hace desde la plataforma, sin abrir Excel: analizar el pedido (VL01N, ZSD001_03 y MMBE), cubicar, crear entregas (VL01N), crear grupos (VL06) y su cita (VG02), y borrar entregas o grupos. Corren de a una, con la sesión de SAP GUI del usuario que tiene `run.bat` abierto (SAP GUI scripting necesita esa sesión interactiva); el avance se ve en pantalla.
 
-Cada acción devuelve una cadena de estado: si empieza con `ERROR`, la plataforma la muestra en rojo y no toca los datos. El visor 3D devuelve la ruta del HTML y la plataforma guarda una copia en el pedido.
-
-**Borrado en SAP**: `eliminar_entrega` existe en el catálogo pero viene deshabilitado, y su macro (`TrazWeb_EliminarEntregaSAP`) devuelve ERROR a propósito. Para activarlo hay que grabar en SAP la secuencia real de VL02N, incluyendo las verificaciones previas (sin salida de mercancía, sin factura, sin grupo), y recién ahí agregar `eliminar_entrega` a `ACCIONES_HABILITADAS`.
+La Qty en entrega sale de ZSD001_03 y se cruza por el **nombre del material**, porque el código SAP del pedido no coincide con el del reporte. El cruce ignora tildes, mayúsculas y signos ("9,5" = "9 5") y acepta el nombre del reporte que termina con el modelo ("MDWMT16W" = "LAVADORA MADEMSA MDWMT16W"); lo que sobra del reporte se avisa en el análisis.
 
 ## Modelo de datos
 

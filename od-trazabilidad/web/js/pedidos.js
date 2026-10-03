@@ -346,7 +346,6 @@ function vistaCubicaje(p){
       </tbody></table></div></article>`;
   }).join('');
   const problemas = [
-    ...(cb.sin_medidas || []).map(x => `<span class="tag err">Sin medidas: ${esc(x)}</span>`),
     ...(cb.no_encontrados || []).map(x => `<span class="tag err">Sin descripción: ${esc(x)}</span>`),
     ...Object.entries(cb.sin_ubicar || {}).map(([k, v]) => `<span class="tag err">No cupo: ${esc(k)} (${fmt(v)})</span>`),
   ].join(' ');
@@ -363,6 +362,7 @@ function vistaCubicaje(p){
       <span>SKU <b class="num">${new Set(cb.filas.map(f => f.sku)).size}</b></span>
       ${(cb.pallets_detalle || []).length ? `<span>Pallets <b class="num">${cb.pallets_detalle.length}</b></span>` : ''}
       ${(cb.filas04 || []).some(f => f.tipo === 'Piso') ? `<span>A piso <b class="num">${fmt(cb.filas04.filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0))}</b></span>` : ''}</div>
+    ${alertaFaltantes(cb.faltantes, `/api/cubicaje/${encodeURIComponent(p.pedido)}/faltantes.xlsx`, (cb.unidades || 0) + (cb.faltantes || []).reduce((a, x) => a + x.unidades, 0))}
     ${form}
     ${seccionPredist(p, modoElegido(cb))}
     ${problemas ? `<p class="small" style="margin-top:10px">${problemas}</p>` : ''}

@@ -24,8 +24,8 @@ A traceability platform that receives data straight from the analyst's own SAP m
 
 ## Operating Context
 
-- Analysts work in Windows corporate PCs with Excel and SAP GUI; macros (VBA, `TrazWeb.bas`) run on each analyst's PC and send packages to the platform URL.
-- Actions that drive SAP (update bases, cubicar, simular, create deliveries/groups, 3D viewer) need the analyst's own SAP GUI session, so they run on the analyst's machine, not on a remote server. This conflicts with a pure server-hosted web app and must be resolved when hosting is designed.
+- Analysts work in Windows corporate PCs with SAP GUI. The platform runs every SAP action itself (analysis, cubicaje, deliveries, groups); no Excel macros are executed. The legacy `TrazWeb.bas` package export still works but is optional.
+- Actions that drive SAP (analysis, create deliveries/groups, delete) need the analyst's own SAP GUI session, so they run on the analyst's machine, not on a remote server. This conflicts with a pure server-hosted web app and must be resolved when hosting is designed.
 - Data changes arrive from scripts while the web is open (the web polls `/api/version` every 10 s).
 - Phase 1 SQLite, phase 2 SQL Server with Power BI reading the tables directly; corporate login (Microsoft Entra ID) planned before opening to the team.
 - Business context: unit of business MDA/SDA and modality Stock/Predistribuido (cell E2 of the workbook).

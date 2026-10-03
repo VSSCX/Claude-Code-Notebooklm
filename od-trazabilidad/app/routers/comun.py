@@ -56,7 +56,7 @@ def _sop_de(cliente: str, s: Session = None) -> tuple[str, str]:
     return grupo, codigo
 
 
-AJUSTES_DEFECTO = {"orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria"}
+AJUSTES_DEFECTO = {"orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria"}   # 1 cm: más fiel a la carga real (el Excel usa 2 cm)
 
 
 def _ajustes_cubicaje(s: Session) -> dict:

@@ -7,6 +7,7 @@ Columnas del Excel -> campos aquí:
   F CARGA = max(0, min(J, T))                    G % OCUP = carga / Máx Camión
   H Ocupa acumulado          U Alerta            V Disponibilidad    W Orden
 """
+import re
 import unicodedata
 
 SIN_STOCK, PARCIAL, LIMITADO, COMPLETO = "Sin stock", "Stock parcial", "Limitado SOP", "Completo"
@@ -76,6 +77,46 @@ def modelo(descripcion_base: str) -> str:
     return d.split(" ", 1)[1] if " " in d else ""
 
 
+def _clave(s) -> str:
+    """Nombre comparable: sin tildes, en mayúsculas y con cualquier signo como espacio
+    ("LAVADORA MADEMSA 9,5 BZG" y "LAVADORA MADEMSA 9 5 BZG" pasan a ser el mismo)."""
+    n = unicodedata.normalize("NFD", str(s or ""))
+    n = "".join(c for c in n if not unicodedata.combining(c)).upper()
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", n).split())
+
+
+def cruzar_en_entrega(modelos: dict[str, str], en_entrega: dict[str, float]) -> tuple[dict, dict, list]:
+    """Une cada SKU del pedido con lo que trajo ZSD001_03, por nombre de material.
+
+    El código SAP del pedido no calza con el del reporte, así que (igual que el SUMIF del Excel) se
+    cruza por el nombre. Para no depender de que el nombre sea idéntico:
+      1. mismo nombre (ignorando tildes, mayúsculas y signos);
+      2. si no hay, el nombre del reporte que termina con el modelo (o al revés), solo si es uno
+         solo y no lo reclamó otro SKU con nombre exacto ("MDWMT16W" ↔ "LAVADORA MADEMSA MDWMT16W").
+    Devuelve (unidades por SKU, nombre del reporte usado por SKU, nombres del reporte sin SKU)."""
+    ent: dict[str, float] = {}
+    for k, v in en_entrega.items():
+        ent[_clave(k)] = ent.get(_clave(k), 0.0) + float(v or 0)
+    qty: dict[str, float] = {}
+    usado: dict[str, str] = {}
+    reclamados: set[str] = set()
+    for sku, modelo_ in modelos.items():
+        m = _clave(modelo_)
+        if m and m in ent:
+            qty[sku], usado[sku] = ent[m], m
+            reclamados.add(m)
+    for sku, modelo_ in modelos.items():
+        m = _clave(modelo_)
+        if not m or sku in usado:
+            continue
+        cand = [k for k in ent if k not in reclamados and min(len(k), len(m)) >= 4
+                and (k.endswith(" " + m) or m.endswith(" " + k))]
+        if len(cand) == 1:
+            qty[sku], usado[sku] = ent[cand[0]], cand[0]
+            reclamados.add(cand[0])
+    return qty, usado, sorted(k for k in ent if k not in reclamados)
+
+
 def en_entrega_por_modelo(filas_zsd: list[dict]) -> dict[str, float]:
     """SUMIF(Entregas!J:J, modelo, Entregas!M:M): Qty. En Entrega por nombre de material."""
     def col(fila, *nombres):
@@ -87,7 +128,7 @@ def en_entrega_por_modelo(filas_zsd: list[dict]) -> dict[str, float]:
         return None
     out: dict[str, float] = {}
     for f in filas_zsd:
-        nombre = _norm(col(f, "Nombre Codigo de Material", "Nombre Código de Material") or "")
+        nombre = _clave(col(f, "Nombre Codigo de Material", "Nombre Código de Material") or "")
         try:
             q = float(str(col(f, "Qty. En Entrega", "Qty En Entrega") or 0).replace(",", "."))
         except ValueError:
@@ -112,6 +153,9 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
              ajustes: dict | None = None) -> dict:
     """posiciones: [{sku, qty_entrega, qty_pendiente}] tal como las lee VL01N."""
     stock, ajustes = stock or {}, ajustes or {}
+    en_ent_sku, cruce, sin_cruce = cruzar_en_entrega(
+        {str(p["sku"]): modelo(medidas[str(p["sku"])]["desc"]) for p in posiciones if str(p["sku"]) in medidas},
+        en_entrega)
     filas = []
     for p in posiciones:
         sku = str(p["sku"])
@@ -120,7 +164,7 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
         j, k = float(p.get("qty_entrega") or 0), float(p.get("qty_pendiente") or 0)
         pl = plan.get(sku) or {}
         m, n = float(pl.get("plan") or 0), float(pl.get("vendido") or 0)
-        o = en_entrega.get(_norm(modelo(desc)), 0.0) if med else 0.0
+        o = en_ent_sku.get(sku, 0.0)
         t = m - n - o
         carga_calc = max(0.0, min(j, t))
         carga = float(ajustes[sku]) if sku in ajustes else carga_calc
@@ -129,7 +173,7 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
         al = alerta(j, k, t)
         d = disponibilidad.get(sku)
         filas.append({
-            "sku": sku, "descripcion": desc, "qty_entrega": j, "pendiente": k,
+            "sku": sku, "descripcion": desc, "qty_entrega": j, "pendiente": k, "cruce_zsd": cruce.get(sku, ""),
             "plan": m, "real": n, "en_entrega": o, "saldo": t,
             "carga_calculada": carga_calc, "carga": carga, "ajustada": sku in ajustes,
             "ocupacion": ocup, "alerta": al, "orden": ORDEN[al],
@@ -141,5 +185,5 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
     for f in filas:
         acumulado += f["ocupacion"] or 0
         f["acumulado"] = acumulado
-    return {"filas": filas, "ocupacion_total": acumulado,
+    return {"filas": filas, "ocupacion_total": acumulado, "zsd_sin_cruce": sin_cruce,
             "alertadas": [f["sku"] for f in filas if f["alerta"] in ALERTADAS]}

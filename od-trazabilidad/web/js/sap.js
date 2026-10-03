@@ -5,7 +5,7 @@
 function estadoJob(){
   const j = UI.job; if (!j) return '';
   if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}. ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
-  if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.archivo ? 'archivo guardado en el pedido' : j.resultado || 'terminó')}</p>`;
+  if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.resultado || 'terminó')}</p>`;
   return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}</p>`;
 }
 async function seguirJob(){
@@ -87,6 +87,9 @@ function avisosAnalisis(p, a, r){
     out.push(`<div class="aviso warn"><div><b>Este análisis es de ${esc(a.cliente)}, pero el pedido ahora es de ${esc(p.cliente || 'sin cliente')}.</b>
       El plan SOP, lo facturado y la Qty en entrega siguen siendo los del cliente anterior.</div>
       <button class="btn primary sm" data-act="reanalizarCliente">Analizar con ${esc(p.cliente || 'el cliente')}</button></div>`);
+  if ((r.zsd_sin_cruce || []).length)
+    out.push(`<div class="aviso warn"><div><b>ZSD001_03 trajo ${r.zsd_sin_cruce.length} producto${r.zsd_sin_cruce.length === 1 ? '' : 's'} que no calzan por nombre con ningún SKU del pedido:</b>
+      ${r.zsd_sin_cruce.map(esc).join(' · ')}. Su Qty en entrega no se descontó del saldo: revisa si corresponde a algún producto del pedido.</div></div>`);
   const lim = r.filas.filter(f => f.carga_calculada < f.qty_entrega);
   if (!lim.length){
     out.push(`<div class="aviso ok"><div><b>El plan SOP cubre todo lo pedido.</b> Se carga lo que pide el pedido, sin recortes.</div></div>`);
@@ -119,7 +122,7 @@ function vistaAnalisis(p){
       <td><span class="tag ${TAG_ALERTA[f.alerta]}">${ICONO_ALERTA[f.alerta]} ${esc(f.alerta)}</span></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
-      <td class="n">${fmt(f.plan)}</td><td class="n">${fmt(f.real)}</td><td class="n">${fmt(f.en_entrega)}</td>
+      <td class="n">${fmt(f.plan)}</td><td class="n">${fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
       <td class="n"><b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b></td>
       <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--accent);font-weight:600' : ''}">
         ${f.ajustada ? `<button class="btn quiet sm" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" aria-label="Volver al valor calculado">${ICON.undo}</button>` : ''}
@@ -260,6 +263,9 @@ async function importarMedidas(input){
     if (!r.ok) throw new Error(d.detail || 'No se pudo importar');
     toast(`${d.nuevos} nuevos · ${d.actualizados} actualizados · ${d.sin_cambios} sin cambios`);
     UI.medidas = null; await cargarMedidas();
+    // lo que estaba sin medidas se vuelve a calcular: el cubicador libre y los pedidos que tenían faltantes
+    if (UI.cubIn) pedirCalculo();
+    for (const [ped, cb] of Object.entries(UI.cubicaje)) if ((cb.faltantes || []).length) cubicar(ped, {});
   } catch(e){ toast(e.message); }
 }
 function seccionMedidas(){

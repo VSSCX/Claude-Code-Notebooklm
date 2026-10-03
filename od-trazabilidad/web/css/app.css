@@ -293,6 +293,33 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .aviso.ok{border-color:var(--ok-solid);background:var(--ok-soft)}
 .aviso > div:first-child{flex:1 1 320px;min-width:0}
 tr.limitada td{background:var(--warn-soft)}
+.faltantes{flex:none;margin:0 0 12px;border:1px solid var(--err);border-radius:var(--r);background:var(--paper);overflow:hidden;animation:fl-in 200ms var(--ease-out)}
+.fl-cab{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--err-soft)}
+.fl-cab svg{width:22px;height:22px;flex:none;color:var(--err);margin-top:1px}
+.fl-cab h3{margin:0 0 2px;font-size:var(--t-md);font-weight:700;text-wrap:balance}
+.fl-cab p{margin:0;font-size:var(--t-sm);color:var(--ink-2);max-width:68ch}
+.fl-barra{display:flex;height:8px;margin:12px 14px 6px;background:var(--track);overflow:hidden;border-radius:1px}
+.fl-barra i{display:block;height:100%}
+.fl-barra .ok{background:var(--ok-solid)}
+.fl-barra .out{background:var(--err)}
+.fl-leyenda{display:flex;gap:4px 18px;flex-wrap:wrap;padding:0 14px;font-size:var(--t-sm);color:var(--muted)}
+.fl-leyenda .sw{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:1px;vertical-align:-1px}
+.fl-leyenda .sw.ok{background:var(--ok-solid)}
+.fl-leyenda .sw.out{background:var(--err)}
+.fl-leyenda b{color:var(--ink);margin-left:2px}
+.fl-th{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;margin-top:12px;padding:5px 14px;border-top:1px solid var(--hair);background:var(--paper-2);font-size:12px;font-weight:600;color:var(--muted)}
+.fl-th span:first-child{min-width:9ch}
+.fl-lista{list-style:none;margin:0;padding:0;max-height:196px;overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--hair)}
+.fl-lista li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:baseline;padding:7px 14px;border-bottom:1px solid var(--hair);font-size:var(--t-sm)}
+.fl-lista li:last-child{border-bottom:0}
+.fl-lista .code{min-width:9ch}
+.fl-lista .nom{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-lista b{color:var(--err);font-weight:700}
+.fl-acc{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:10px 14px;background:var(--paper-2);border-top:1px solid var(--hair)}
+.fl-acc .small{flex:1 1 220px}
+.item.faltante{background:var(--err-soft);border-color:var(--err)}
+@keyframes fl-in{from{opacity:0;transform:translateY(-5px)}}
+@media (prefers-reduced-motion:reduce){.faltantes{animation:none}}
 .ruta-leyenda{font-size:var(--t-xs);color:var(--muted);margin:0 0 2px}
 
 /* ---------- Por hacer ---------- */
@@ -427,6 +454,11 @@ dialog.angosto{width:min(460px,96vw)}
   #app{padding:16px}
   .mesa{grid-template-columns:minmax(0,1fr);height:auto}
   .mesa-carga{max-height:70vh}
+  .mesa{gap:12px}
+  .mesa-vista{display:contents}
+  .mesa-vista > *{order:3}
+  .mesa-carga{order:2}
+  .mesa-vista > .faltantes{order:1;margin:0}
 }
 @media (max-width:900px){
   .app{grid-template-columns:minmax(0,1fr)}

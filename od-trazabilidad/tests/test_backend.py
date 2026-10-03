@@ -437,7 +437,7 @@ def test_reanalizar_con_otro_cliente_trae_su_plan_su_codigo_y_rehace_el_cubicaje
            SimpleNamespace(sku="9001", qty_entrega=20, qty_pendiente=20)]
     monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(posiciones=pos, aviso=""))
 
-    def zsd(codigo, skus, carpeta, nombre):
+    def zsd(codigo, skus, carpeta, nombre, **kw):
         llamadas["codigo"] = codigo
         return [{"Nombre Codigo de Material": "PRODUCTO 9000", "Qty. En Entrega": 10}]
     monkeypatch.setattr(sap, "zsd001_03", zsd)
@@ -475,3 +475,315 @@ def test_cliente_sin_codigo_no_llama_a_sap_con_uno_inventado(monkeypatch, datos)
     r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "CLIENTE DESCONOCIDO"})
     t = _esperar(c, r.json()["id"])
     assert t["estado"] == "error" and "código de solicitante" in t["error"]
+
+
+# ---------- cruce de la Qty en entrega por nombre de material ----------
+# Filas reales de la hoja "Entregas" del Excel (reporte ZSD001_03) y descripciones de la Base de Medidas.
+ZSD_REAL = [
+    {"Código de Material": "240098445", "Nombre Codigo de Material": "LAVADORA MADEMSA MDWMT16W", "Qty. En Entrega": 11},
+    {"Código de Material": "240086033", "Nombre Codigo de Material": "LAVADORA MADEMSA 9,5 BZG", "Qty. En Entrega": 30},
+    {"Código de Material": "240094099", "Nombre Codigo de Material": "COCINA FM4ES", "Qty. En Entrega": 0},
+]
+
+
+def test_el_cruce_por_nombre_resuelve_los_casos_que_el_excel_dejaba_a_mano():
+    from app.analisis import calcular, en_entrega_por_modelo
+    pos = [{"sku": s, "qty_entrega": 100, "qty_pendiente": 100} for s in ("900081624", "240086033", "240094099", "926565426")]
+    med = {"900081624": {"desc": "900081624 MDWMT16W", "max_camion": 100},                 # el reporte trae "LAVADORA MADEMSA MDWMT16W"
+           "240086033": {"desc": "240086033 LAVADORA MADEMSA 9 5 BZG", "max_camion": 100},  # el reporte trae "9,5"
+           "240094099": {"desc": "240094099 COCINA FM4ES", "max_camion": 100},             # igual
+           "926565426": {"desc": "926565426 COCINA F5EPB", "max_camion": 100}}
+    plan = {s: {"plan": 1000, "vendido": 0} for s in med}
+    res = calcular(pos, plan, en_entrega_por_modelo(ZSD_REAL), med, {})
+    ent = {f["sku"]: f["en_entrega"] for f in res["filas"]}
+    assert ent == {"900081624": 11, "240086033": 30, "240094099": 0, "926565426": 0}
+    assert next(f for f in res["filas"] if f["sku"] == "900081624")["cruce_zsd"] == "LAVADORA MADEMSA MDWMT16W"
+    assert res["zsd_sin_cruce"] == []
+    assert {f["sku"]: f["saldo"] for f in res["filas"]}["900081624"] == 989          # el saldo ya descuenta lo en entrega
+
+
+def test_el_cruce_no_inventa_coincidencias_dudosas():
+    from app.analisis import cruzar_en_entrega
+    # dos nombres del reporte terminan igual: es ambiguo, no se reparte nada
+    q, usado, sobran = cruzar_en_entrega({"A": "PRO 7D BZG"}, {"SECADORA MADEMSA PRO 7D BZG": 5, "SECADORA OTRA PRO 7D BZG": 9})
+    assert q == {} and sorted(sobran) == ["SECADORA MADEMSA PRO 7D BZG", "SECADORA OTRA PRO 7D BZG"]
+    # el nombre exacto de un SKU no se le quita con el cruce por final de otro SKU
+    q, usado, sobran = cruzar_en_entrega({"A": "COCINA FM4ES", "B": "FM4ES"}, {"COCINA FM4ES": 7})
+    assert q == {"A": 7} and sobran == []
+    # tildes, mayúsculas y signos no importan; un modelo muy corto no se cruza por el final
+    q, _, _ = cruzar_en_entrega({"A": "Lavadora Mademsa 9,5 BZG"}, {"LAVADORA MADEMSA 9 5 BZG": 3})
+    assert q == {"A": 3}
+    assert cruzar_en_entrega({"A": "X1"}, {"COCINA X1": 3})[0] == {}
+    # los datos guardados antes con otro formato de nombre siguen sirviendo
+    assert cruzar_en_entrega({"A": "COCINA FM4ES"}, {"COCINA  FM4ES": 4.0})[0] == {"A": 4.0}
+
+
+def test_un_producto_del_reporte_sin_sku_se_avisa():
+    from app.analisis import calcular
+    res = calcular([{"sku": "1", "qty_entrega": 5, "qty_pendiente": 5}], {"1": {"plan": 10, "vendido": 0}},
+                   {"COCINA FM4ES": 3, "NEVERA RARA": 8}, {"1": {"desc": "1 COCINA FM4ES", "max_camion": 10}}, {})
+    assert res["zsd_sin_cruce"] == ["NEVERA RARA"]
+
+
+# ---------- cubicaje: la grilla decide si coincide con el Excel ----------
+MEDIDAS_HOJA_03 = [   # Base de Medidas del Excel: sku, descripción, largo, ancho, alto, peso, máx camión
+    ("240086033", "240086033 LAVADORA MADEMSA 9 5 BZG", 61.0, 58.0, 105.0, 36.0, 200),
+    ("240094099", "240094099 COCINA FM4ES", 72.0, 59.0, 97.5, 36.0, 168),
+    ("240094551", "240094551 COCINA FM4LP", 70.0, 79.0, 99.0, 35.0, 132),
+    ("240096076", "240096076 SECADORA MADEMSA PRO 7D BZG", 62.5, 55.5, 84.5, 26.4, 192),
+    ("900081624", "900081624 MDWMT16W", 70.1, 66.4, 107.8, 47.0, 126),
+    ("926565426", "926565426 COCINA F5EPB", 69.0, 79.0, 100.0, 55.0, 132),
+]
+CARGA_HOJA_03 = {"900081624": 7, "926565426": 25, "240086033": 200, "240094099": 60, "240094551": 50, "240096076": 125}
+
+
+@pytest.mark.parametrize("celda, esperado", [
+    # (ocupación de cada camión, unidades por camión). 2 cm es la grilla del Excel (CELL = 2) y da su resultado.
+    (2, ([0.7898, 0.8229, 0.465], [140, 192, 135])),
+    (1, ([0.7898, 0.8572, 0.4308], [140, 200, 127])),         # más fino: acomoda distinto, por eso no coincide
+])
+def test_cubicaje_del_excel_coincide_con_la_grilla_de_2_cm(datos, celda, esperado):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import Medida
+    c = TestClient(app)
+    with SessionLocal() as s:
+        for sku, desc, largo, ancho, alto, peso, mx in MEDIDAS_HOJA_03:
+            s.add(Medida(sku=sku, descripcion=desc, piezas=1, largo=largo, ancho=ancho, alto=alto, peso=peso,
+                         apilar="Y", inclinar="N", rotar="N", max_camion=mx, max_pallet=1))
+        pos = [{"sku": k, "qty_entrega": q, "qty_pendiente": q} for k, q in CARGA_HOJA_03.items()]
+        plan = {k: {"plan": 10000, "vendido": 0} for k in CARGA_HOJA_03}
+        med = {m[0]: {"desc": m[1], "max_camion": m[6]} for m in MEDIDAS_HOJA_03}
+        from app.analisis import calcular
+        doc = {"pedido": "4005100000", "cliente": "PARIS", "grupo_sop": "PARIS", "puesto": "PN01", "fecha": "2026-10-01",
+               "posiciones": pos, "en_entrega": {}, "plan": plan, "medidas": med, "disponibilidad": {}, "stock": {},
+               "ajustes": {}, "resultado": calcular(pos, plan, {}, med, {}), "generado": "2026-10-01"}
+        domain.guardar_config(s, "analisis:4005100000", doc)
+        s.commit()
+    assert c.put("/api/ajustes-cubicaje", json={"celda_cm": celda}).status_code == 200
+    r = c.post("/api/cubicaje/4005100000", json={"modo": "MDA", "caja_master": "SIN CAJA MASTER"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    ocup = {f["camion"]: f["ocup_acum"] for f in d["filas"]}
+    unid = {n: sum(f["unidades"] for f in d["filas"] if f["camion"] == n) for n in ocup}
+    assert [round(ocup[n], 4) for n in sorted(ocup)] == esperado[0]
+    assert [unid[n] for n in sorted(unid)] == esperado[1]
+    assert [x["tipo"] for x in d["camiones"]] == ["Rampla 53"] * 3
+    c.put("/api/ajustes-cubicaje", json={"celda_cm": 2})
+
+
+# ---------- carga masiva con productos que no están en la Base de Medidas ----------
+def _excel_carga(filas):
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Carga"
+    ws.append(["SKU", "Unidades", "Sucursal"])
+    for f in filas:
+        ws.append(list(f))
+    b = BytesIO()
+    wb.save(b)
+    b.seek(0)
+    return b
+
+
+def _medida(s, sku, desc):
+    from app.models import Medida
+    s.add(Medida(sku=sku, descripcion=desc, piezas=1, largo=60, ancho=50, alto=40, peso=10,
+                 apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
+
+
+def test_carga_masiva_con_productos_sin_medidas_alerta_con_sku_y_unidades(datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.integrations import medidas as med_mod
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    archivo = _excel_carga([("9000", 10, ""), ("7777", 40, ""), ("7777", 5, ""), ("8888", 3, "")])
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("carga.xlsx", archivo)})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    # los que faltan quedan en la carga (no se pierden) y se avisan con sus unidades, los de más unidades primero
+    assert {l["sku"] for l in d["lineas"]} == {"9000", "7777", "8888"}
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 45), ("8888", 3)]
+    assert d["desconocidos"] == ["7777", "8888"]
+    assert d["unidades"] == 10                                       # solo lo que tiene medidas va al camión
+    # la plantilla trae esos SKU en el formato de la Base de Medidas
+    x = c.get("/api/cubicaje-libre/faltantes.xlsx")
+    assert x.status_code == 200 and "spreadsheetml" in x.headers["content-type"]
+    ws = load_workbook(BytesIO(x.content)).worksheets[0]
+    assert ws.title == "Base para carga"
+    filas = list(ws.iter_rows(values_only=True))
+    assert filas[0][0] == "Grupo" and filas[0][10] == "Máx Camión" and filas[0][12] == "Unidades en la carga"
+    assert [(f[0], f[12]) for f in filas[1:]] == [("7777", 45), ("8888", 3)]
+    # sin completar las medidas la importación los ignora (informando), y completándolas desaparece la alerta
+    with SessionLocal() as s:
+        assert med_mod.importar(s, med_mod.leer_archivo(BytesIO(x.content))).ignorados == 2
+    ws["D2"], ws["E2"], ws["F2"], ws["G2"] = 30, 20, 10, 5
+    ws["D3"], ws["E3"], ws["F3"], ws["G3"] = 40, 30, 20, 8
+    b = BytesIO()
+    ws.parent.save(b)
+    b.seek(0)
+    assert c.post("/api/medidas/importar", files={"file": ("m.xlsx", b)}).status_code == 200
+    d = c.post("/api/cubicaje-libre", json={"lineas": d["lineas"], "modo": "MDA", "vista": "rampla"}).json()
+    assert d["faltantes"] == [] and d["desconocidos"] == [] and d["unidades"] == 58
+    assert c.get("/api/cubicaje-libre/faltantes.xlsx").status_code == 404      # ya no falta ninguno
+
+
+def test_carga_masiva_solo_con_productos_sin_medidas_no_se_pierde(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga([("7777", 12, "")]))})
+    assert r.status_code == 200, r.text
+    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("7777", 12)]
+
+
+def test_reparto_por_sucursal_con_producto_sin_medidas_no_rompe(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga(
+        [("9000", 10, "SUC A"), ("7777", 4, "SUC A"), ("9000", 6, "SUC B")]))})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 4)]
+    assert d["unidades"] == 16
+
+
+def test_pedido_con_productos_sin_medidas_tambien_alerta(datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        doc = _analisis_de_prueba()            # SKU 9000 y 9001: solo el primero tiene medidas
+        domain.guardar_config(s, "analisis:4005100000", doc)
+        s.commit()
+    r = c.post("/api/cubicaje/4005100000", json={"modo": "MDA", "caja_master": "SIN CAJA MASTER"})
+    assert r.status_code == 200, r.text
+    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("9001", 20)]
+    x = c.get("/api/cubicaje/4005100000/faltantes.xlsx")
+    assert [f[0] for f in list(load_workbook(BytesIO(x.content)).worksheets[0].iter_rows(values_only=True))[1:]] == ["9001"]
+
+
+# ---------- carga masiva con productos que no están en la Base de Medidas ----------
+def _excel_carga(filas):
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Carga"
+    ws.append(["SKU", "Unidades", "Sucursal"])
+    for f in filas:
+        ws.append(list(f))
+    b = BytesIO()
+    wb.save(b)
+    b.seek(0)
+    return b
+
+
+def _medida(s, sku, desc):
+    from app.models import Medida
+    s.add(Medida(sku=sku, descripcion=desc, piezas=1, largo=60, ancho=50, alto=40, peso=10,
+                 apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
+
+
+def test_los_productos_sin_medidas_no_se_cubican_y_se_alertan_con_sus_unidades(datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.integrations import medidas as med_mod
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    archivo = _excel_carga([("9000", 10, ""), ("7777", 40, ""), ("7777", 5, ""), ("8888", 3, "")])
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("carga.xlsx", archivo)})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    # no se inventa nada: solo lo que tiene medidas va al camión; el resto se avisa con sus unidades (más grandes primero)
+    assert d["unidades"] == 10
+    assert {l["sku"] for l in d["lineas"]} == {"9000", "7777", "8888"}      # siguen en la lista para poder verlos
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 45), ("8888", 3)]
+    assert d["desconocidos"] == ["7777", "8888"]
+    assert {f["sku"] for f in d["filas"]} == {"9000"}
+    # la plantilla trae esos SKU en el formato de la Base de Medidas
+    x = c.get("/api/cubicaje-libre/faltantes.xlsx")
+    assert x.status_code == 200 and "spreadsheetml" in x.headers["content-type"]
+    ws = load_workbook(BytesIO(x.content)).worksheets[0]
+    assert ws.title == "Base para carga"
+    filas = list(ws.iter_rows(values_only=True))
+    assert filas[0][0] == "Grupo" and filas[0][10] == "Máx Camión" and filas[0][12] == "Unidades en la carga"
+    assert [(f[0], f[12]) for f in filas[1:]] == [("7777", 45), ("8888", 3)]
+    # sin completar las medidas la importación los ignora; completándolas, la alerta desaparece
+    with SessionLocal() as s:
+        assert med_mod.importar(s, med_mod.leer_archivo(BytesIO(x.content))).ignorados == 2
+    ws["D2"], ws["E2"], ws["F2"], ws["G2"] = 30, 20, 10, 5
+    ws["D3"], ws["E3"], ws["F3"], ws["G3"] = 40, 30, 20, 8
+    b = BytesIO()
+    ws.parent.save(b)
+    b.seek(0)
+    assert c.post("/api/medidas/importar", files={"file": ("m.xlsx", b)}).status_code == 200
+    d = c.post("/api/cubicaje-libre", json={"lineas": d["lineas"], "modo": "MDA", "vista": "rampla"}).json()
+    assert d["faltantes"] == [] and d["desconocidos"] == [] and d["unidades"] == 58
+    assert c.get("/api/cubicaje-libre/faltantes.xlsx").status_code == 404
+
+
+def test_carga_masiva_solo_con_productos_sin_medidas_no_se_pierde(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga([("7777", 12, "")]))})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 12)] and d["unidades"] == 0
+
+
+def test_reparto_por_sucursal_con_producto_sin_medidas_no_rompe(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        s.commit()
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga(
+        [("9000", 10, "SUC A"), ("7777", 4, "SUC A"), ("9000", 6, "SUC B")]))})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 4)]
+    assert d["unidades"] == 16
+
+
+def test_pedido_con_productos_sin_medidas_tambien_alerta(datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 PRODUCTO A")
+        domain.guardar_config(s, "analisis:4005100000", _analisis_de_prueba())     # 9000 y 9001: solo el primero tiene medidas
+        s.commit()
+    r = c.post("/api/cubicaje/4005100000", json={"modo": "MDA", "caja_master": "SIN CAJA MASTER"})
+    assert r.status_code == 200, r.text
+    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("9001", 20)]
+    x = c.get("/api/cubicaje/4005100000/faltantes.xlsx")
+    assert [f[0] for f in list(load_workbook(BytesIO(x.content)).worksheets[0].iter_rows(values_only=True))[1:]] == ["9001"]

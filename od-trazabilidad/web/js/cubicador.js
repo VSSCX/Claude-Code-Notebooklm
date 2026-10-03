@@ -236,7 +236,6 @@ async function importarCarga(input){
     if (!r.ok) throw new Error(d.detail || 'No se pudo importar');
     adoptarDoc(d);
     const avisos = [];
-    if ((d.sin_medidas_archivo || []).length) avisos.push('Sin medidas: ' + d.sin_medidas_archivo.slice(0, 5).join(', '));
     if ((d.errores_archivo || []).length) avisos.push(d.errores_archivo.slice(0, 3).join(' · '));
     const reparto = d.predistribuido || [];
     const sucs = new Set(reparto.map(x => x.sucursal)).size;
@@ -288,7 +287,7 @@ function seccionAjustes(){
       <label class="f">Capacidad del pallet
         ${sel('capacidad_pallet', [['geometria', 'Calcularla con las medidas reales'], ['tabla', 'Usar la columna Máx Pallet de la base']], a.capacidad_pallet)}</label>
       <label class="f">Precisión al acomodar en el camión
-        ${sel('celda_cm', [[1, '1 cm'], [2, '2 cm (como el Excel, más rápido)']], a.celda_cm)}</label>
+        ${sel('celda_cm', [[1, '1 cm (más fiel a la carga real)'], [2, '2 cm (como el Excel, más rápido)']], a.celda_cm)}</label>
       <p class="small muted">Con estos valores la capacidad del pallet coincide con EasyCargo en 543 de 545 productos de la Base de Medidas. Valen para todo el cubicaje, también el de los pedidos.</p>
     </div></details>`;
 }
@@ -322,10 +321,10 @@ function vistaCubicador(){
     const d = det[l.sku] || {}, info = UI.cubInfo[l.sku] || {};
     const color = d.color || PALETA_CUB[i % PALETA_CUB.length];
     const sinMedidas = (c.desconocidos || []).includes(l.sku);
-    return `<li class="item" data-k="it-${esc(l.sku)}" data-cubsku="${esc(l.sku)}">
+    return `<li class="item ${sinMedidas ? 'faltante' : ''}" data-k="it-${esc(l.sku)}" data-cubsku="${esc(l.sku)}">
       <button class="letra" style="background:${esc(color)};color:${tintaSobre(color)}" data-cub-filtro="${esc(l.sku)}" aria-pressed="${UI.cubFiltro === l.sku}" title="Aislar este producto en el 3D" aria-label="Aislar ${esc(l.sku)} en el 3D">${esc(d.letra || letraItem(i))}</button>
       <div class="cuerpo">
-        <div class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err">sin medidas</span>' : ''}</div>
+        <div class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err" title="No se cubica hasta que tenga medidas">no se carga · sin medidas</span>' : ''}</div>
         <div class="l2" title="${esc(d.descripcion || info.descripcion || '')}">${esc(d.descripcion || info.descripcion || '')}</div>
         ${(d.medidas || info.medidas) ? `<div class="l3 num">${esc(d.medidas || info.medidas)}</div>` : ''}
       </div>
@@ -427,6 +426,7 @@ function vistaCubicador(){
       ${opciones}
       ${resumen}
       ${faltaMedidas ? `<div class="panel empty"><h3>Falta la Base de Medidas</h3><p>El cubicaje necesita las medidas de los productos. Se cargan una vez y quedan guardadas.</p><button class="btn primary" data-go="config">Ir a Configuración</button></div>` : ''}
+      ${alertaFaltantes(c.faltantes, '/api/cubicaje-libre/faltantes.xlsx', unidades)}
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>
@@ -434,6 +434,25 @@ function vistaCubicador(){
       </div>
     </div>
   </div>`;
+}
+
+/* Productos que no están en la Base de Medidas: no se cubican (no se inventan medidas) y se dice cuáles son,
+   cuántas unidades quedaron fuera y cómo resolverlo. `total` = unidades de toda la carga, con y sin medidas. */
+function alertaFaltantes(f, url, total){
+  if (!f || !f.length) return '';
+  const fuera = f.reduce((a, x) => a + x.unidades, 0), cargadas = Math.max(0, total - fuera);
+  const n = f.length, pct = total ? fuera / total : 0;
+  return `<section class="faltantes" aria-label="Productos sin medidas">
+    <div class="fl-cab">${ICON.alerta}<div>
+      <h3>${n === 1 ? 'Un producto no se cargó' : `${n} productos no se cargaron`} por falta de medidas</h3>
+      <p>Quedaron fuera del camión <b class="num">${fmt(fuera)}</b> unidades. Sin medidas no se cubica: agrégalas a la Base de Medidas y esta carga se recalcula sola.</p></div></div>
+    <div class="fl-barra" role="img" aria-label="${fmt(cargadas)} unidades cargadas y ${fmt(fuera)} sin cargar"><i class="ok" style="width:${(100 * (1 - pct)).toFixed(1)}%"></i><i class="out" style="width:${(100 * pct).toFixed(1)}%"></i></div>
+    <div class="fl-leyenda"><span><i class="sw ok"></i>Cargadas <b class="num">${fmt(cargadas)}</b></span><span><i class="sw out"></i>Sin cargar <b class="num">${fmt(fuera)}</b> · ${pctCub(pct)} de la carga</span></div>
+    <div class="fl-th" aria-hidden="true"><span>SKU</span><span>Producto</span><span>Sin cargar</span></div>
+    <ul class="fl-lista">${f.map(x => `<li><span class="code">${esc(x.sku)}</span><span class="nom" title="${esc(x.descripcion || '')}">${esc(x.descripcion || 'Sin nombre en la maestra')}</span><b class="num">${fmt(x.unidades)} un.</b></li>`).join('')}</ul>
+    <div class="fl-acc"><a class="btn primary sm" href="${esc(url)}">${ICON.file} Descargar plantilla de medidas</a>
+      <button class="btn sm" data-go="config">Ir a Base de Medidas</button>
+      <span class="small muted">La plantilla ya trae estos SKU: completa largo, ancho, alto y peso, e impórtala.</span></div></section>`;
 }
 
 /* ---- Eventos del cubicador (no pasan por el manejador general) ---- */

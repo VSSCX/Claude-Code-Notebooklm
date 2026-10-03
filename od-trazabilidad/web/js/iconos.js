@@ -6,6 +6,7 @@ const ICON = {
   search:     _svg('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.2-4.2"/>'),
   plus:       _svg('<path d="M12 5v14M5 12h14"/>'),
   minus:      _svg('<path d="M5 12h14"/>'),
+  alerta:     _svg('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/>'),
   external:   _svg('<path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/>'),
   undo:       _svg('<path d="M9 7L4 12l5 5"/><path d="M4 12h10a5 5 0 0 1 0 10h-2"/>'),
   file:       _svg('<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/>'),

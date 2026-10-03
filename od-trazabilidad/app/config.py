@@ -46,13 +46,6 @@ class Settings:
     # apuntar a la del Excel con PLANTILLA_VISOR.
     plantilla_visor: str = os.getenv(
         "PLANTILLA_VISOR", str(BASE_DIR / "web" / "visor" / "Plantilla_Visor.html"))
-    # Libro de automatización (solo Windows)
-    macros_workbook: str = os.getenv("MACROS_WORKBOOK", "")
-    # Acciones habilitadas, por id del catálogo en integrations/acciones.py.
-    # Las destructivas (eliminar_entrega) hay que agregarlas a mano.
-    acciones: tuple[str, ...] = _lista(os.getenv(
-        "ACCIONES_HABILITADAS",
-        "actualizar_bases,cubicar,simular,visor,leer_pedido,crear_entregas,crear_grupos,limpiar"))
 
 
 settings = Settings()

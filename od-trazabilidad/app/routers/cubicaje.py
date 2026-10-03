@@ -301,6 +301,90 @@ def get_cubicaje(numero: str, s: Session = Depends(get_session)):
     return doc
 
 
+def _faltantes_de(lineas: list[dict], conoce) -> list[dict]:
+    """Productos de la carga que no están en la Base de Medidas: SKU, unidades (se suman si se repite)
+    y el nombre que tienen en la maestra, para que el analista sepa cuáles son y los complete."""
+    from ..integrations import maestra
+    nombres = maestra.descripciones()
+    out: dict[str, dict] = {}
+    for l in lineas:
+        sku = domain.norm_sku(l.get("sku"))
+        if not sku or conoce(sku):
+            continue
+        f = out.setdefault(sku, {"sku": sku, "unidades": 0, "descripcion": nombres.get(sku, "")})
+        f["unidades"] += float(l.get("qty") or 0)
+    return sorted(out.values(), key=lambda f: (-f["unidades"], f["sku"]))
+
+
+def _xlsx_faltantes(faltantes: list[dict], nombre: str):
+    """Excel con el formato de la Base de Medidas, ya con los SKU que faltan: se completan las medidas
+    y se importa en Configuración → Base de Medidas."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Base para carga"
+    ws.append([*med_mod.CABECERA, "Unidades en la carga"])
+    for f in faltantes:
+        ws.append([f["sku"], f.get("descripcion") or "", 1, None, None, None, None, "Y", "N", "N", None, None, f["unidades"]])
+    for celda in ws[1]:
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill("solid", fgColor="1A2B4A")
+        celda.alignment = Alignment(horizontal="center", wrap_text=True)
+    for col, ancho in zip("ABCDEFGHIJKLM", (16, 38, 8, 11, 11, 11, 11, 8, 9, 8, 11, 11, 14)):
+        ws.column_dimensions[col].width = ancho
+    ws.freeze_panes = "A2"
+    ayuda = wb.create_sheet("Cómo se usa")
+    for linea in ["Productos que no están en la Base de Medidas",
+                  "",
+                  "1. Completa Longitud, Anchura, Altura (cm) y Peso total (kg) de cada producto.",
+                  "2. Piezas: unidades por caja (1 si es unitario). Apilar / Inclinar / Rotar: Y o N.",
+                  "3. Máx Camión y Máx Pallet son opcionales.",
+                  "4. Importa el archivo en Configuración → Base de Medidas. Agrega los productos nuevos y no toca los demás.",
+                  "5. Vuelve al cubicador: se recalcula solo. La columna 'Unidades en la carga' es solo informativa."]:
+        ayuda.append([linea])
+    ayuda.column_dimensions["A"].width = 100
+    ayuda["A1"].font = Font(bold=True, size=13)
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@router.get("/cubicaje-libre/faltantes.xlsx")
+def faltantes_libre(s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, "cubicaje_libre")
+    lineas = (_json.loads(c.valor).get("lineas") if c else None) or []
+    conocidos = {m[0].lower() for m in med_mod.filas_para_cubicaje(s)}
+    faltantes = _faltantes_de(lineas, lambda sku: sku.lower() in conocidos)
+    if not faltantes:
+        raise HTTPException(404, "Todos los productos de la carga tienen medidas.")
+    return _xlsx_faltantes(faltantes, "medidas_faltantes.xlsx")
+
+
+@router.get("/cubicaje/{numero}/faltantes.xlsx")
+def faltantes_pedido(numero: str, s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    ca = s.get(Config, _clave_analisis(numero))
+    if ca is None:
+        raise HTTPException(404, "Este pedido todavía no tiene análisis.")
+    filas = _json.loads(ca.valor)["resultado"]["filas"]
+    conocidos = {m[0].lower() for m in med_mod.filas_para_cubicaje(s)}
+    faltantes = _faltantes_de([{"sku": f["sku"], "qty": f["carga"]} for f in filas if f["carga"] > 0],
+                              lambda sku: sku.lower() in conocidos)
+    if not faltantes:
+        raise HTTPException(404, "Todos los productos del pedido tienen medidas.")
+    return _xlsx_faltantes(faltantes, f"medidas_faltantes_{numero}.xlsx")
+
+
 @router.post("/cubicaje/{numero}")
 def cubicar(numero: str, body: dict, s: Session = Depends(get_session)):
     return _cubicar(numero, body or {}, s)
@@ -376,7 +460,9 @@ def _cubicar(numero: str, body: dict, s: Session):
            "pallets_detalle": r.pallets,
            "avisos": r.avisos, "sin_medidas": r.sin_medidas, "no_encontrados": r.no_encontrados,
            "sin_ubicar": r.sin_ubicar, "unidades": r.unidades, "origen_medidas": origen_medidas,
-           "ajustes": ajustes}
+           "ajustes": ajustes,
+           "faltantes": _faltantes_de([{"sku": f["sku"], "qty": f["carga"]} for f in filas if f["carga"] > 0],
+                                      lambda sku, _c=entrada.medidas: _c.get(sku.lower()) is not None)}
     domain.guardar_config(s, _clave_cubicaje(numero), doc)
 
     # Visor 3D: misma plantilla del Excel, servida desde la plataforma con sus librerías
@@ -595,7 +681,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
 
     pre = [FilaPredist(sucursal=str(x.get("sucursal", "")).strip().upper(),
                        sku=domain.norm_sku(x.get("sku")), unidades=float(x.get("qty") or 0))
-           for x in (body.get("predistribuido") or [])]
+           for x in (body.get("predistribuido") or [])
+           if cache.get(domain.norm_sku(x.get("sku")).lower()) is not None]      # sin medidas no se reparte
 
     partes = []
     if posiciones:
@@ -646,7 +733,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
            "caja_master": str(body.get("caja_master") or ""), "piso_pallet": str(body.get("piso_pallet") or ""),
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "generado": _date.today().isoformat(), "ajustes": ajustes,
-           "desconocidos": desconocidos, "modo_usado": modo}
+           "desconocidos": desconocidos, "modo_usado": modo,
+           "faltantes": _faltantes_de(lineas, lambda sku: cache.get(sku.lower()) is not None)}
 
     try:
         from pathlib import Path as _Path
@@ -809,8 +897,7 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
         if qty <= 0:
             continue
         if sku.lower() not in conocidos:
-            sin_medidas.append(sku)
-            continue
+            sin_medidas.append(sku)            # se queda en la carga: se avisa con sus unidades y se cubica cuando tenga medidas
         leidas.append((i, sku, qty, str(v.get("sucursal") or "").strip().upper()))
 
     # Con sucursales, el archivo es un reparto: una fila por sucursal y SKU. Las unidades

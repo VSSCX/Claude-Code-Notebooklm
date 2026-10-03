@@ -122,8 +122,9 @@ def analizar(numero: str, body: dict):
         if not codigo:
             raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
         carpeta = BASE_DIR / "data" / "sap"
+        avisos_zsd: list[str] = []
         filas_zsd = sap.zsd001_03(codigo, [p["sku"] for p in posiciones],
-                                  str(carpeta), "Qty En Entrega.xlsx")
+                                  str(carpeta), "Qty En Entrega.xlsx", avisar=avisos_zsd.append)
 
         avance("3/4 Calculando saldos y alertas")
         plan = bases.plan_sop(grupo)
@@ -170,7 +171,9 @@ def analizar(numero: str, body: dict):
                 except HTTPException as e:
                     recubicado = str(e.detail)
         return {"pedido": numero, "posiciones": len(posiciones), "alertadas": len(res["alertadas"]),
-                "limitadas": domain.resumen_analisis(doc)["limitadas"], "aviso_sap": lectura.aviso,
+                "limitadas": domain.resumen_analisis(doc)["limitadas"],
+                "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
+                "sin_cruce": res.get("zsd_sin_cruce", []),
                 "recubicado": recubicado}
 
     try:
@@ -481,33 +484,9 @@ def sap_borrar_grupo(body: dict, s: Session = Depends(get_session)):
         raise HTTPException(409, str(err)) from err
 
 
-@router.get("/acciones")
-def get_acciones():
-    return acciones.disponibles()
-
-
-@router.post("/acciones/{accion_id}", status_code=202)
-def run_accion(accion_id: str, body: dict | None = None):
-    args = [str(x) for x in (body or {}).get("args", [])]
-    try:
-        return acciones.lanzar(accion_id, args)
-    except PermissionError as e:
-        raise HTTPException(403, str(e)) from e
-    except ValueError as e:
-        raise HTTPException(422, str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(409, str(e)) from e
-
-
 @router.get("/acciones/trabajos/{tid}")
-def get_trabajo(tid: str, s: Session = Depends(get_session)):
+def get_trabajo(tid: str):
     t = acciones.trabajo(tid)
     if t is None:
         raise HTTPException(404, "Trabajo no encontrado.")
-    # El visor generado queda registrado en el pedido la primera vez que se consulta
-    if t.get("archivo") and not t.get("registrado"):
-        pedido = t["args"][0] if t["args"] else ""
-        domain.registrar_archivo(s, pedido, "", "visor", "Visor 3D del cubicaje", t["archivo"])
-        _commit(s)
-        t["registrado"] = True
     return t

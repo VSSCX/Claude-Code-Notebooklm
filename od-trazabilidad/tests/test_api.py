@@ -113,17 +113,13 @@ def test_entrega_sin_pedido(c):
     assert r.status_code == 422
 
 
-def test_acciones_validacion(c):
-    # sin MACROS_WORKBOOK configurado no se ofrece nada
-    assert c.get("/api/acciones").json()["habilitado"] is False
-    # acción fuera del catálogo o deshabilitada
-    assert c.post("/api/acciones/borrar_todo").status_code == 403
-    # destructiva: no habilitada por defecto
-    assert c.post("/api/acciones/eliminar_entrega", json={"args": ["8705"]}).status_code == 403
-    # habilitada pero sin libro configurado
-    from app.integrations import acciones as acc
-    assert acc.POR_ID["visor"]["guarda_archivo"] == "visor"
-    assert c.post("/api/acciones/cubicar").status_code == 409
+def test_ya_no_hay_acciones_de_excel(c):
+    """La plataforma no ejecuta macros: no hay catálogo ni libro, solo el seguimiento de los trabajos nativos."""
+    assert c.get("/api/acciones").status_code == 404
+    assert c.post("/api/acciones/cubicar").status_code in (404, 405)
+    assert c.get("/api/acciones/trabajos/no-existe").status_code == 404
+    from app.config import settings
+    assert not hasattr(settings, "macros_workbook") and not hasattr(settings, "acciones")
 
 
 def test_archivos(c):
@@ -254,7 +250,7 @@ def test_analisis_en_un_clic(c, monkeypatch):
     from app.integrations import sap, bases, base_medidas
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
         sap.Posicion("900276671", 0, 27), sap.Posicion("111", 40, 40)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda cli, mats, carpeta, nombre: [
+    monkeypatch.setattr(sap, "zsd001_03", lambda cli, mats, carpeta, nombre, **kw: [
         {"Nombre Codigo de Material": "COCINA FM5SSC", "Qty. En Entrega": 0}])
     llamados = {}
     def mmbe(skus, avance=None):
@@ -295,7 +291,7 @@ def test_cubicaje_desde_analisis(c, monkeypatch, tmp_path):
     # análisis previo (la carga del cubicaje sale de ahí)
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 20, 20)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
@@ -347,7 +343,7 @@ def test_visor_no_se_acumula(c, monkeypatch, tmp_path):
     from app.integrations import base_medidas, bases, sap
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(
         pedido=p, posiciones=[sap.Posicion("900081624", 10, 10)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 100, "vendido": 0}})
     monkeypatch.setattr(bases, "disponibilidad", lambda: {})
@@ -439,7 +435,7 @@ def test_predistribuido_y_modo_por_sucursal(c, monkeypatch, tmp_path):
     from app.integrations import base_medidas, bases, sap
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
         sap.Posicion("900081624", 40, 40), sap.Posicion("900276671", 40, 40)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
@@ -677,7 +673,7 @@ def test_cubicaje_usa_el_pallet_del_cliente(c, monkeypatch, tmp_path):
     from app.integrations import base_medidas, bases, sap
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(
         pedido=p, posiciones=[sap.Posicion("900081624", 20, 20)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 100, "vendido": 0}})
     monkeypatch.setattr(bases, "disponibilidad", lambda: {})
@@ -767,7 +763,7 @@ def test_ajustes_de_cubicaje(c, tmp_path):
     plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
     object.__setattr__(settings, "plantilla_visor", str(plantilla))
     assert c.get("/api/ajustes-cubicaje").json() == {"orientacion_pallet": "largo", "celda_cm": 1,
-                                                     "capacidad_pallet": "geometria"}
+                                                     "capacidad_pallet": "geometria"}     # por defecto 1 cm: más fiel a la carga real
     assert c.put("/api/ajustes-cubicaje", json={"orientacion_pallet": "otro"}).status_code == 422
     assert c.put("/api/ajustes-cubicaje", json={"celda_cm": 5}).status_code == 422
 
@@ -799,7 +795,7 @@ def test_cubicador_desde_pedido_y_excel(c, tmp_path, monkeypatch):
 
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 12, 12)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
@@ -853,7 +849,7 @@ def _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400"):
     _cargar_medidas_basicas(c, tmp_path)
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 20, 20)]))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a: [])
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
     monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
@@ -1075,9 +1071,11 @@ def test_plantilla_y_carga_masiva(c, tmp_path):
 
     with open(ruta, "rb") as fh:
         d = c.post("/api/cubicaje-libre/importar", files={"file": ("carga.xlsx", fh.read())}).json()
-    assert d["importadas"] == 2 and d["sin_medidas_archivo"] == ["999999"]
+    # el producto sin medidas no se cubica (no se inventan medidas) pero tampoco se pierde: queda en la lista y se alerta
+    assert d["importadas"] == 3 and d["sin_medidas_archivo"] == ["999999"]
+    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("999999", 5)] and d["desconocidos"] == ["999999"]
     skus = {l["sku"]: l for l in d["lineas"]}
-    assert set(skus) == {"900081624", "900276671"}
+    assert set(skus) == {"900081624", "900276671", "999999"}
     assert "camion" not in skus["900081624"]                   # columna de la plantilla antigua: se ignora
     assert skus["900276671"]["qty"] == 12.5
     assert d["unidades"] > 0 and d["camiones"]                 # ya viene cubicado
@@ -1087,7 +1085,8 @@ def test_plantilla_y_carga_masiva(c, tmp_path):
     ruta2 = tmp_path / "vacio.xlsx"; vacio.save(ruta2)
     with open(ruta2, "rb") as fh:
         r = c.post("/api/cubicaje-libre/importar", files={"file": ("vacio.xlsx", fh.read())})
-    assert r.status_code == 422 and "sin medidas" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["unidades"] == 0          # nada que cubicar, pero se avisa qué falta
+    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("999999", 3)]
     assert c.post("/api/cubicaje-libre/importar",
                   files={"file": ("x.txt", b"nada")}).status_code == 422
 
