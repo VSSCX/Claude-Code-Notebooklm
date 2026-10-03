@@ -60,6 +60,8 @@ def _respaldo_al_iniciar():
 
 
 app.mount("/js", StaticFiles(directory=WEB / "js"), name="js")
+app.mount("/css", StaticFiles(directory=WEB / "css"), name="css")
+app.mount("/fonts", StaticFiles(directory=WEB / "fonts"), name="fonts")
 app.mount("/vendor", StaticFiles(directory=WEB / "vendor"), name="vendor")
 VISORES = BASE_DIR / "data" / "visores"
 VISORES.mkdir(parents=True, exist_ok=True)

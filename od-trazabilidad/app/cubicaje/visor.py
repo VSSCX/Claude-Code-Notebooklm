@@ -108,6 +108,24 @@ def html_visor(plantilla: str, json_cubicaje: str) -> str:
     return plantilla.replace(MARCA_PLANTILLA, json_cubicaje)
 
 
+VISOR_VIVO = "visor_vivo.html"
+
+
+def asegurar_visor_vivo(carpeta, plantilla: str) -> str:
+    """Visor sin datos con una dirección fija. La plataforma lo abre una sola vez y le manda
+    cada cálculo nuevo por postMessage, en vez de recargar una página distinta en cada cambio.
+    Se reescribe solo si la plantilla cambió. Devuelve la URL pública."""
+    from pathlib import Path
+    ruta = Path(carpeta) / VISOR_VIVO
+    html = html_visor(plantilla, '{"camiones":[]}')
+    try:
+        if not ruta.exists() or ruta.read_text(encoding="utf-8") != html:
+            ruta.write_text(html, encoding="utf-8")
+    except OSError:
+        pass
+    return f"/visor/{VISOR_VIVO}"
+
+
 # ---------------------------------------------------------------------------
 # Carpeta local del visor: el HTML generado busca sus librerías en ./visor/
 # ---------------------------------------------------------------------------
@@ -125,7 +143,10 @@ def preparar_carpeta(destino, origen) -> list[str]:
         dst = destino / "visor" / nombre
         src = origen / nombre
         try:
-            if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
+            # se copia si falta, si el origen es mas nuevo o si cambio de tamano (una copia
+            # danada o de prueba mas nueva que la real no debe quedarse para siempre)
+            if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime
+                                 or src.stat().st_size != dst.stat().st_size):
                 shutil.copy2(src, dst)
             if not dst.exists():
                 faltan.append(nombre)

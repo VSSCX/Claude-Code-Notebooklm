@@ -14,15 +14,16 @@ function botonAccion(id, extra){
 }
 function estadoJob(){
   const j = UI.job; if (!j) return '';
-  if (j.estado === 'en_curso') return `<p class="small"><span class="tag amber">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}. ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
-  if (j.estado === 'ok') return `<p class="small"><span class="tag green">Listo</span> ${esc(j.label)}: ${esc(j.archivo ? 'archivo guardado en el pedido' : j.resultado || 'terminó')}</p>`;
-  return `<p class="small"><span class="tag red">Error</span> ${esc(j.label)}: ${esc(j.error)}</p>`;
+  if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}. ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
+  if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.archivo ? 'archivo guardado en el pedido' : j.resultado || 'terminó')}</p>`;
+  return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}</p>`;
 }
 async function correrAccion(id, args){
   const a = accion1(id); if (!a) return;
   if (a.destructiva){
-    const txt = prompt(`${a.label}: esto es irreversible en SAP.\nEscribe ${args[0]} para confirmar:`);
-    if (txt !== String(args[0])) return toast('Cancelado');
+    const r = await preguntar({titulo: a.label, texto: 'Esto es <b>irreversible</b> en SAP.', campos: [{nombre: 'c', etiqueta: `Escribe ${args[0]} para confirmar`}],
+      ok: a.label, peligro: true, validar: v => v.c === String(args[0]) ? '' : 'Lo escrito no coincide.'});
+    if (!r) return toast('Cancelado');
   }
   try { UI.job = await api('POST', '/acciones/' + encodeURIComponent(id), {args: args || []}); render(); }
   catch(e){ toast(e.message); return; }
@@ -46,7 +47,7 @@ function abrirLecturaSap(modo){
     <p style="margin-top:0" class="small">${analizar
       ? 'Hace en un solo paso lo del botón 01 del Excel: lee el pedido en VL01N, trae la Qty en entrega de ZSD001_03, calcula saldo SOP, carga y alertas, y consulta MMBE solo para los SKU con alerta. Sin mensajes que aceptar.'
       : 'Abre VL01N con tu sesión de SAP y trae las posiciones del pedido.'} <b>Solo lee</b>: no crea ni modifica nada en SAP. Mientras corre, no uses el mouse ni el teclado sobre SAP.</p>
-    <div class="grid-form">
+    <div class="fgrid">
       <label class="f">N° de pedido<input type="text" name="lsPedido" value="${esc(p ? p.pedido : '')}"></label>
       <label class="f">…o la orden de compra<input type="text" name="lsOc" placeholder="OC del cliente y Enter"></label>
       <label class="f">Puesto de expedición<input type="text" name="lsPuesto" value="${esc(cfg.puesto || 'PN01')}"></label>
@@ -92,8 +93,9 @@ async function ajustarCarga(pedido, sku, valor){
     render();
   } catch(e){ toast(e.message); render(); }
 }
-const TAG_ALERTA = {'Sin stock':'red', 'Stock parcial':'amber', 'Limitado SOP':'amber', 'Completo':'green'};
-const ICONO_ALERTA = {'Sin stock':'🔴', 'Stock parcial':'🟠', 'Limitado SOP':'🟡', 'Completo':'🟢'};
+const TAG_ALERTA = {'Sin stock':'err', 'Stock parcial':'warn', 'Limitado SOP':'warn', 'Completo':'ok'};
+const PIP_ALERTA = {'Sin stock':'err', 'Stock parcial':'warn', 'Limitado SOP':'lim', 'Completo':'ok'};
+const ICONO_ALERTA = Object.fromEntries(Object.entries(PIP_ALERTA).map(([k, t]) => [k, `<span class="pip ${t}"></span>`]));
 function vistaAnalisis(p){
   const a = UI.analisis[p.pedido];
   if (!a) { setTimeout(() => cargarAnalisis(p.pedido), 0); return '<p class="small muted">Cargando análisis…</p>'; }
@@ -106,14 +108,14 @@ function vistaAnalisis(p){
   const filas = r.filas.map(f => {
     const corte = f.alerta !== prev; prev = f.alerta;
     const st = f.stock || {};
-    return `<tr${corte ? ' style="border-top:2px solid var(--line)"' : ''}>
+    return `<tr${corte ? ' class="corte"' : ''}>
       <td><span class="tag ${TAG_ALERTA[f.alerta]}">${ICONO_ALERTA[f.alerta]} ${esc(f.alerta)}</span></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
       <td class="n">${fmt(f.plan)}</td><td class="n">${fmt(f.real)}</td><td class="n">${fmt(f.en_entrega)}</td>
       <td class="n"><b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b></td>
-      <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--steel);font-weight:600' : ''}">
-        ${f.ajustada ? `<button class="btn ghost small" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" style="padding:0 4px">↺</button>` : ''}</td>
+      <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--accent);font-weight:600' : ''}">
+        ${f.ajustada ? `<button class="btn quiet sm" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" aria-label="Volver al valor calculado">${ICON.undo}</button>` : ''}</td>
       <td class="n">${pct(f.ocupacion)}</td><td class="n">${pct(f.acumulado)}</td>
       <td class="small">${esc(f.disponibilidad)}</td>
       <td class="n">${f.stock ? fmt(st.cd30) : ''}</td><td class="n">${f.stock ? fmt(st.reserva_cd30) : ''}</td>
@@ -128,13 +130,13 @@ function vistaAnalisis(p){
       <div>Carga total<b>${fmt(r.filas.reduce((s, f) => s + f.carga, 0))}</b></div>
       ${['Sin stock','Stock parcial','Limitado SOP','Completo'].map(k => `<div>${ICONO_ALERTA[k]} ${k}<b>${cuenta(k)}</b></div>`).join('')}
     </div>
-    <div class="scroll"><table class="t"><thead><tr>
+    <div class="scroll"><table class="tbl"><thead><tr>
       <th>Alerta</th><th>SKU</th><th>Descripción</th><th class="n">Qty entrega</th><th class="n">Pendiente</th>
       <th class="n">Plan SOP</th><th class="n">Real</th><th class="n">En entrega</th><th class="n">Saldo SOP</th>
       <th class="n">Carga</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
       <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
     </tr></thead><tbody>${filas}</tbody></table></div>
-    <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El ↺ la devuelve al valor calculado.</p>`;
+    <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado.</p>`;
 }
 async function buscarPorOc(valor){
   if (!valor) return;
@@ -204,7 +206,7 @@ function seccionClientes(){
     </div><div class="panel-b">
     <p style="margin-top:0;max-width:72ch">Cada cliente tiene su pallet, su grupo SOP, su código de solicitante y sus reglas: separar calefones en camiones aparte (HITES) o mandar los conchos a piso en vez de armar pallets mix (SODIMAC, RIPLEY).</p>
     ${ed ? `<div class="panel" style="margin-bottom:12px"><div class="panel-b">
-      <div class="grid-form">
+      <div class="fgrid">
         <label class="f">Cliente<input type="text" name="cliNombre" value="${esc(ed.nombre || '')}" ${ed.nuevo ? '' : 'readonly'}></label>
         <label class="f">Grupo SOP<input type="text" name="cliGrupo" value="${esc(ed.grupo_sop || '')}"></label>
         <label class="f">Código solicitante<input type="text" name="cliCodigo" value="${esc(ed.codigo || '')}"></label>
@@ -223,14 +225,14 @@ function seccionClientes(){
       </div>
       <label class="f" style="margin-top:10px">Notas<input type="text" name="cliNotas" value="${esc(ed.notas || '')}"></label>
       <div class="row" style="margin-top:10px"><button class="btn primary" data-act="guardarCliente">Guardar</button>
-        <button class="btn ghost" data-act="cancelarCliente">Cancelar</button></div>
+        <button class="btn quiet" data-act="cancelarCliente">Cancelar</button></div>
     </div></div>` : ''}
-    <div class="scroll"><table class="t"><thead><tr><th>Cliente</th><th>Grupo SOP</th><th>Código</th>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Cliente</th><th>Grupo SOP</th><th>Código</th>
       <th>Pallet (L × A × Alto)</th><th>Caja master</th><th>Reglas</th><th></th></tr></thead><tbody>
       ${filas.map(f => `<tr><td><b>${esc(f.nombre)}</b></td><td>${esc(f.grupo_sop)}</td><td class="num">${esc(f.codigo)}</td>
         <td class="num">${f.pallet.map(x => fmt(x)).join(' × ')}</td><td class="small">${esc(f.caja_master || '—')}</td>
         <td>${f.calefon_aparte ? '<span class="tag">calefones aparte</span> ' : ''}${f.hibrido ? '<span class="tag">conchos a piso</span>' : ''}</td>
-        <td><button class="btn ghost small" data-act="editarCliente" data-nombre="${esc(f.nombre)}">Editar</button></td></tr>`).join('')}
+        <td><button class="btn quiet sm" data-act="editarCliente" data-nombre="${esc(f.nombre)}">Editar</button></td></tr>`).join('')}
     </tbody></table></div>
   </div></div>`;
 }
@@ -267,8 +269,8 @@ function seccionMedidas(){
       <label class="btn primary">Cargar archivo de medidas<input type="file" accept=".xlsm,.xlsx" data-medidas style="display:none"></label>
       <input type="search" placeholder="Buscar SKU o descripción y Enter" value="${esc(UI.medidasBuscar)}" data-buscarmed style="min-width:220px">
     </div>
-    ${m && m.error ? `<p class="small"><span class="tag red">Error</span> ${esc(m.error)}</p>` : ''}
-    ${filas.length ? `<div class="scroll" style="margin-top:12px"><table class="t"><thead><tr><th>SKU</th><th>Descripción</th>
+    ${m && m.error ? `<p class="small"><span class="tag err">Error</span> ${esc(m.error)}</p>` : ''}
+    ${filas.length ? `<div class="scroll" style="margin-top:12px"><table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th>
       <th class="n">Largo</th><th class="n">Ancho</th><th class="n">Alto</th><th class="n">Peso</th>
       <th>Apilar</th><th>Inclinar</th><th>Rotar</th><th class="n">Máx camión</th><th class="n">Máx pallet</th></tr></thead><tbody>
       ${filas.map(f => `<tr><td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
@@ -290,14 +292,14 @@ function listaArchivos(pedido, grupo){
   const camiones = grupo ? [] : gruposDe(pedido).filter(g => !g.sinGrupo);
   const visible = arch.find(a => a.id === UI.verArchivo);
   return `<div class="row" style="margin-top:10px;gap:8px">
-    ${arch.map(a => `<span class="tag">${a.tipo === 'visor' ? '🧊' : '📄'} <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>
-      <button class="btn ghost small" data-act="verArchivo" data-id="${a.id}" style="padding:0 4px">${UI.verArchivo === a.id ? 'Ocultar' : 'Ver aquí'}</button>
+    ${arch.map(a => `<span class="tag">${a.tipo === 'visor' ? ICON.cube : ICON.file} <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.nombre)}</a>
+      <button class="btn quiet sm" data-act="verArchivo" data-id="${a.id}" style="padding:0 4px">${UI.verArchivo === a.id ? 'Ocultar' : 'Ver aquí'}</button>
       ${camiones.length ? `<select data-asignar="${a.id}" aria-label="Asignar a camión" style="padding:1px 4px;font-size:12px"><option value="">Asignar a camión…</option>${camiones.map(g => `<option value="${esc(g.grupo)}">Grupo ${esc(g.grupo)}</option>`).join('')}</select>` : ''}
-      ${grupo ? `<button class="btn ghost small" data-act="desasignar" data-id="${a.id}" title="Volver al pedido" style="padding:0 4px">↩</button>` : ''}
-      <button class="btn ghost small" data-act="borrarArchivo" data-id="${a.id}" title="Quitar" style="padding:0 4px">✕</button></span>`).join('') || '<span class="small muted">Sin archivos</span>'}
-    <label class="btn ghost small">Subir PDF<input type="file" accept=".pdf,.png,.jpg,.html" data-subir data-pedido="${esc(pedido)}" data-grupo="${esc(grupo || '')}" style="display:none"></label>
+      ${grupo ? `<button class="btn quiet sm" data-act="desasignar" data-id="${a.id}" title="Volver al pedido" aria-label="Volver al pedido">${ICON.undo}</button>` : ''}
+      <button class="btn quiet sm" data-act="borrarArchivo" data-id="${a.id}" title="Quitar" aria-label="Quitar archivo">${ICON.x}</button></span>`).join('') || '<span class="small muted">Sin archivos</span>'}
+    <label class="btn quiet sm">Subir PDF<input type="file" accept=".pdf,.png,.jpg,.html" data-subir data-pedido="${esc(pedido)}" data-grupo="${esc(grupo || '')}" style="display:none"></label>
   </div>
-  ${visible ? `<iframe src="${esc(visible.url)}" title="${esc(visible.nombre)}" style="width:100%;height:560px;border:1px solid var(--line);border-radius:8px;margin-top:10px;background:#fff"></iframe>` : ''}`;
+  ${visible ? `<iframe src="${esc(visible.url)}" title="${esc(visible.nombre)}" style="width:100%;height:560px;border:1px solid var(--hair);border-radius:8px;margin-top:10px;background:#fff"></iframe>` : ''}`;
 }
 async function asignarArchivo(id, grupo){
   try { await api('PATCH', '/archivos/' + id, {grupo}); await Store.refresh(); toast(grupo ? `Asignado al grupo ${grupo}` : 'Devuelto al pedido'); }
@@ -316,11 +318,12 @@ async function subirArchivo(input){
 }
 
 async function borrarArchivo(id){
-  if (!confirm('¿Quitar este archivo?')) return;
+  if (!await preguntar({titulo: 'Quitar archivo', texto: 'El archivo se quita del pedido.', ok: 'Quitar', peligro: true})) return;
   try { await api('DELETE', '/archivos/' + id); await Store.refresh(); toast('Archivo quitado'); }
   catch(e){ toast(e.message); }
 }
 async function plantilla(){
+  if (!await asegurarXLSX()) return toast('No se pudo cargar el lector de Excel');
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Pedido','OC','Cliente','Canal','Fecha OC','Material','Descripción','Cantidad']]), 'Pedidos');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Entrega','Pedido','Grupo','Tipo','Material','Cantidad']]), 'Entregas');
@@ -356,7 +359,7 @@ function seccionConexion(){
   const r = UI.cxResultado;
   return `<div class="panel" style="margin-bottom:20px"><div class="panel-h"><h2>Conexión a las bases (SQL Server)</h2></div><div class="panel-b">
     <p style="margin-top:0;max-width:72ch">De aquí salen el plan SOP, la disponibilidad y los pedidos ingresados. Si dejas el usuario en blanco, la plataforma entra con tu cuenta de Windows. Estos datos quedan <b>solo en este equipo</b>: no se comparten ni viajan a ningún lado.</p>
-    <div class="grid-form">
+    <div class="fgrid">
       <label class="f" style="grid-column:1 / -1">Servidor y base
         <input type="text" name="cxUrl" value="${esc(cx.url || '')}" placeholder="mssql+pyodbc://clws0156/161221_TS_ODS?driver=ODBC+Driver+17+for+SQL+Server&amp;trusted_connection=yes&amp;TrustServerCertificate=yes"></label>
       <label class="f">Usuario de SQL Server<input type="text" name="cxUsuario" value="${esc(cx.usuario || '')}" placeholder="vacío = cuenta de Windows"></label>
@@ -366,9 +369,9 @@ function seccionConexion(){
       <button class="btn primary" data-act="guardarConexion">Guardar</button>
       <button class="btn" data-act="probarConexion" ${UI.cxProbando ? 'disabled' : ''}>${UI.cxProbando ? 'Probando…' : 'Probar conexión'}</button>
       ${cx.desde_env ? '<span class="tag">viene del archivo .env</span>' : ''}
-      ${cx.tiene_clave ? '<span class="tag green">clave guardada</span>' : ''}
+      ${cx.tiene_clave ? '<span class="tag ok">clave guardada</span>' : ''}
     </div>
-    ${r ? `<p class="small"><span class="tag ${r.ok ? 'green' : 'red'}">${r.ok ? 'Conecta' : 'No conecta'}</span> ${esc(r.mensaje)}</p>` : ''}
+    ${r ? `<p class="small"><span class="tag ${r.ok ? 'ok' : 'err'}">${r.ok ? 'Conecta' : 'No conecta'}</span> ${esc(r.mensaje)}</p>` : ''}
   </div></div>`;
 }
 

@@ -381,7 +381,7 @@ def _cubicar(numero: str, body: dict, s: Session):
     try:
         from pathlib import Path as _Path
         from ..config import BASE_DIR as _BD, settings as _st
-        from ..cubicaje.visor import html_visor, preparar_carpeta
+        from ..cubicaje.visor import asegurar_visor_vivo, html_visor, preparar_carpeta
         carpeta = _BD / "data" / "visores"
         faltan = preparar_carpeta(carpeta, _st.visor_assets)
         if faltan:
@@ -392,13 +392,16 @@ def _cubicar(numero: str, body: dict, s: Session):
         from ..cubicaje.mda import Camion as _Cam
         # Sin carga no se dibuja una plantilla en blanco: se muestra la rampla vacía
         cams = r.camiones or [_Cam(numero=1, tipo="Rampla 53", L=1540, w=245, h=230)]
-        html = html_visor(plantilla, construir_json(r.placed, cams, es_sda=bool(r.pallets),
-                                                    pallets=r.pallets))
+        datos_visor = construir_json(r.placed, cams, es_sda=bool(r.pallets), pallets=r.pallets)
+        html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob(f"pedido_{numero}_*.html"):        # deja solo el último
             viejo.unlink(missing_ok=True)
         nombre_fs = f"pedido_{numero}_{uuid.uuid4().hex[:8]}.html"
         (carpeta / nombre_fs).write_text(html, encoding="utf-8")
         doc["visor"] = f"/visor/{nombre_fs}"
+        # para la página: visor de dirección fija + los datos de este cálculo
+        doc["visor_vivo"] = asegurar_visor_vivo(carpeta, plantilla)
+        doc["visor_json"] = datos_visor
     except Exception as e:  # noqa: BLE001 - el cubicaje vale aunque el visor falle
         doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor 3D: {str(e)[:150]}"]
     domain.guardar_config(s, _clave_cubicaje(numero), doc)
@@ -438,8 +441,23 @@ def get_cubicaje_libre(s: Session = Depends(get_session)):
     import json as _json
     from ..models import Config
     c = s.get(Config, "cubicaje_libre")
-    return _json.loads(c.valor) if c else {"lineas": [], "cliente": "", "modo": "MDA",
-                                           "vista": "rampla"}
+    doc = _json.loads(c.valor) if c else {"lineas": [], "cliente": "", "modo": "MDA",
+                                          "vista": "rampla"}
+    doc["visor_vivo"] = _visor_vivo()        # la página abre el visor antes del primer cálculo
+    return doc
+
+
+def _visor_vivo() -> str:
+    """Deja listo el visor de dirección fija (plantilla y librerías) y devuelve su URL."""
+    from pathlib import Path as _Path
+    from ..config import BASE_DIR as _BD, settings as _st
+    from ..cubicaje.visor import asegurar_visor_vivo, preparar_carpeta
+    carpeta = _BD / "data" / "visores"
+    try:
+        preparar_carpeta(carpeta, _st.visor_assets)
+        return asegurar_visor_vivo(carpeta, _Path(_st.plantilla_visor).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - sin visor la carga igual se calcula
+        return ""
 
 
 @router.post("/cubicaje-libre/desde-pedido")
@@ -595,10 +613,14 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
             orden[cod] = (_letra(n), PALETA[n % len(PALETA)])
             n += 1
     detalle = {}
-    for i, l in enumerate(lineas):
+    siguiente = len(orden)          # los productos sin colocar siguen la serie: no repiten letra ni color
+    for l in lineas:
         sku = domain.norm_sku(l.get("sku"))
         d = cache.get(sku.lower())
-        letra, color = orden.get(sku, (_letra(i), PALETA[i % len(PALETA)]))
+        if sku not in orden:
+            orden[sku] = (_letra(siguiente), PALETA[siguiente % len(PALETA)])
+            siguiente += 1
+        letra, color = orden[sku]
         if d is not None:
             detalle[sku] = {"descripcion": d.desc or sku,
                             "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
@@ -616,7 +638,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         from ..config import BASE_DIR as _BD, settings as _st
         from ..cubicaje.mda import Camion as _Cam
         from ..cubicaje.sda import TARIMA
-        from ..cubicaje.visor import html_visor, preparar_carpeta
+        from ..cubicaje.visor import asegurar_visor_vivo, html_visor, preparar_carpeta
         carpeta = _BD / "data" / "visores"
         preparar_carpeta(carpeta, _st.visor_assets)
         pallets_visor = doc["pallets_detalle"]
@@ -661,13 +683,15 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     [_Cam(numero=1, tipo=camiones[0].tipo, L=camiones[0].L, w=camiones[0].w,
                           h=camiones[0].h)])
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
-        html = html_visor(plantilla, construir_json(placed, cams, es_sda=bool(pallets_visor),
-                                                    pallets=pallets_visor))
+        datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor)
+        html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob("libre_*.html"):
             viejo.unlink(missing_ok=True)
         nombre_fs = f"libre_{uuid.uuid4().hex[:8]}.html"
         (carpeta / nombre_fs).write_text(html, encoding="utf-8")
         doc["visor"] = f"/visor/{nombre_fs}"
+        doc["visor_vivo"] = asegurar_visor_vivo(carpeta, plantilla)
+        doc["visor_json"] = datos_visor
     except Exception as e:  # noqa: BLE001
         doc["visor"] = ""
         doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor: {str(e)[:150]}"]

@@ -229,20 +229,16 @@ function placeScaniaCab(cab,L,W,H,tipo){
   return cab;
 }</script><script src="visor/scania_data.js"></script>
 <script>
-const DATA=__CUBICAJE_JSON__;
-const ESC=DATA.escenarios||[{nombre:'Cubicaje',camiones:(DATA.camiones||[])}];
+let DATA=__CUBICAJE_JSON__;
+let ESC=DATA.escenarios||[{nombre:'Cubicaje',camiones:(DATA.camiones||[])}];
 let escCur=0;
 let CAM=ESC[escCur].camiones||[];
 // ===== Color por sucursal (toggle - MDA Predistribuido) =====
 let colorBySuc=false; const SUC_COLOR={}, SUC_LETRA={}; let HAS_SUC=false; const DESC_BY_COD={};
-// mapa codigo -> descripcion (col E de 02_Posiciones); se puebla al cargar, para etiquetar las cajas
-ESC.forEach(e=>(e.camiones||[]).forEach(c=>(c.items||[]).forEach(it=>{
-  if(it && it.cod!=null && !(it.cod in DESC_BY_COD)) DESC_BY_COD[it.cod]=String(it.desc||it.cod);
-})));
 // ===== Filtro de vista: aislar una sucursal o un producto en el camion =====
 let filtroTipo=null, filtroVal=null;
 function esc(s){return String(s).replace(/"/g,'&quot;');}
-function pasaFiltro(b){ if(!filtroTipo)return true; if(filtroTipo==='suc')return (b.suc||'')===filtroVal; if(filtroTipo==='cod')return (b.cod||'')===filtroVal; return true; }
+function pasaFiltro(b){ if(!filtroTipo)return true; if(filtroTipo==='suc')return (b.suc||'')===filtroVal; if(filtroTipo==='cod')return (b.cod||'')===filtroVal||(b.cod||'')==='C'+filtroVal; return true; }
 function pasaFiltroPal(p){ if(filtroTipo!=='suc')return true; return (p.suc||'')===filtroVal; }
 function setFiltro(tipo,val){
   if(tipo===null||tipo===''){filtroTipo=null;filtroVal=null;}
@@ -250,7 +246,15 @@ function setFiltro(tipo,val){
   else{filtroTipo=tipo;filtroVal=val;}
   buildScene(cur); renderLegend();
 }
-(function(){
+/* Indexa lo que se calcula a partir de los datos: descripciones por codigo, colores por
+   sucursal y el largo ocupado de cada camion. Se vuelve a llamar cuando llegan datos nuevos. */
+function indexarDatos(){
+  for(const k in DESC_BY_COD)delete DESC_BY_COD[k];
+  for(const k in SUC_COLOR)delete SUC_COLOR[k];
+  for(const k in SUC_LETRA)delete SUC_LETRA[k];
+  ESC.forEach(e=>(e.camiones||[]).forEach(c=>(c.items||[]).forEach(it=>{
+    if(it && it.cod!=null && !(it.cod in DESC_BY_COD)) DESC_BY_COD[it.cod]=String(it.desc||it.cod);
+  })));
   const palS=["#E74C3C","#2980B9","#27AE60","#9B59B6","#E67E22","#16A085","#E84393","#34495E","#D35400","#1ABC9C","#8E44AD","#C0392B","#2ECC71","#2C3E50","#F39C12","#7F8C8D"];
   const seen=[];
   ESC.forEach(e=>(e.camiones||[]).forEach(c=>(c.cajas||[]).forEach(b=>{if(b.suc&&seen.indexOf(b.suc)<0)seen.push(b.suc);})));
@@ -258,7 +262,9 @@ function setFiltro(tipo,val){
   seen.forEach((s,i)=>{SUC_COLOR[s]=palS[i%palS.length];SUC_LETRA[s]=String.fromCharCode(65+(i%26));});
   HAS_SUC=seen.length>0;
   colorBySuc=HAS_SUC;   // arranca encendido si hay sucursales (sub-bloques visibles de entrada)
-})();
+  ESC.forEach(e=>(e.camiones||[]).forEach(c=>{let mx=0;(c.cajas||[]).forEach(b=>{if(b.x+b.dx>mx)mx=b.x+b.dx});c.maxX=mx;}));
+}
+indexarDatos();
 function boxColor(b){return (colorBySuc&&b.suc)?(SUC_COLOR[b.suc]||b.color):b.color;}
 function boxLetra(b){return (colorBySuc&&b.suc)?(SUC_LETRA[b.suc]||b.letra):b.letra;}
 function updateToggle(){var x=document.getElementById('colorToggle');if(x)x.textContent=colorBySuc?'Color: por sucursal':'Color: por producto';}
@@ -302,7 +308,7 @@ function init(){
   const cv=document.getElementById('cv');
   renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,preserveDrawingBuffer:true,alpha:false});
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.shadowMap.autoUpdate=false;   // la luz no se mueve: la sombra se recalcula solo al reconstruir la escena
   renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
   scene=new THREE.Scene();
   bgScene=new THREE.Color(0xe9edf2);scene.background=bgScene;
@@ -323,11 +329,12 @@ function init(){
   var busy=document.getElementById('busy');
   function arrancar(){busy.classList.remove('on');renderEscTabs();buildScene(0);renderTabs();renderStats();renderLegend();renderColorToggle();renderEtiquetaToggle();animate();}
   arrancar();
+  try{if(parent!==window)parent.postMessage({tipo:'od-visor-listo'},'*');}catch(e){}
   document.getElementById('legend').addEventListener('click',function(e){
     const r=e.target.closest('[data-ft]'); if(!r)return;
     setFiltro(r.getAttribute('data-ft')||null, r.getAttribute('data-fv'));
   });
-  setTimeout(function(){try{new THREE.GLTFLoader().parse(b64ToBuf(SCANIA_B64),'',function(gl){scaniaCab=gl.scene;scaniaCab.traverse(function(o){if(o.isMesh){o.castShadow=true;}});buildScene(cur);},function(e){console.warn('cabina',e);});}catch(e){console.warn(e);}},50);
+  setTimeout(function(){try{new THREE.GLTFLoader().parse(b64ToBuf(SCANIA_B64),'',function(gl){scaniaCab=gl.scene;scaniaCab.traverse(function(o){if(o.isMesh){o.castShadow=true;}});_truckCache.clear();buildScene(cur);},function(e){console.warn('cabina',e);});}catch(e){console.warn(e);}},50);
 }
 const _skuCache={};
 function skuMat(color,txt){
@@ -361,82 +368,128 @@ function skuMat(color,txt){
   const mat=new THREE.MeshStandardMaterial({map:t,metalness:0,roughness:0.8});
   _skuCache[ckey]=mat; return mat;
 }
-function makePallet(dl,dw,h,col){
-  const g=new THREE.Group();
-  const wood=0xb5824e, woodHi=0xc99a64, woodLo=0x9c6b3c;
-  let topA=wood, topB=woodHi;            // cara superior: madera, o color de sucursal si se pasa
-  if(col){ const cc=new THREE.Color(col); topA=cc.getHex(); topB=cc.clone().offsetHSL(0,0,0.10).getHex(); }
-  const mkb=(w,hh,d,x,y,z,col)=>{
-    const m=new THREE.Mesh(new THREE.BoxGeometry(w,hh,d), new THREE.MeshStandardMaterial({color:col,metalness:0,roughness:0.85}));
-    m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; g.add(m);
-    const e=new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({color:0x5c3b1c,transparent:true,opacity:1}));
-    e.position.copy(m.position); g.add(e);
-  };
-  const grosor=2.3;
-  const nT=5, tabla=dl/(nT+(nT-1)*0.35), gap=tabla*0.35;
-  for(let i=0;i<nT;i++){ const x=i*(tabla+gap)+tabla/2; mkb(tabla,grosor,dw,x,h-grosor/2,dw/2,i%2?topB:topA); }
-  const lh=h-2*grosor-1.0, lw=9;
-  [lw/2+1, dw/2, dw-lw/2-1].forEach(z=> mkb(dl,lh,lw,dl/2,grosor+lh/2,z,woodLo));
-  for(let i=0;i<3;i++){ const x=i*(dl-tabla)/2+tabla/2; mkb(tabla,grosor,dw,x,grosor/2,dw/2,woodLo); }
-  return g;
+/* ===== Geometria fusionada =====
+   Antes cada caja era una malla con su propia geometria, mas otra malla para sus aristas:
+   cientos de llamadas de dibujo por cuadro y miles de geometrias que nunca se liberaban.
+   Ahora todas las cajas del mismo producto van en UNA malla y todas las aristas en UN
+   LineSegments. La geometria base es la misma BoxGeometry de siempre, asi que las caras y
+   la textura de cada producto salen igual. */
+const _CUBO=(function(){
+  const g=new THREE.BoxGeometry(1,1,1);
+  return {p:g.attributes.position.array,n:g.attributes.normal.array,u:g.attributes.uv.array,
+          i:g.index.array,e:new THREE.EdgesGeometry(g).attributes.position.array};
+})();
+const _MAT_ARISTA=new THREE.LineBasicMaterial({color:0x14202f,transparent:true,opacity:.28});
+const _MAT_ARISTA_PAL=new THREE.LineBasicMaterial({color:0x5c3b1c});
+const _MAT_PALLET=new THREE.MeshStandardMaterial({vertexColors:true,metalness:0,roughness:0.85});
+// cajas: [{x,y,z (centro, ejes de la escena), sx,sy,sz (tamano), col (THREE.Color, opcional)}]
+function _geoCajas(cajas,conUV,conColor){
+  const n=cajas.length,P=_CUBO.p,N=_CUBO.n,U=_CUBO.u,I=_CUBO.i;
+  const pos=new Float32Array(n*72),nor=new Float32Array(n*72);
+  const uv=conUV?new Float32Array(n*48):null, col=conColor?new Float32Array(n*72):null;
+  const idx=(n*24>65535)?new Uint32Array(n*36):new Uint16Array(n*36);
+  for(let k=0;k<n;k++){
+    const b=cajas[k],o=k*72;
+    for(let v=0;v<72;v+=3){
+      const r=o+v;
+      pos[r]=P[v]*b.sx+b.x; pos[r+1]=P[v+1]*b.sy+b.y; pos[r+2]=P[v+2]*b.sz+b.z;
+      nor[r]=N[v]; nor[r+1]=N[v+1]; nor[r+2]=N[v+2];
+      if(conColor){col[r]=b.col.r;col[r+1]=b.col.g;col[r+2]=b.col.b;}
+    }
+    if(conUV)uv.set(U,k*48);
+    for(let i=0;i<36;i++)idx[k*36+i]=I[i]+k*24;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('normal',new THREE.BufferAttribute(nor,3));
+  if(conUV)geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  if(conColor)geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  geo.setIndex(new THREE.BufferAttribute(idx,1));
+  return geo;
 }
+function _geoAristas(cajas){
+  const E=_CUBO.e,m=E.length,ed=new Float32Array(cajas.length*m);
+  cajas.forEach((b,k)=>{const o=k*m;
+    for(let v=0;v<m;v+=3){ed[o+v]=E[v]*b.sx+b.x;ed[o+v+1]=E[v+1]*b.sy+b.y;ed[o+v+2]=E[v+2]*b.sz+b.z;}});
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(ed,3));return g;
+}
+// Las cajas de un mismo producto (mismo color y texto) comparten material: una malla por producto
+function _cajasFusionadas(grp,lista){
+  const porMat=new Map(),todas=[];
+  for(const b of lista){
+    const mat=skuMat(boxColor(b),textoCaja(b));
+    let a=porMat.get(mat);if(!a){a=[];porMat.set(mat,a);}
+    const c={x:b.x+b.dx/2,y:b.z+b.dz/2,z:b.y+b.dy/2,sx:b.dx,sy:b.dz,sz:b.dy};
+    a.push(c);todas.push(c);
+  }
+  porMat.forEach((cajas,mat)=>{
+    const m=new THREE.Mesh(_geoCajas(cajas,true,false),mat);
+    m.castShadow=true;m.receiveShadow=true;grp.add(m);
+  });
+  if(todas.length)grp.add(new THREE.LineSegments(_geoAristas(todas),_MAT_ARISTA));
+}
+// Tarimas: tablas, largueros y base de cada pallet, todas en una sola malla con color por vertice
+function _palletsFusionados(grp,lista){
+  const cajas=[],grosor=2.3,lw=9;
+  const wood=new THREE.Color(0xb5824e),woodHi=new THREE.Color(0xc99a64),woodLo=new THREE.Color(0x9c6b3c);
+  for(const {p,colP} of lista){
+    const dl=p.dl,dw=p.dw,h=p.tar;
+    let topA=wood,topB=woodHi;       // cara superior: madera, o color de sucursal si se pasa
+    if(colP){const cc=new THREE.Color(colP);topA=cc;topB=cc.clone().offsetHSL(0,0,0.10);}
+    const add=(sx,sy,sz,x,y,z,col)=>cajas.push({x:p.x+x,y:y,z:p.y+z,sx:sx,sy:sy,sz:sz,col:col});
+    const nT=5,tabla=dl/(nT+(nT-1)*0.35),gap=tabla*0.35;
+    for(let i=0;i<nT;i++)add(tabla,grosor,dw,i*(tabla+gap)+tabla/2,h-grosor/2,dw/2,i%2?topB:topA);
+    const lh=h-2*grosor-1.0;
+    [lw/2+1,dw/2,dw-lw/2-1].forEach(z=>add(dl,lh,lw,dl/2,grosor+lh/2,z,woodLo));
+    for(let i=0;i<3;i++)add(tabla,grosor,dw,i*(dl-tabla)/2+tabla/2,grosor/2,dw/2,woodLo);
+  }
+  if(!cajas.length)return;
+  const m=new THREE.Mesh(_geoCajas(cajas,false,true),_MAT_PALLET);
+  m.castShadow=true;m.receiveShadow=true;grp.add(m);
+  grp.add(new THREE.LineSegments(_geoAristas(cajas),_MAT_ARISTA_PAL));
+}
+
+/* El camion (chasis, contenedor, ruedas, cabina) no depende de la carga: se arma una vez por
+   tipo y medidas, y se reutiliza. Lo que cambia con cada filtro o recalculo es solo la capa de cajas. */
+const _truckCache=new Map();
+let capaCajas=null;
+function _truckDe(c){
+  const key=[c.tipo,c.L,c.W,c.H].join('|');
+  let t=_truckCache.get(key);
+  if(!t){
+    t=new THREE.Group();buildTruck(t,c.L,c.W,c.H,c.tipo);
+    if(scaniaCab&&!esSoloPallet(c.tipo)){var cab=scaniaCab.clone(true);placeScaniaCab(cab,c.L,c.W,c.H,c.tipo);t.add(cab);}
+    _truckCache.set(key,t);
+  }
+  return t;
+}
+function _liberar(obj){obj.traverse(function(o){if(o.geometry)o.geometry.dispose();});}
 function buildScene(ci){
   cur=ci;
   while(group.children.length)group.remove(group.children[0]);
-  const c=CAM[ci];if(!c)return;
+  if(capaCajas){_liberar(capaCajas);capaCajas=null;}       // sin esto cada clic dejaba miles de geometrias en la GPU
+  const c=CAM[ci];if(!c){pedirRender();return;}
   const L=c.L,W=c.W,H=c.H;
-  buildTruck(group,L,W,H,c.tipo);
-  if(scaniaCab && !esSoloPallet(c.tipo)){var cab=scaniaCab.clone(true);placeScaniaCab(cab,L,W,H,c.tipo);group.add(cab);}
-  (c.pallets||[]).forEach(p=>{if(!pasaFiltroPal(p))return;const colP=(colorBySuc&&p.suc)?(SUC_COLOR[p.suc]||null):null;const pal=makePallet(p.dl,p.dw,p.tar,colP);pal.position.set(p.x,0,p.y);group.add(pal);});
-  (c.cajas||[]).forEach(b=>{
-    if(!pasaFiltro(b))return;
-    const ge=new THREE.BoxGeometry(b.dx,b.dz,b.dy);
-    const m=new THREE.Mesh(ge,skuMat(boxColor(b),textoCaja(b)));
-    m.position.set(b.x+b.dx/2,b.z+b.dz/2,b.y+b.dy/2);m.castShadow=true;m.receiveShadow=true;group.add(m);
-    const e=new THREE.LineSegments(new THREE.EdgesGeometry(ge),new THREE.LineBasicMaterial({color:0x14202f,transparent:true,opacity:.28}));
-    e.position.copy(m.position);group.add(e);
-  });
+  group.add(_truckDe(c));
+  capaCajas=new THREE.Group();group.add(capaCajas);
+  _palletsFusionados(capaCajas,(c.pallets||[]).filter(pasaFiltroPal).map(p=>({p:p,colP:(colorBySuc&&p.suc)?(SUC_COLOR[p.suc]||null):null})));
   // etiquetas FRENTE / PUERTAS quitadas a pedido (no en pantalla ni en PDF)
-  const visibles = (c.cajas || []).filter(b => pasaFiltro(b));
+  const visibles=(c.cajas||[]).filter(b=>pasaFiltro(b));
+  _cajasFusionadas(capaCajas,visibles);
 
-if(visibles.length){
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let minZ = Infinity;
-
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let maxZ = -Infinity;
-
-    visibles.forEach(b => {
-
-        minX = Math.min(minX, b.x);
-        minY = Math.min(minY, b.y);
-        minZ = Math.min(minZ, b.z);
-
-        maxX = Math.max(maxX, b.x + b.dx);
-        maxY = Math.max(maxY, b.y + b.dy);
-        maxZ = Math.max(maxZ, b.z + b.dz);
-
+  if(visibles.length){
+    let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+    visibles.forEach(b=>{
+      minX=Math.min(minX,b.x);minY=Math.min(minY,b.y);minZ=Math.min(minZ,b.z);
+      maxX=Math.max(maxX,b.x+b.dx);maxY=Math.max(maxY,b.y+b.dy);maxZ=Math.max(maxZ,b.z+b.dz);
     });
-
-    ctr.set(
-        (minX + maxX) / 2,
-        (minZ + maxZ) / 2,
-        (minY + maxY) / 2
-    );
-
-} else {
-
-    ctr.set(
-        (L - 235) / 2,
-        H / 2,
-        W / 2
-    );
-
-}
-  dist=Math.sqrt((L+235)**2+(W+260)**2+(H+260)**2)/2/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*0.62;
+    ctr.set((minX+maxX)/2,(minZ+maxZ)/2,(minY+maxY)/2);
+  }else{
+    ctr.set((L-235)/2,H/2,W/2);
+  }
+  dist=Math.sqrt((L+235)**2+(W+260)**2+(H+260)**2)/2/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*(document.documentElement.classList.contains('solo3d')?0.86:0.62);
+  renderer.shadowMap.needsUpdate=true;
+  pedirRender();
 }
 function label(txt,x,y,z,size){
   const cv=document.createElement('canvas');cv.width=256;cv.height=64;const g=cv.getContext('2d');
@@ -450,16 +503,19 @@ function applyCam(){
 }
 function onResize(){
   const s=document.getElementById('stage');const w=s.clientWidth,h=s.clientHeight;
-  renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();pedirRender();
 }
-function animate(){requestAnimationFrame(animate);applyCam();renderer.render(scene,camera);}
+/* Se dibuja solo cuando algo cambio (camara, datos, tamano): un visor quieto no gasta GPU */
+let _sucio=true;
+function pedirRender(){_sucio=true;}
+function animate(){requestAnimationFrame(animate);if(!_sucio)return;_sucio=false;applyCam();renderer.render(scene,camera);}
 function bindControls(cv){
   let drag=false,px,py;
   cv.addEventListener('mousedown',e=>{drag=true;px=e.clientX;py=e.clientY});
   window.addEventListener('mouseup',()=>drag=false);
   window.addEventListener('mousemove',e=>{if(!drag)return;az-=(e.clientX-px)*0.008;el+=(e.clientY-py)*0.006;
-    el=Math.max(0.05,Math.min(1.45,el));px=e.clientX;py=e.clientY});
-  cv.addEventListener('wheel',e=>{e.preventDefault();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(700,Math.min(9000,dist))},{passive:false});
+    el=Math.max(0.05,Math.min(1.45,el));px=e.clientX;py=e.clientY;pedirRender();});
+  cv.addEventListener('wheel',e=>{e.preventDefault();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(700,Math.min(9000,dist));_zoomUsuario=true;pedirRender();},{passive:false});
   cv.addEventListener('dblclick',()=>{az=0.85;el=0.28;buildScene(cur)});
 }
 // ---- UI ----
@@ -626,13 +682,44 @@ function pdfTable(doc,c){
 function hex(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function num(n){return (Math.round((n||0)*10)/10).toString().replace('.',',');}
 
-// precalcular maxX por camion (para metros libres)
-ESC.forEach(e=>(e.camiones||[]).forEach(c=>{let mx=0;(c.cajas||[]).forEach(b=>{if(b.x+b.dx>mx)mx=b.x+b.dx});c.maxX=mx;}));
+/* Dentro de la plataforma el visor no se recarga con cada calculo: la pagina lo avisa cuando
+   esta listo y le manda los datos nuevos. Asi se conservan la camara, el zoom y las librerias ya cargadas. */
+let _zoomUsuario=false;
+function cargarDatos(d){
+  if(!d||typeof d!=='object')return;
+  const cam={az:az,el:el,dist:dist};
+  DATA=d; ESC=d.escenarios||[{nombre:'Cubicaje',camiones:(d.camiones||[])}];
+  escCur=Math.min(escCur,ESC.length-1); CAM=ESC[escCur].camiones||[];
+  if(cur>=CAM.length)cur=0;
+  filtroTipo=null;filtroVal=null;
+  indexarDatos();
+  const ct=document.getElementById('colorToggle'); if(ct&&!HAS_SUC)ct.remove();
+  renderEscTabs();renderTabs();renderStats();renderLegend();renderColorToggle();
+  buildScene(cur);
+  az=cam.az;el=cam.el; if(_zoomUsuario)dist=cam.dist;
+  pedirRender();
+}
+window.addEventListener('message',function(ev){
+  if(ev.source!==parent||ev.origin!==location.origin)return;
+  const m=ev.data;
+  if(!m)return;
+  if(m.tipo==='od-visor-datos')cargarDatos(typeof m.datos==='string'?JSON.parse(m.datos):m.datos);
+  else if(m.tipo==='od-visor-camion'&&CAM[m.idx]){filtroTipo=null;filtroVal=null;buildScene(m.idx);renderTabs();renderStats();renderLegend();}
+  else if(m.tipo==='od-visor-filtro'){setFiltro(m.cod?'cod':null,m.cod||null);}
+  else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);
+});
 window.addEventListener('load',init);
 window.buildScene=buildScene;
 </script><script>
 /* Dentro de la plataforma el detalle de carga ya se ve al lado, así que con #compacto
    en la dirección se oculta esa lista y el visor gana ancho. */
+if (location.hash.indexOf('solo3d') >= 0){
+  /* La plataforma muestra camiones, cifras y detalle en su propio panel: aqui solo va el 3D. */
+  document.documentElement.classList.add('solo3d');
+  var est3 = document.createElement('style');
+  est3.textContent = '.solo3d #side{display:none}.solo3d #viewhint{top:10px;right:12px}';
+  document.head.appendChild(est3);
+}
 if (location.hash.indexOf('compacto') >= 0){
   document.documentElement.classList.add('compacto');
   var est = document.createElement('style');

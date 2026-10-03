@@ -29,12 +29,12 @@ function vistaProyeccion(){
     </div></div>
     <div class="panel-b">
     ${cams.length ? `<p class="small muted" style="margin-top:0">Un camión = entregas con el mismo N° de cita (o el mismo grupo si no hay cita). Las columnas calzan con las hojas de 2026.xlsx para pegar directo.</p>
-    <div class="scroll"><table class="t"><thead><tr><th>Fecha</th><th>Hora</th><th class="n">Sem.</th><th>Cliente</th><th>Región</th><th>Estado</th><th>Vehículo</th><th>Carga</th><th>UN</th><th class="n">QTY</th><th>Grupo(s)</th><th>Cita</th><th>Proyección</th></tr></thead><tbody>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Fecha</th><th>Hora</th><th class="n">Sem.</th><th>Cliente</th><th>Región</th><th>Estado</th><th>Vehículo</th><th>Carga</th><th>UN</th><th class="n">QTY</th><th>Grupo(s)</th><th>Cita</th><th>Proyección</th></tr></thead><tbody>
     ${cams.map(t => { const cargado = t.ents.every(e => pasoOk(e, 'proyeccion'));
       return `<tr><td>${fmtFecha(t.fecha)}</td><td class="num">${esc(t.hora || '—')}</td><td class="n">${isoWeek(t.fecha)}</td><td>${esc(t.cliente)}</td><td>${esc(t.region)}</td>
-      <td>${t.conf ? '<span class="tag green">Confirmado</span>' : '<span class="tag amber">Por confirmar</span>'} ${esc(ampm(t.hora))}</td>
+      <td>${t.conf ? '<span class="tag ok">Confirmado</span>' : '<span class="tag warn">Por confirmar</span>'} ${esc(ampm(t.hora))}</td>
       <td>${esc(t.vehiculo)}</td><td>${esc(t.carga)}</td><td>${esc(t.un)}</td><td class="n">${fmt(t.qty)}</td><td class="num">${esc([...t.grupos].join(', '))}</td><td class="num">${esc(t.cita)}</td>
-      <td>${cargado ? '<span class="tag green">Cargado</span>' : '<span class="tag">Pendiente</span>'}</td></tr>`; }).join('')}
+      <td>${cargado ? '<span class="tag ok">Cargado</span>' : '<span class="tag">Pendiente</span>'}</td></tr>`; }).join('')}
     </tbody></table></div>
     <div class="row" style="margin-top:14px"><button class="btn primary" data-act="exportProy">Descargar Excel para 2026.xlsx</button>
       <button class="btn" data-act="marcarProy">Marcar estos camiones como cargados en proyección</button></div>`
@@ -44,6 +44,7 @@ function vistaProyeccion(){
 const ampm = h => !h ? '' : (+h.split(':')[0] < 12 ? 'AM' : 'PM');
 
 async function exportarProyeccion(){
+  if (!await asegurarXLSX()) return toast('No se pudo cargar el lector de Excel');
   const cfg = config();
   const rows = camiones().map(t => {
     const am = ampm(t.hora) !== 'PM';
@@ -69,7 +70,7 @@ async function descargar(filename, arr){
 async function marcarProyeccion(){
   const ents = camiones().flatMap(t => t.ents).filter(e => !pasoOk(e, 'proyeccion'));
   if (!ents.length) return toast('Todos ya estaban cargados');
-  for (const e of ents) await marcarPaso(safeId(e.entrega), 'proyeccion', true);
+  await Promise.all(ents.map(e => marcarPaso(safeId(e.entrega), 'proyeccion', true)));
   toast(`${ents.length} entregas marcadas en proyección`);
 }
 
@@ -132,15 +133,15 @@ function vistaImportar(){
     <textarea data-pkg placeholder="…o pégalo aquí" style="min-height:70px"></textarea>
     ${pk ? `<div style="margin-top:14px">
       <p style="margin:0 0 6px"><b>${esc(EVENTOS[pk.evento] || pk.evento)}</b> · ${esc(pk.cliente || 'sin cliente')} · ${esc(pk.analista || '')} · ${esc(pk.at || '')}</p>
-      <div class="scroll"><table class="t"><thead><tr><th>Entrega</th><th>Pedido</th><th>Grupo</th><th>Cita</th><th>Fecha</th><th>Vehículo</th><th>Carga</th><th class="n">Unid.</th><th></th></tr></thead><tbody>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Entrega</th><th>Pedido</th><th>Grupo</th><th>Cita</th><th>Fecha</th><th>Vehículo</th><th>Carga</th><th class="n">Unid.</th><th></th></tr></thead><tbody>
       ${(pk.entregas || []).map(e => `<tr><td class="num">${esc(e.entrega)}</td><td class="num">${esc(e.pedido)}</td><td class="num">${esc(e.grupo || '—')}</td><td class="num">${esc(e.cita || '—')}</td>
         <td>${e.fecha ? fmtFecha(e.fecha) + ' ' + esc(e.hora || '') : '—'}</td><td>${esc(normVeh(e.vehiculo))}</td><td>${esc(e.carga || '')}</td>
         <td class="n">${fmt((e.lineas || []).reduce((a, l) => a + (+l.qty || 0), 0))}</td>
-        <td>${Store.get('entregas', safeId(e.entrega)) ? '<span class="tag">Actualiza</span>' : '<span class="tag green">Nueva</span>'}${(pk.sapOk || []).map(String).includes(String(e.grupo)) ? ' <span class="tag green">Fecha en SAP</span>' : ''}</td></tr>`).join('')
+        <td>${Store.get('entregas', safeId(e.entrega)) ? '<span class="tag">Actualiza</span>' : '<span class="tag ok">Nueva</span>'}${(pk.sapOk || []).map(String).includes(String(e.grupo)) ? ' <span class="tag ok">Fecha en SAP</span>' : ''}</td></tr>`).join('')
         || '<tr><td colspan="9" class="muted">Sin entregas en este paquete</td></tr>'}
       </tbody></table></div>
       <p class="small muted">${(pk.pedidos || []).length} pedido(s) con ${(pk.pedidos || []).reduce((a, p) => a + (p.lineas || []).length, 0)} líneas de producto.</p>
-      <div class="row"><button class="btn primary" data-act="cargarPkg">Cargar paquete</button><button class="btn ghost" data-act="descartarPkg">Descartar</button></div>
+      <div class="row"><button class="btn primary" data-act="cargarPkg">Cargar paquete</button><button class="btn quiet" data-act="descartarPkg">Descartar</button></div>
     </div>` : ''}
   </div></div>`;
   return seccionAcciones() + seccionScript + `<div class="panel"><div class="panel-h"><h2>Importar desde Excel</h2></div><div class="panel-b">
@@ -148,7 +149,7 @@ function vistaImportar(){
     <div class="row"><input type="file" accept=".xlsx,.xls,.csv,.json" data-file aria-label="Archivo Excel o paquete JSON"><button class="btn" data-act="plantilla">Descargar plantilla</button></div>
     ${imp ? `<div style="margin-top:18px">
       ${imp.hojas.length ? `<p class="small">${imp.hojas.map(esc).join('<br>')}</p>` : ''}
-      <p><b class="num" style="font-size:22px">${imp.pedidos.size}</b> pedidos · <b class="num" style="font-size:22px">${imp.entregas.size}</b> entregas listos para cargar</p>
+      <p><b class="num">${imp.pedidos.size}</b> pedidos · <b class="num">${imp.entregas.size}</b> entregas listos para cargar</p>
       ${imp.errores.length ? `<ul class="err">${imp.errores.slice(0, 12).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${[...imp.entregas.values()].filter(e => !Store.get('pedidos', safeId(e.pedido)) && !imp.pedidos.has(e.pedido)).length ?
         `<p class="err">Hay entregas cuyo pedido no existe; se crearán pedidos vacíos que debes completar.</p>` : ''}
@@ -162,15 +163,15 @@ async function cargarImportacion(){
   const pedidos = new Map(imp.pedidos);
   for (const e of imp.entregas.values()) if (!pedidos.has(e.pedido) && !Store.get('pedidos', safeId(e.pedido))) pedidos.set(e.pedido, {pedido:e.pedido, lineas:new Map()});
   try {
-    for (const [ped, o] of pedidos){
+    await enLotes([...pedidos], 12, async ([ped, o]) => {
       const id = safeId(ped); const cur = clone(Store.get('pedidos', id) || {pedido:ped, creado:nowISO(), lineas:[]});
       for (const k of ['oc','cliente','canal','fechaOC']) if (o[k]) cur[k] = o[k];
       const lm = new Map((cur.lineas || []).map(l => [normSku(l.sku), l]));
       for (const l of o.lineas.values()) lm.set(l.sku, {sku:l.sku, desc:l.desc || lm.get(l.sku)?.desc || '', qty:l.qty});
       cur.lineas = [...lm.values()];
-      await Store.set('pedidos', id, cur); n++; 
-    }
-    for (const [ent, o] of imp.entregas){
+      await Store.set('pedidos', id, cur); n++;
+    });
+    await enLotes([...imp.entregas], 12, async ([ent, o]) => {
       const id = safeId(ent); const prevEnt = Store.get('entregas', id); const cur = clone(prevEnt || {entrega:ent, creado:nowISO(), pasos:{}, ...DEF_ENT});
       cur.pedido = o.pedido; if (o.grupo) cur.grupo = o.grupo; if (o.tipo) cur.tipo = o.tipo;
       if (!prevEnt) cur.region = patron((pedidos.get(o.pedido) || {}).cliente || (Store.get('pedidos', safeId(o.pedido)) || {}).cliente).region;
@@ -178,8 +179,8 @@ async function cargarImportacion(){
       if (o.cita) cur.cita.numero = o.cita; if (o.fecha) cur.cita.fecha = o.fecha; if (o.hora) cur.cita.hora = o.hora;
       cur.lineas = [...o.lineas.values()].map(l => ({sku:l.sku, qty:l.qty}));
       addLog(cur, 'Importado desde Excel');
-      await Store.set('entregas', id, cur); n++; 
-    }
+      await Store.set('entregas', id, cur); n++;
+    });
     toast(`${n} registros cargados`); UI.imp = null; UI.view = 'pedidos'; render();
   } catch(e){ toast(dbErr(e) + ` (${n} alcanzaron a cargarse)`); render(); }
 }

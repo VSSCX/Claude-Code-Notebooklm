@@ -56,21 +56,22 @@ const Avisos = {
   html(){
     if (!this.lista.length) return '';
     return `<div class="avisos">${this.lista.map(a => `
-      <div class="aviso ${esc(a.tipo)}">
-        <div class="row" style="justify-content:space-between;align-items:flex-start">
-          <div><b>${esc(a.titulo)}</b> <span class="small muted">${esc(a.hora)}</span>
-            ${a.detalle ? `<div class="small">${esc(a.detalle)}</div>` : ''}
-            ${(a.pasos || []).length ? `<ul class="small muted" style="margin:6px 0 0 16px">${a.pasos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
-          </div>
-          <button class="btn ghost small" data-cerrar-aviso="${esc(a.id)}" title="Cerrar">✕</button>
+      <div class="aviso ${esc(a.tipo)}" data-k="av-${esc(a.id)}" role="${a.tipo === 'error' ? 'alert' : 'status'}">
+        <div class="aviso-cuerpo">
+          <div><b>${esc(a.titulo)}</b> <span class="small muted num">${esc(a.hora)}</span></div>
+          ${a.detalle ? `<div class="small">${esc(a.detalle)}</div>` : ''}
+          ${(a.pasos || []).length ? `<ul class="small muted">${a.pasos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
         </div>
+        <button class="btn quiet icon" data-cerrar-aviso="${esc(a.id)}" title="Cerrar" aria-label="Cerrar aviso">${ICON.x}</button>
       </div>`).join('')}</div>`;
   },
 };
 function setSync(state, text){
   const quien = typeof Usuario !== 'undefined' ? Usuario.get() : '';
-  $('#sync').innerHTML = `<span class="dot ${state}"></span><span>${esc(text)}</span>` +
-    (quien ? ` <button class="btn ghost small" data-act="cambiarUsuario" title="Cambiar de usuario">${esc(quien)}</button>` : '');
+  const el = $('#sync'); if (!el) return;
+  const html = `<span class="sync-linea"><span class="dot ${state}" aria-hidden="true"></span><span>${esc(text)}</span></span>` +
+    (quien ? `<button class="sync-user" data-act="cambiarUsuario" title="Cambiar de usuario">${esc(quien)}</button>` : '');
+  if (el.innerHTML !== html) el.innerHTML = html;
 }
 function toDateISO(v){
   if (v == null || v === '') return '';
@@ -117,9 +118,14 @@ async function api(method, path, body){
   return r.status === 204 ? null : r.json();
 }
 const COLS = ['pedidos','entregas','config'];
+/* El render se agrupa por cuadro de animación: varios cambios en el mismo instante pintan una sola vez */
+let _rafRender = 0;
+function renderSoon(){ if (_rafRender) return; _rafRender = requestAnimationFrame(() => { _rafRender = 0; render(); }); }
 const Store = {
   data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [],
   loaded: new Set(), offline: false, version: '', queues: new Map(),
+  rev: 0,          // sube con cada cambio local: invalida los índices memoizados
+  pendientes: 0,   // guardados en vuelo; mientras haya, el sondeo no pisa lo que se ve
   async init(){
     await this.refresh();
     setInterval(() => this.poll(), 10000);
@@ -132,13 +138,14 @@ const Store = {
       this.data.entregas = new Map(st.entregas.map(e => [safeId(e.entrega), e]));
       this.data.config = new Map(Object.entries(st.config || {}));
       this.archivos = st.archivos || [];
-      this.version = st.version; this.offline = false;
+      this.version = st.version; this.offline = false; this.rev++;
       COLS.forEach(c => this.loaded.add(c));
       setSync('ok', 'Conectado al servidor');
     } catch(e){ this.offline = true; setSync('err', 'Sin conexión con el servidor'); }
     render();
   },
   async poll(){
+    if (this.pendientes) return;
     try {
       const {version} = await api('GET', '/version');
       const editando = dlg.open || (document.activeElement && document.activeElement.closest('#app input, #app textarea, #app select'));
@@ -157,18 +164,29 @@ const Store = {
     if (col === 'entregas') return '/entregas/' + encodeURIComponent(obj.entrega);
     return '/config/' + encodeURIComponent(id);
   },
+  /* Optimista: lo local se ve al instante y el servidor confirma por detrás.
+     Si el servidor rechaza, se vuelve a cargar su versión y el error sube a quien llamó. */
   async set(col, id, obj){
+    this.data[col].set(id, obj); this.rev++; renderSoon();
+    this.pendientes++;
     return this.enqueue(col + '/' + id, async () => {
-      const guardado = await api('PUT', this.ruta(col, id, obj), obj);
-      this.data[col].set(id, guardado); render();
+      try {
+        const guardado = await api('PUT', this.ruta(col, id, obj), obj);
+        this.data[col].set(id, guardado); this.rev++;
+      } catch(e){
+        this.pendientes--; await this.refresh(); throw e;
+      }
+      this.pendientes--; renderSoon();
     });
   },
   async del(col, id){
     const obj = this.get(col, id); if (!obj) return;
-    await api('DELETE', this.ruta(col, id, obj));
     this.data[col].delete(id);
     if (col === 'pedidos') for (const [k, e] of this.data.entregas) if (e.pedido === obj.pedido) this.data.entregas.delete(k);
-    render();
+    this.rev++; renderSoon(); this.pendientes++;
+    try { await api('DELETE', this.ruta(col, id, obj)); }
+    catch(e){ this.pendientes--; await this.refresh(); throw e; }
+    this.pendientes--;
   },
 };
 const dbErr = e => (e && e.message) || 'No se pudo guardar.';
@@ -178,8 +196,19 @@ async function save(col, id, obj){ try { await Store.set(col, id, obj); return t
 const pasoOk = (e, k) => !!(e.pasos && e.pasos[k] && e.pasos[k].ok);
 const unidades = e => (e.lineas || []).reduce((a, l) => a + (+l.qty || 0), 0);
 const siguiente = e => e.anulada ? null : (STEPS.find(s => !pasoOk(e, s.k)) || null);
-const entregasDe = ped => Store.list('entregas').filter(e => e.pedido === ped)
-  .sort((a,b) => (a.cita?.fecha || '9').localeCompare(b.cita?.fecha || '9') || String(a.entrega).localeCompare(String(b.entrega)));
+/* Índices que se recalculan solo cuando cambian los datos (Store.rev) */
+function porRev(calcular){
+  let rev = -1, valor;
+  return () => { if (rev !== Store.rev){ valor = calcular(); rev = Store.rev; } return valor; };
+}
+const _entPorPedido = porRev(() => {
+  const m = new Map();
+  for (const e of Store.list('entregas')){ const l = m.get(e.pedido) || []; l.push(e); m.set(e.pedido, l); }
+  for (const l of m.values())
+    l.sort((a,b) => (a.cita?.fecha || '9').localeCompare(b.cita?.fecha || '9') || String(a.entrega).localeCompare(String(b.entrega)));
+  return m;
+});
+const entregasDe = ped => _entPorPedido().get(ped) || [];
 const config = () => Store.get('config', 'app') || {};
 // Región y canal siguen lo último usado para ese cliente
 function patron(cliente){
@@ -191,7 +220,14 @@ function patron(cliente){
 }
 const normVeh = v => { const s = normH(v); return s.includes('rampla') ? 'Rampla 53' : s.includes('cami') ? 'Camión 50' : String(v || ''); };
 
+const _resumenCache = {rev: -1, m: new Map()};
 function resumen(p){
+  if (_resumenCache.rev !== Store.rev){ _resumenCache.rev = Store.rev; _resumenCache.m = new Map(); }
+  const hit = _resumenCache.m.get(p);
+  if (hit) return hit;
+  const r = calcularResumen(p); _resumenCache.m.set(p, r); return r;
+}
+function calcularResumen(p){
   const m = new Map();
   for (const l of (p.lineas || [])){
     const k = normSku(l.sku); const r = m.get(k) || {sku:k, desc:l.desc || '', pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, externa:0};
@@ -221,13 +257,18 @@ function barHTML(tot, big){
   return `<div class="bar ${big ? 'big' : ''}" role="img" aria-label="Entregado ${fmt(tot.entregado)}, agendado ${fmt(tot.agendado)}, sin cita ${fmt(tot.sinCita)}, pendiente ${fmt(tot.pendiente)}">
     <i class="s-ent" style="width:${w(tot.entregado)}"></i><i class="s-age" style="width:${w(tot.agendado)}"></i><i class="s-sin" style="width:${w(tot.sinCita)}"></i></div>`;
 }
+/* Reparte el trabajo en tandas: no se pide todo de golpe ni uno por uno */
+async function enLotes(items, n, fn){
+  for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn));
+}
 const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
 
 /* Un grupo = un camión. Puede tener varias entregas, incluso de otros pedidos
    (conchos). Los pasos del camión se derivan: hechos solo si TODAS sus entregas
    los tienen. 'facturada' se marca por entrega, porque la factura es por entrega. */
 const POR_ENTREGA = ['facturada'];
-function grupos(){
+const grupos = porRev(calcularGrupos);
+function calcularGrupos(){
   const m = new Map();
   for (const e of Store.list('entregas')){
     if (e.anulada) continue;
@@ -260,7 +301,7 @@ async function marcarPasoGrupo(key, k, forzar){
   const nuevo = forzar ?? !g.pasos[k];
   if (nuevo && k === 'confirmada' && !(g.cita.fecha && g.cita.hora))
     return abrirGrupo(key, {marcar:'confirmada', msg:'Para confirmar la cita ingresa fecha y hora.'});
-  for (const e of g.entregas) await marcarPaso(safeId(e.entrega), k, nuevo);
+  await Promise.all(g.entregas.map(e => marcarPaso(safeId(e.entrega), k, nuevo)));
 }
 
 async function marcarPaso(id, k, forzar){
@@ -272,7 +313,7 @@ async function marcarPaso(id, k, forzar){
   if (nuevo === estaba) return;
   e.pasos[k] = {ok: nuevo, at: nowISO()};
   addLog(e, `${nuevo ? 'Hecho' : 'Reabierto'}: ${STEPS.find(s => s.k === k).t}`);
-  if (await save('entregas', safeId(e.entrega), e)) toast(`${STEPS.find(s => s.k === k).t}: ${nuevo ? 'hecho' : 'reabierto'}`);
+  await save('entregas', safeId(e.entrega), e);   // se ve al instante; solo un error merece aviso
 }
 function addLog(e, txt){ e.log = [{at: nowISO(), txt}, ...(e.log || [])].slice(0, 40); }
 
@@ -281,9 +322,76 @@ const UI = { view:'pedidos', sel:null, sub:'entregas', q:'', soloAbiertos:true, 
   pDesde: new Date(Date.now() - 7*864e5).toISOString().slice(0,10), pHasta: '', pPorConf:true, imp:null };
 
 function go(view){ UI.view = view; render(); }
+const NAV = [['pedidos','Pedidos'], ['bandeja','Por hacer'], ['cubicador','Cubicador'],
+             ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
 function renderNav(){
-  const pendientes = Store.list('entregas').filter(e => siguiente(e)).length;
-  const items = [['pedidos','Pedidos'], ['bandeja','Por hacer', pendientes], ['cubicador','Cubicador'],
-                 ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
-  $('#nav').innerHTML = items.map(([v,t,c]) => `<button data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ''}>${t}${c ? `<span class="count">${c}</span>` : ''}</button>`).join('');
+  const pendientes = grupos().filter(g => g.next).length;
+  const html = NAV.map(([v, t]) => {
+    const c = v === 'bandeja' && pendientes ? `<span class="count">${pendientes}</span>` : '';
+    return `<button class="rail-item" data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ''}>${ICON[v === 'importar' ? 'sap' : v === 'bandeja' ? 'porhacer' : v === 'config' ? 'config' : v]}<span>${t}</span>${c}</button>`;
+  }).join('');
+  pintar($('#nav'), html);
+}
+
+/* Redibuja solo lo que cambió (morphdom): no se pierden scroll, foco ni iframes al llegar datos nuevos */
+function pintar(el, html){
+  if (!el) return;
+  if (!window.morphdom){ el.innerHTML = html; return; }
+  const destino = el.cloneNode(false); destino.innerHTML = html;
+  morphdom(el, destino, {
+    childrenOnly: true,
+    getNodeKey: n => n.nodeType === 1 ? (n.id || n.getAttribute('data-k') || undefined) : undefined,
+    onBeforeElUpdated(de, a){
+      if (de.isEqualNode(a)) return false;
+      // lo que la persona está tocando manda sobre lo que dice el servidor
+      if (de === document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(de.tagName)) return false;
+      if (de.tagName === 'DETAILS') a.open = de.open;
+      // una sola animación de autoría: la celda que cambió se marca una vez
+      if (de.hasAttribute('data-flash') && de.textContent !== a.textContent){
+        de.classList.remove('flash'); void de.offsetWidth; de.classList.add('flash');
+      }
+      return true;
+    },
+  });
+}
+
+/* ---- La ruta de 9 pasos de un camión (o de una entrega suelta) ---- */
+function rutaHTML(g, {entrega} = {}){
+  return `<div class="ruta" role="group" aria-label="Pasos del camión">${STEPS.map((s, i) => {
+    const fijo = POR_ENTREGA.includes(s.k);
+    // 'Facturada' es por entrega: en la tarjeta de una entrega se marca ahí mismo; en el camión es de solo lectura
+    const hecho = fijo && entrega ? pasoOk(entrega, s.k) : g.pasos[s.k];
+    const sig = !hecho && g.next && g.next.k === s.k;
+    const accion = fijo ? (entrega ? `data-paso="${s.k}" data-ent="${esc(safeId(entrega.entrega))}"` : '')
+                        : `data-gpaso="${s.k}" data-grupo="${esc(g.key)}"`;
+    const bloqueado = fijo && !entrega;
+    const tit = fijo && !entrega ? `${s.t} · se marca en cada entrega` : `${s.t}${hecho ? ' · hecho' : sig ? ' · siguiente' : ''}`;
+    return `<button class="paso ${hecho ? 'done' : ''} ${sig ? 'next' : ''} ${i === STEPS.length - 1 ? 'last' : ''} ${bloqueado ? 'fixed' : ''}" ${bloqueado ? 'tabindex="-1" aria-disabled="true"' : accion}
+      aria-pressed="${!!hecho}" title="${esc(tit)}"><span class="k">${hecho ? ICON.check : i + 1}</span><span class="t">${esc(s.t)}</span></button>`;
+  }).join('')}</div>`;
+}
+
+/* Qué falta hacer en un pedido: el siguiente paso del camión con la cita más próxima */
+function proximaAccion(p){
+  const gs = gruposDe(p.pedido).filter(g => g.next);
+  if (!gs.length){
+    const ents = entregasDe(p.pedido).filter(e => !e.anulada);
+    if (!ents.length) return {txt: 'Sin entregas', tono: ''};
+    return {txt: 'Todo entregado', tono: 'ok'};
+  }
+  const g = gs[0];
+  const cita = g.cita && g.cita.fecha ? ` · cita ${fmtFecha(g.cita.fecha).slice(0, 5)}` : '';
+  return {txt: `Falta ${g.next.t}${cita}`, tono: 'warn'};
+}
+
+/* La librería de Excel pesa 880 KB y casi nunca se usa: se carga la primera vez que hace falta */
+let _xlsxCarga;
+function asegurarXLSX(){
+  if (window.XLSX) return Promise.resolve(true);
+  if (_xlsxCarga) return _xlsxCarga;
+  const probar = src => new Promise(ok => { const s = document.createElement('script'); s.src = src; s.onload = () => ok(true); s.onerror = () => ok(false); document.head.appendChild(s); });
+  _xlsxCarga = probar('/vendor/xlsx.full.min.js')
+    .then(ok => ok || probar('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'))
+    .then(ok => { if (!ok) _xlsxCarga = null; return ok; });
+  return _xlsxCarga;
 }
