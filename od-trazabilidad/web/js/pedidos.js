@@ -93,7 +93,7 @@ function detallePedido(p){
   const celda = (cap, val, extra = '') => `<div class="cell ${extra}"><span class="cap">${cap}</span><span class="val">${val}</span></div>`;
   return `<div class="label" data-k="label-${esc(safeId(p.pedido))}">
     <div class="label-top">
-      <div><div class="lab-cap">Pedido SAP</div><h2 class="lab-num">${esc(p.pedido)}</h2></div>
+      <h2 class="lab-num"><span class="lab-pre">Pedido</span>${esc(p.pedido)}</h2>
       <div class="label-act"><button class="btn sm" data-act="editarPedido">Editar pedido</button>
         <button class="btn primary sm" data-act="nuevaEntrega">${ICON.plus} Nueva entrega</button></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>

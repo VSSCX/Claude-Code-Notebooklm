@@ -40,6 +40,8 @@ class Settings:
     visor_assets: str = os.getenv(
         "VISOR_ASSETS",
         r"\\clws0088\userelux\SalesOP\Bases Order Desk\Proyecto de Automatización\Rutas\Visor")
+    # Donde se guardan los visores generados y sus librerías (en un servidor, un volumen persistente)
+    visores_dir: str = os.getenv("VISORES_DIR", str(BASE_DIR / "data" / "visores"))
     # Plantilla del visor 3D. Por defecto la de la plataforma (tema claro); se puede
     # apuntar a la del Excel con PLANTILLA_VISOR.
     plantilla_visor: str = os.getenv(

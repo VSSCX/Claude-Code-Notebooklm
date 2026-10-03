@@ -128,13 +128,21 @@ def asegurar_visor_vivo(carpeta, plantilla: str) -> str:
     from pathlib import Path
     ruta = Path(carpeta) / VISOR_VIVO
     huella = hashlib.md5(plantilla.encode("utf-8")).hexdigest()
-    if _vivo_escrito.get(str(ruta)) == huella and ruta.exists():
-        return f"/visor/{VISOR_VIVO}"
+    def estado():
+        e = ruta.stat()
+        return (huella, e.st_size, e.st_mtime_ns)
+    try:
+        # sin releer el archivo: basta con que siga igual que lo que se escribió (misma plantilla,
+        # tamaño y fecha). Si alguien lo cambió por fuera, se detecta y se repara.
+        if _vivo_escrito.get(str(ruta)) == estado():
+            return f"/visor/{VISOR_VIVO}"
+    except OSError:
+        pass
     try:
         html = html_visor(plantilla, '{"camiones":[]}')
         if not ruta.exists() or ruta.read_text(encoding="utf-8") != html:
             _escribir_atomico(ruta, html)
-        _vivo_escrito[str(ruta)] = huella
+        _vivo_escrito[str(ruta)] = estado()
     except (OSError, ValueError):
         return ""
     return f"/visor/{VISOR_VIVO}"

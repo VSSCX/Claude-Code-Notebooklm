@@ -1,10 +1,12 @@
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+os.environ["VISORES_DIR"] = f"{_tmp}/visores"       # los visores de prueba no pisan los reales
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -372,7 +374,7 @@ def test_visor_no_se_acumula(c, monkeypatch, tmp_path):
     v1 = c.post("/api/cubicaje/4002", json={}).json()["visor"]
     v2 = c.post("/api/cubicaje/4002", json={}).json()["visor"]
     assert v1.startswith("/visor/pedido_4002_") and v1 != v2
-    carpeta = BASE_DIR / "data" / "visores"
+    carpeta = Path(settings.visores_dir)
     assert len(list(carpeta.glob("pedido_4002_*.html"))) == 1        # no se acumulan
     assert (carpeta / "visor" / "three.min.js").exists()             # librerías copiadas
     r = c.get(v2)
@@ -1105,7 +1107,7 @@ def test_vista_de_un_solo_pallet(c, tmp_path):
                                             "modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER",
                                             "cliente": "PARIS", "vista": "pallet"}).json()
     assert d["pallet_visto"] == 1 and d["pallets_disponibles"]
-    html = (BASE_DIR / "data" / "visores" / d["visor"].split("/")[-1]).read_text(encoding="utf-8")
+    html = (Path(settings.visores_dir) / d["visor"].split("/")[-1]).read_text(encoding="utf-8")
     i = html.index('{"titulo"')
     prof, fin = 0, i
     for j, ch in enumerate(html[i:], start=i):

@@ -1,12 +1,13 @@
 import logging
 import mimetypes
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from .config import BASE_DIR
+from .config import BASE_DIR, settings
 from .db import get_session
 from .integrations import acciones
 from .models import Archivo
@@ -63,7 +64,7 @@ app.mount("/js", StaticFiles(directory=WEB / "js"), name="js")
 app.mount("/css", StaticFiles(directory=WEB / "css"), name="css")
 app.mount("/fonts", StaticFiles(directory=WEB / "fonts"), name="fonts")
 app.mount("/vendor", StaticFiles(directory=WEB / "vendor"), name="vendor")
-VISORES = BASE_DIR / "data" / "visores"
+VISORES = Path(settings.visores_dir)
 VISORES.mkdir(parents=True, exist_ok=True)
 app.mount("/visor", StaticFiles(directory=VISORES), name="visor")
 

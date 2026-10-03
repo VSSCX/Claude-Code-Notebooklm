@@ -383,10 +383,10 @@ def _cubicar(numero: str, body: dict, s: Session):
     doc["visor"] = ""
     try:
         from pathlib import Path as _Path
-        from ..config import BASE_DIR as _BD, settings as _st
+        from ..config import settings as _st
         from ..cubicaje.visor import (asegurar_visor_vivo, guardar_datos_visor, html_visor,
                                       preparar_carpeta)
-        carpeta = _BD / "data" / "visores"
+        carpeta = Path(_st.visores_dir)
         faltan = preparar_carpeta(carpeta, _st.visor_assets)
         if faltan:
             doc["avisos"] = list(doc["avisos"]) + [
@@ -456,17 +456,17 @@ def get_cubicaje_libre(s: Session = Depends(get_session)):
 
 
 def _datos_visor(nombre: str) -> str:
-    from ..config import BASE_DIR as _BD
+    from ..config import settings
     from ..cubicaje.visor import leer_datos_visor
-    return leer_datos_visor(_BD / "data" / "visores", nombre)
+    return leer_datos_visor(settings.visores_dir, nombre)
 
 
 def _visor_vivo() -> str:
     """Deja listo el visor de dirección fija (plantilla y librerías) y devuelve su URL."""
     from pathlib import Path as _Path
-    from ..config import BASE_DIR as _BD, settings as _st
+    from ..config import settings as _st
     from ..cubicaje.visor import asegurar_visor_vivo, preparar_carpeta
-    carpeta = _BD / "data" / "visores"
+    carpeta = Path(_st.visores_dir)
     try:
         preparar_carpeta(carpeta, _st.visor_assets)
         return asegurar_visor_vivo(carpeta, _Path(_st.plantilla_visor).read_text(encoding="utf-8"))
@@ -649,12 +649,12 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
 
     try:
         from pathlib import Path as _Path
-        from ..config import BASE_DIR as _BD, settings as _st
+        from ..config import settings as _st
         from ..cubicaje.mda import Camion as _Cam
         from ..cubicaje.sda import TARIMA
         from ..cubicaje.visor import (asegurar_visor_vivo, guardar_datos_visor, html_visor,
                                       preparar_carpeta)
-        carpeta = _BD / "data" / "visores"
+        carpeta = Path(_st.visores_dir)
         preparar_carpeta(carpeta, _st.visor_assets)
         pallets_visor = doc["pallets_detalle"]
         if vista == "pallet":
