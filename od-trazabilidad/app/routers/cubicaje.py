@@ -103,46 +103,10 @@ def _clave_predist(pedido: str) -> str:
 
 
 PREDIST_COLS = ["Sucursal", "SKU", "Unidades", "Unidades por bulto (opcional)"]
-PREDIST_CAMPOS = {"sucursal": {"sucursal", "suc", "tienda", "local"},
-                  "sku": {"sku", "codigo", "material"},
-                  "unidades": {"unidades", "cantidad", "qty", "unid"},
-                  "bulto": {"unidades por bulto", "por bulto", "bulto", "un por bulto"}}
-NOMBRE_CAMPO = {"sucursal": "Sucursal", "sku": "SKU", "unidades": "Unidades"}
 
 
-def _norm_col(x) -> str:
-    import re as _re
-    import unicodedata
-    t = unicodedata.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode().lower()
-    return " ".join(_re.sub(r"\(.*?\)|[.:]", " ", t).split())
-
-
-def _leer_tabla(ws, campos: dict, por_defecto: list[str], obligatorios: list[str]) -> list:
-    """Lee una hoja ubicando cada columna por su nombre. Así sirve aunque el cliente
-    cambie el orden, agregue columnas o use la plantilla antigua. Si la primera fila no
-    es encabezado, asume el orden de la plantilla. Devuelve [(n_fila, {campo: valor})]."""
-    filas = list(ws.iter_rows(values_only=True))
-    if not filas:
-        raise HTTPException(422, "El archivo está vacío.")
-    nombres = [_norm_col(x) for x in filas[0]]
-    col = {}
-    for campo, alias in campos.items():
-        j = next((j for j, n in enumerate(nombres) if n in alias), None)
-        if j is not None:
-            col[campo] = j
-    encabezado = bool(col)
-    if not encabezado:
-        col = {c: j for j, c in enumerate(por_defecto)}
-    faltan = [NOMBRE_CAMPO.get(c, c) for c in obligatorios if c not in col]
-    if faltan:
-        raise HTTPException(422, "Falta la columna " + " y ".join(faltan) + " en el encabezado.")
-    salida = []
-    for n, fila in enumerate(filas[1:] if encabezado else filas, start=2 if encabezado else 1):
-        v = {c: (fila[j] if j < len(fila) else None) for c, j in col.items()}
-        if all(x in (None, "") or str(x).strip() == "" for x in v.values()):
-            continue
-        salida.append((n, v))
-    return salida
+def _conocidos(s: Session) -> set[str]:
+    return {m[0].lower() for m in med_mod.filas_para_cubicaje(s)}
 
 
 def _fila_predist(n: int, suc, sku, cant, bulto=None) -> tuple[dict | None, str | None]:
@@ -232,28 +196,20 @@ def plantilla_predistribuido():
 @router.post("/predistribuido/{numero}/importar")
 def importar_predistribuido(numero: str, file: UploadFile = File(...),
                             s: Session = Depends(get_session)):
-    """Carga masiva del reparto desde la plantilla. Reemplaza el reparto del pedido."""
-    from openpyxl import load_workbook
-    if Path(file.filename or "").suffix.lower() not in (".xlsx", ".xlsm"):
-        raise HTTPException(422, "El archivo debe ser .xlsx o .xlsm")
+    """Carga masiva del reparto: la plantilla o el archivo del cliente. Reemplaza el reparto del pedido."""
+    from .. import cargas
     try:
-        wb = load_workbook(file.file, read_only=True, data_only=True)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:150]}") from e
-    ws = wb["Predistribuido"] if "Predistribuido" in wb.sheetnames else wb.worksheets[0]
-
-    filas, errores = [], []
-    for n, v in _leer_tabla(ws, PREDIST_CAMPOS, ["sucursal", "sku", "unidades", "bulto"],
-                            ["sucursal", "sku", "unidades"]):
-        f, error = _fila_predist(n, v["sucursal"], v["sku"], v["unidades"], v.get("bulto"))
-        if error:
-            errores.append(error)
-        elif f:
-            filas.append(f)
+        lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s),
+                                obligatorios=("sucursal", "sku", "unidades"), hojas_preferidas=("predistribuido", "carga"),
+                                orden_plantilla=("sucursal", "sku", "unidades", "bulto"))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    filas = [{"sucursal": f.sucursal, "sku": f.sku, "unidades": f.qty, "por_bulto": f.bulto} for f in lec.filas]
     if not filas:
-        raise HTTPException(422, "El archivo no trae filas de reparto válidas. "
-                                 + "; ".join(errores[:3]))
-    return _guardar_predist(s, numero, filas, errores)
+        raise HTTPException(422, "El archivo no trae filas de reparto válidas. " + "; ".join(lec.errores[:3]))
+    doc = _guardar_predist(s, numero, filas, lec.errores)
+    doc["lectura"] = lec.resumen()
+    return doc
 
 
 @router.get("/predistribuido/{numero}")
@@ -626,6 +582,29 @@ def _merge_resultados(partes: list, pallet: list) -> dict:
             "unidades": sum(f["unidades"] for f in (filas04 or filas))}
 
 
+def _avisos_reparto(lineas: list, pre: list) -> list[str]:
+    """Reglas del predistribuido: la carga de cada SKU es el tope del reparto, y lo que no tiene sucursal no se carga."""
+    carga: dict[str, float] = {}
+    for l in lineas:
+        sku = domain.norm_sku(l.get("sku"))
+        carga[sku] = carga.get(sku, 0) + float(l.get("qty") or 0)
+    repartido: dict[str, float] = {}
+    for f in pre:
+        repartido[f.sku] = repartido.get(f.sku, 0) + f.unidades
+    sobran = {k: carga[k] - v for k, v in repartido.items() if k in carga and v < carga[k]}
+    pasan = {k: v - carga.get(k, 0) for k, v in repartido.items() if v > carga.get(k, 0)}
+    sin_reparto = {k: v for k, v in carga.items() if k not in repartido and v > 0}
+    av = []
+    if pasan:
+        av.append("El reparto supera la carga en " + ", ".join(f"{k} (+{v:g})" for k, v in list(pasan.items())[:6])
+                  + ": se recorta en el orden del archivo (las últimas sucursales quedan cortas).")
+    if sobran or sin_reparto:
+        resto = {**sobran, **sin_reparto}
+        av.append("Sin sucursal asignada, no se cargan: " + ", ".join(f"{k} ({v:g} un.)" for k, v in list(resto.items())[:6])
+                  + (" …" if len(resto) > 6 else ""))
+    return av
+
+
 @router.post("/cubicaje-libre")
 def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     """Cubica una carga armada a mano: sin pedido, sin SAP.
@@ -690,7 +669,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         entrada = Entrada(cliente=cliente or "SIN CLIENTE", modo=modo, posiciones=posiciones,
                           pedidos=[str(body.get("pedido") or "LIBRE")], medidas=cache,
                           camiones=camiones,
-                          caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")),
+                          # los modos que no son MDA exigen indicarla: sin dato se parte en "sin caja master"
+                          caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")
+                                          or ("SIN CAJA MASTER" if modo != "MDA" else "")),
                           piso_pallet=str(body.get("piso_pallet") or ""),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
@@ -736,6 +717,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
            "generado": _date.today().isoformat(), "ajustes": ajustes,
            "desconocidos": desconocidos, "modo_usado": modo,
            "faltantes": _faltantes_de(lineas, lambda sku: cache.get(sku.lower()) is not None)}
+
+    if "PREDISTRIBUIDO" in modo and pre:
+        doc["avisos"] = list(doc.get("avisos") or []) + _avisos_reparto(lineas, pre)
 
     try:
         from pathlib import Path as _Path
@@ -817,9 +801,6 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
 
 
 PLANTILLA_COLS = ["SKU", "Unidades", "Sucursal (opcional)"]
-CARGA_CAMPOS = {"sku": {"sku", "codigo", "material", "grupo"},
-                "qty": {"unidades", "cantidad", "qty", "unid"},
-                "sucursal": PREDIST_CAMPOS["sucursal"]}
 
 
 @router.get("/cubicaje-libre/plantilla")
@@ -852,15 +833,21 @@ def plantilla_carga(s: Session = Depends(get_session)):
     for linea in [
         ["Carga masiva para el cubicador"],
         [""],
-        ["1. Escribe un producto por fila en la hoja Carga."],
+        ["Con esta plantilla"],
+        ["1. Un producto por fila en la hoja Carga: SKU y Unidades. Las filas en 0 o vacías se ignoran."],
         ["2. SKU: el código del producto. Si tiene caja master, usa C delante (C900081624)."],
-        ["3. Unidades: cuántas cargar. Las filas en 0 o vacías se ignoran."],
-        ["4. Sucursal: solo para reparto predistribuido. Si un producto va a varias sucursales,"],
-        ["   repítelo en una fila por sucursal. Si la usas, llénala en todas las filas."],
-        ["   Con sucursales, el cubicador pasa solo al modo predistribuido."],
+        ["3. Sucursal: solo si el cliente es predistribuido. Repite el producto en una fila por sucursal."],
+        ["   Con sucursales, el cubicador pasa solo a MDA o SDA predistribuido."],
         [""],
-        ["Las filas de ejemplo se pueden borrar. Los productos tienen que estar en la"],
-        ["Base de Medidas cargada en Configuración."],
+        ["Con el archivo del cliente, sin tocarlo"],
+        ["Puedes subir directo el predistribuido que manda el cliente (.xlsx, .xls o .csv)."],
+        ["La plataforma busca sola las columnas de sucursal (Local, Sucursal, Tienda), producto"],
+        ["(SKU, Cód. Prov., Material) y unidades (Cantidad, Unidades). Si el archivo trae dos códigos,"],
+        ["usa el que coincide con la Base de Medidas. Las filas repetidas se suman por sucursal y producto."],
+        ["Al terminar te muestra qué columnas leyó, para que lo confirmes."],
+        [""],
+        ["Los productos tienen que estar en la Base de Medidas (Configuración). Los que no estén"],
+        ["no se cubican: se avisa su SKU y sus unidades para que los agregues."],
     ]:
         ayuda.append(linea)
     ayuda.column_dimensions["A"].width = 95
@@ -876,38 +863,26 @@ def plantilla_carga(s: Session = Depends(get_session)):
 
 @router.post("/cubicaje-libre/importar")
 def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
+                   modo: str = Form(""), caja_master: str = Form(""),
                    s: Session = Depends(get_session)):
     """Carga masiva: lee el Excel y deja los productos listos para cubicar."""
     import json as _json
 
-    from openpyxl import load_workbook
-
+    from .. import cargas
     from ..models import Config
-    if Path(file.filename or "").suffix.lower() not in (".xlsx", ".xlsm"):
-        raise HTTPException(422, "El archivo debe ser .xlsx o .xlsm")
     try:
-        wb = load_workbook(file.file, read_only=True, data_only=True)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:150]}") from e
-    ws = wb["Carga"] if "Carga" in wb.sheetnames else wb.worksheets[0]
+        lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
-    lineas, errores, sin_medidas, reparto = [], [], [], []
-    conocidos = {m[0].lower() for m in med_mod.filas_para_cubicaje(s)}
+    lineas, sin_medidas, reparto = [], [], []
+    errores = list(lec.errores)
+    conocidos = _conocidos(s)
     leidas = []                                      # (fila, sku, qty, sucursal)
-    for i, v in _leer_tabla(ws, CARGA_CAMPOS, ["sku", "qty", "sucursal"], ["sku", "qty"]):
-        sku = domain.norm_sku(v["sku"])
-        if not sku:
-            continue
-        try:
-            qty = float(str(v["qty"]).replace(",", ".")) if v["qty"] not in (None, "") else 0
-        except (TypeError, ValueError):
-            errores.append(f"fila {i}: '{v['qty']}' no es una cantidad")
-            continue
-        if qty <= 0:
-            continue
-        if sku.lower() not in conocidos:
-            sin_medidas.append(sku)            # se queda en la carga: se avisa con sus unidades y se cubica cuando tenga medidas
-        leidas.append((i, sku, qty, str(v.get("sucursal") or "").strip().upper()))
+    for f in lec.filas:
+        if f.sku.lower() not in conocidos:
+            sin_medidas.append(f.sku)              # se queda en la carga: se avisa con sus unidades y se cubica cuando tenga medidas
+        leidas.append((f.n, f.sku, f.qty, f.sucursal))
 
     # Con sucursales, el archivo es un reparto: una fila por sucursal y SKU. Las unidades
     # por SKU se suman (es el tope de carga) y el detalle va al motor como predistribuido.
@@ -942,14 +917,17 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
         else:
             juntas[l["sku"]] = l
 
-    modo = str(anterior.get("modo") or "MDA").upper()
-    caja_master = anterior.get("caja_master") or ""
+    # el modo que se ve en pantalla manda: el guardado puede ir un cálculo atrás
+    modo = (modo or str(anterior.get("modo") or "MDA")).strip().upper()
+    caja_master = caja_master or anterior.get("caja_master") or ""
     aviso_modo = ""
     if reparto and "PREDISTRIBUIDO" not in modo:
         modo = "SDA PREDISTRIBUIDO" if "SDA" in modo else "MDA PREDISTRIBUIDO"
-        caja_master = caja_master or "SIN CAJA MASTER"     # el modo exige indicarla
-        aviso_modo = (f"El archivo trae reparto por sucursal: se cubicó en {modo}, "
-                      f"{caja_master.lower()}. Los modos de stock no separan por sucursal.")
+        if "SDA" in modo:
+            caja_master = caja_master or "SIN CAJA MASTER"     # el modo exige indicarla
+        aviso_modo = (f"El archivo trae reparto por sucursal: se cubicó en {modo}"
+                      + (f", {caja_master.lower()}" if "SDA" in modo else "")
+                      + ". Los modos de stock no separan por sucursal.")
     doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto,
                           "cliente": anterior.get("cliente") or "", "modo": modo,
                           "caja_master": caja_master, "vista": anterior.get("vista") or "rampla",
@@ -959,6 +937,7 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     doc["importadas"] = len(lineas)
     doc["sin_medidas_archivo"] = sin_medidas
     doc["errores_archivo"] = errores
+    doc["lectura"] = lec.resumen()
     return doc
 
 

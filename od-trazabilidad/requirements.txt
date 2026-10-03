@@ -9,3 +9,4 @@ openpyxl>=3.1
 numpy>=1.26
 # SQL Server (solo Windows): necesario para el plan SOP y la disponibilidad
 pyodbc>=5.1; sys_platform == "win32"
+xlrd>=2.0.1

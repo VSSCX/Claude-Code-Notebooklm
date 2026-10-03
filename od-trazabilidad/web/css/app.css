@@ -435,6 +435,10 @@ dialog.angosto{width:min(460px,96vw)}
 .items .vacio b{color:var(--ink)}
 .reparto{margin:0 12px 8px;padding:8px 10px;border:1px dashed var(--edge);border-radius:var(--r);font-size:var(--t-sm)}
 .reparto .tbl{margin-top:6px}
+.reparto.pendiente{display:flex;flex-direction:column;gap:6px;border-style:solid;border-color:var(--ink);background:var(--paper)}
+.reparto.pendiente p{margin:0}
+.reparto.inactivo{opacity:.72}
+.reparto p{margin:4px 0 0}
 .mc-pie{border-top:1px solid var(--hair);padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--paper-2)}
 .ajustes summary{margin-top:0}
 .ajustes .stack{margin-top:10px}

@@ -18,7 +18,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 EXCLUIR_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "data", "node_modules", ".impeccable"}
 EXCLUIR_ARCHIVOS = {".env", "xlsx.full.min.js", "crear_proyecto.py"}
 CONSERVAR_VACIOS = {".gitkeep"}          # data/.gitkeep y casos/.gitkeep crean las carpetas
-BINARIOS_EXT = {".woff2", ".woff", ".png", ".jpg", ".ico"}
+BINARIOS_EXT = {".woff2", ".woff", ".png", ".jpg", ".ico", ".xls"}
 
 ESCRIBIR_BINARIOS = '''    for rel, b64 in BINARIOS.items():
         ruta = DESTINO / rel

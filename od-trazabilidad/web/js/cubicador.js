@@ -97,9 +97,8 @@ async function correrCalculos(){
   try {
     while (UI.cubSucio){
       UI.cubSucio = false;
-      // "Por sucursal" sin reparto no se puede calcular: se avisa en vez de pedir algo que va a fallar
+      // sin reparto, un modo predistribuido calcula una carga vacía: el panel pide el archivo
       UI.cubFalta = /PREDISTRIBUIDO/.test(UI.cubIn.modo) && !(UI.cubIn.predistribuido || []).length;
-      if (UI.cubFalta){ renderSoon(); continue; }
       const gen = UI.cubGen;
       try {
         const r = await api('POST', '/cubicaje-libre', clone(UI.cubIn));
@@ -186,35 +185,25 @@ function quitarLinea(i){
   pedirCalculo();
 }
 
-/* ---- Opciones: el modo del motor son dos preguntas, cómo va la carga y a quién va ---- */
-function modoDe(tipo, destino){
-  if (tipo === 'SDA') return destino === 'sucursal' ? 'SDA PREDISTRIBUIDO' : 'SDA STOCK';
-  return destino === 'sucursal' ? 'MDA PREDISTRIBUIDO' : 'MDA';
-}
+/* ---- Opciones: el modo del motor decide cómo se arma la carga ---- */
 function cambiarOpcionCub(campo, valor){
   const c = UI.cubIn;
-  let tipo = /SDA/.test(c.modo) ? 'SDA' : 'MDA';
-  let destino = /PREDISTRIBUIDO/.test(c.modo) ? 'sucursal' : 'stock';
-  if (campo === 'tipo') tipo = valor;
-  else if (campo === 'destino') destino = valor;
-  else if (campo === 'caja_master') c.caja_master = valor;
+  if (campo === 'caja_master') c.caja_master = valor;
   else if (campo === 'vista'){
     c.vista = valor;
     if (valor !== 'pallet') UI.vistaCamion = valor;             // a qué camión volver desde un pallet
-  }
-  if (campo === 'tipo' || campo === 'destino'){
-    c.modo = modoDe(tipo, destino);
+  } else if (campo === 'modo'){
+    c.modo = valor;
     // fuera de MDA el motor exige indicar caja master: se parte en "sin" en vez de fallar
-    if (c.modo !== 'MDA' && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
+    if (valor !== 'MDA' && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
     // la vista de un solo pallet solo existe con pallets
-    if (tipo === 'MDA' && c.vista === 'pallet') c.vista = UI.vistaCamion || 'rampla';
+    if (!/SDA/.test(valor) && c.vista === 'pallet') c.vista = UI.vistaCamion || 'rampla';
   }
   UI.cubCam = 0;
   pedirCalculo();
 }
 function quitarRepartoCub(){
-  const tipo = /SDA/.test(UI.cubIn.modo) ? 'SDA' : 'MDA';
-  UI.cubIn.predistribuido = []; UI.cubIn.modo = modoDe(tipo, 'stock');
+  UI.cubIn.predistribuido = []; UI.cubIn.modo = /SDA/.test(UI.cubIn.modo) ? 'SDA STOCK' : 'MDA';
   pedirCalculo();
 }
 function vaciarCub(){
@@ -228,6 +217,7 @@ function vaciarCub(){
 async function importarCarga(input){
   const f = input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
+  fd.append('modo', UI.cubIn.modo || ''); fd.append('caja_master', UI.cubIn.caja_master || '');
   UI.cubOcupado = true; renderSoon();
   try {
     const r = await fetch('/api/cubicaje-libre/importar', {method: 'POST', body: fd,
@@ -236,10 +226,14 @@ async function importarCarga(input){
     if (!r.ok) throw new Error(d.detail || 'No se pudo importar');
     adoptarDoc(d);
     const avisos = [];
+    const lec = d.lectura || {}, col = lec.columnas || {};
+    const mapa = [['sucursal', 'Sucursal'], ['sku', 'SKU'], ['unidades', 'Unidades']].filter(([k]) => col[k]).map(([k, n]) => `${col[k]} → ${n}`);
+    if (mapa.length) avisos.push('Leído: ' + mapa.join(' · '));
+    avisos.push(...(lec.notas || []));
     if ((d.errores_archivo || []).length) avisos.push(d.errores_archivo.slice(0, 3).join(' · '));
     const reparto = d.predistribuido || [];
     const sucs = new Set(reparto.map(x => x.sucursal)).size;
-    Avisos.agregar(avisos.length ? 'info' : 'ok',
+    Avisos.agregar(avisos.length > 1 || (d.errores_archivo || []).length ? 'info' : 'ok',
       `${d.importadas} producto(s) importados` + (reparto.length ? ` · reparto en ${sucs} sucursales` : ''), avisos.join(' | '), []);
   } catch(e){ toast(e.message); }
   UI.cubOcupado = false; render();
@@ -272,6 +266,11 @@ function postRenderCub(){
 }
 
 /* ---- Vista ---- */
+const MODOS_CUB = [
+  ['MDA', 'MDA', 'A piso, toda la carga junta: las cajas van directo al camión'],
+  ['MDA PREDISTRIBUIDO', 'MDA predistribuido', 'A piso, separado por sucursal según el reparto del cliente'],
+  ['SDA STOCK', 'SDA', 'En pallets, toda la carga junta'],
+  ['SDA PREDISTRIBUIDO', 'SDA predistribuido', 'En pallets, separado por sucursal según el reparto del cliente']];
 function seg(campo, actual, opciones){
   return `<div class="seg" role="group">${opciones.map(([v, t, ayuda]) =>
     `<button type="button" data-cub-opt="${campo}" data-valor="${esc(v)}" aria-pressed="${v === actual}"${ayuda ? ` title="${esc(ayuda)}"` : ''}>${esc(t)}</button>`).join('')}</div>`;
@@ -312,8 +311,7 @@ function vistaCubicador(){
   const aPiso = (c.filas04 || []).filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0);
   const faltaMedidas = /Base de Medidas/.test(UI.cubError || c.error || '');
   const enPallet = inp.vista === 'pallet';
-  const tipo = /SDA/.test(inp.modo) ? 'SDA' : 'MDA';
-  const destino = /PREDISTRIBUIDO/.test(inp.modo) ? 'sucursal' : 'stock';
+  const porSucursal = /PREDISTRIBUIDO/.test(inp.modo);
   if (UI.cubCam >= camiones.length) UI.cubCam = 0;
 
   /* --- productos: uno por fila, con letra y color iguales a los del visor --- */
@@ -347,20 +345,26 @@ function vistaCubicador(){
   /* --- reparto por sucursal cargado (predistribuido) --- */
   const reparto = inp.predistribuido || [];
   const sucs = [...new Set(reparto.map(x => x.sucursal))];
-  const bloqueReparto = reparto.length ? `<div class="reparto">
+  const detalleReparto = `<details><summary class="small muted">Ver detalle</summary><table class="tbl">
+        ${reparto.slice(0, 300).map(x => `<tr><td>${esc(x.sucursal)}</td><td class="code">${esc(x.sku)}</td><td class="n">${fmt(x.qty)}</td></tr>`).join('')}
+      </table>${reparto.length > 300 ? `<p class="small muted">…y ${reparto.length - 300} líneas más</p>` : ''}</details>`;
+  const botonImportar = (txt) => `<label class="btn sm" title="Excel (.xlsx, .xls) o .csv del cliente, o la plantilla">${ICON.file} ${txt}<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>`;
+  const bloqueReparto = reparto.length ? `<div class="reparto ${porSucursal ? '' : 'inactivo'}">
       <div class="row"><span><b>Reparto por sucursal</b> · ${sucs.length} sucursales · ${fmt(reparto.reduce((a, x) => a + (+x.qty || 0), 0))} un.</span>
         <span class="spacer"></span><button class="btn quiet sm" data-cub="quitar-reparto" title="Quitar el reparto y volver a Stock">Quitar</button></div>
-      <details><summary class="small muted">Ver detalle</summary><table class="tbl">
-        ${reparto.slice(0, 300).map(x => `<tr><td>${esc(x.sucursal)}</td><td class="code">${esc(x.sku)}</td><td class="n">${fmt(x.qty)}</td></tr>`).join('')}
-      </table>${reparto.length > 300 ? `<p class="small muted">…y ${reparto.length - 300} líneas más</p>` : ''}</details></div>` : '';
+      ${porSucursal ? '' : '<p class="small muted">El modo elegido no separa por sucursal: el reparto queda guardado y se usa al cambiar a un modo predistribuido.</p>'}
+      ${detalleReparto}</div>`
+    : porSucursal ? `<div class="reparto pendiente">
+      <b>Falta el reparto por sucursal</b>
+      <p class="small muted">${/SDA/.test(inp.modo) ? 'SDA' : 'MDA'} predistribuido arma la carga sucursal por sucursal. Sube el predistribuido del cliente tal como lo envía: se leen la sucursal, el producto y las unidades.</p>
+      <div class="row tight">${botonImportar('Subir predistribuido')}<a class="btn quiet sm" href="/api/cubicaje-libre/plantilla">Plantilla</a></div></div>` : '';
 
   /* --- opciones, arriba del visor: se ven y se cambian sin bajar --- */
   const cls = (UI.clientes || []).map(x => x.nombre);
   const opciones = `<div class="barra-opc">
       <label class="opt"><span>Cliente</span><select data-cub-cliente><option value="">Sin cliente</option>
         ${cls.map(n => `<option ${n === inp.cliente ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
-      <div class="opt"><span>Carga</span>${seg('tipo', tipo, [['MDA', 'A piso', 'Las cajas van directo al piso del camión (MDA)'], ['SDA', 'En pallets', 'Las cajas se arman en pallets (SDA)']])}</div>
-      <div class="opt"><span>Destino</span>${seg('destino', destino, [['stock', 'Stock', 'Toda la carga va junta'], ['sucursal', 'Por sucursal', 'Se separa por sucursal según el reparto (predistribuido)']])}</div>
+      <div class="opt"><span>Modo de cubicaje</span>${seg('modo', inp.modo, MODOS_CUB)}</div>
       ${inp.modo !== 'MDA' ? `<div class="opt"><span>Caja master</span>${seg('caja_master', inp.caja_master || '', [['CON CAJA MASTER', 'Con'], ['SIN CAJA MASTER', 'Sin']])}</div>` : ''}
       <div class="opt"><span>Ver</span>${seg('vista', inp.vista || 'rampla', VISTAS)}</div>
       ${enPallet && (c.pallets_disponibles || []).length > 1 ? `<label class="opt"><span>Pallet</span>
@@ -400,7 +404,6 @@ function vistaCubicador(){
 
   /* --- avisos: solo lo que hay que atender --- */
   const msgs = [
-    ...(UI.cubFalta ? [['info', 'Reparto', 'Falta el reparto por sucursal: usa Importar con un Excel que traiga la columna Sucursal (la plantilla la incluye).']] : []),
     ...(UI.cubError && !faltaMedidas ? [['err', 'Error', UI.cubError]] : []),
     ...((c.sin_medidas || []).length ? [['err', 'Sin medidas', c.sin_medidas.join(', ')]] : []),
     ...(enPallet && c.modo_usado && c.modo_usado !== inp.modo ? [['info', 'Pallets', `Para ver pallets se cubicó en ${c.modo_usado}: en ${inp.modo} la carga va a piso.`]] : []),
@@ -413,7 +416,7 @@ function vistaCubicador(){
       <div class="mc-h">
         <h2>Carga</h2><span class="muted num small">${fmt(unidades)} un. · ${lineas.length} SKU</span>
         <div class="mc-acc"><a class="btn quiet sm" href="/api/cubicaje-libre/plantilla" title="Excel para armar la carga fuera de la plataforma">Plantilla</a>
-        <label class="btn quiet sm" title="Cargar productos desde un Excel">Importar<input type="file" accept=".xlsx,.xlsm" data-cub-import hidden></label>
+        <label class="btn quiet sm" title="Cargar productos desde un Excel o CSV: la plantilla o el archivo del cliente">Importar<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>
         ${lineas.length ? `<a class="btn quiet sm" href="/api/cubicaje-libre/excel">Exportar</a><span class="spacer"></span><button class="btn quiet sm" data-cub="vaciar">Vaciar</button>` : ''}</div>
       </div>
       <div class="agregar">

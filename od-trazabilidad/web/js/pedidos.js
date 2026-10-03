@@ -257,7 +257,7 @@ function seccionPredist(p, modo){
       <div class="row" style="gap:6px">
         <a class="btn quiet small" href="/api/predistribuido/plantilla" title="Excel para armar el reparto: sucursal, SKU y unidades">Plantilla</a>
         <label class="btn quiet small" title="Carga el reparto desde la plantilla. Reemplaza el que hay.">Importar Excel
-          <input type="file" accept=".xlsx,.xlsm" data-predistimport="${esc(p.pedido)}" style="display:none"></label>
+          <input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-predistimport="${esc(p.pedido)}" style="display:none"></label>
         <button class="btn quiet small" data-act="verPredist">${UI.verPredist ? 'Ocultar' : (d.filas.length ? 'Editar' : 'Pegar reparto')}</button>
       </div>
     </div>

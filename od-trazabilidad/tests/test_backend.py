@@ -969,3 +969,100 @@ def test_la_vista_de_un_pallet_trae_el_mapa_del_camion_con_todos_sus_pallets(dat
     assert d2["mapa_pallet"]["actual"] == otro and len(d2["mapa_pallet"]["pallets"]) == len(m["pallets"])
     # fuera de la vista de pallet no se manda
     assert "mapa_pallet" not in c.post("/api/cubicaje-libre", json={**cuerpo, "vista": "rampla"}).json()
+
+
+# --- Cargas masivas con el formato de cada cliente --------------------------------------------
+
+def _archivo_cliente(filas, encabezado=None, titulo=True):
+    """Un predistribuido como el de Paris: título arriba, una fila por bulto, dos códigos de producto."""
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OC"
+    if titulo:
+        ws.append(["Predistribución 1390888"])
+        ws.append([])
+    ws.append(encabezado or ["ID Bulto", "Código Local", "Local", "SKU", "Cód. Prov.", "Descripción", "Cantidad", "Grupo"])
+    for f in filas:
+        ws.append(list(f))
+    b = BytesIO()
+    wb.save(b)
+    return b.getvalue()
+
+
+def test_lector_ubica_columnas_del_cliente_y_suma_por_sucursal():
+    from app import cargas
+    filas = [("B1", 10, "PLAZA OESTE", "518578999", "240097509", "FREIDORA", 1, "1390888")] * 3 + \
+            [("B4", 20, "ALTO LAS CONDES", "518578999", "240097509", "FREIDORA", 1, "1390888")]
+    arch = _archivo_cliente(filas)
+    # con la Base de Medidas, el código Electrolux es el que coincide (no el del cliente)
+    lec = cargas.leer_carga(arch, "p.xlsx", {"240097509"}, obligatorios=("sucursal", "sku", "unidades"))
+    assert [(f.sucursal, f.sku, f.qty) for f in lec.filas] == [("PLAZA OESTE", "240097509", 3.0), ("ALTO LAS CONDES", "240097509", 1.0)]
+    assert lec.columnas == {"sku": "Cód. Prov.", "unidades": "Cantidad", "sucursal": "Local"}
+    assert lec.leidas == 4 and lec.resumen()["sucursales"] == 2
+    # sin coincidencias se usa la prioridad de nombres y se avisa que hay que revisarlo
+    lec = cargas.leer_carga(arch, "p.xlsx", set(), obligatorios=("sucursal", "sku", "unidades"))
+    assert lec.columnas["sku"] == "Cód. Prov." and any("Revisa" in n for n in lec.notas)
+
+
+def test_lector_csv_y_sin_encabezado_y_errores():
+    import pytest
+    from app import cargas
+    csv = "Tienda;Material;Unidades\nCentro;0900;1.250\nSur;0900;12,5\nSur;;4\n".encode("latin-1")
+    lec = cargas.leer_carga(csv, "x.csv", set(), obligatorios=("sucursal", "sku", "unidades"))
+    assert [(f.sucursal, f.sku, f.qty) for f in lec.filas] == [("CENTRO", "900", 1250.0), ("SUR", "900", 12.5)]
+    assert lec.errores == ["fila 4: falta el SKU"]
+    with pytest.raises(ValueError, match="Falta la columna Unidades"):
+        cargas.leer_carga(_archivo_cliente([], ["Local", "SKU"], titulo=False), "x.xlsx", set())
+    with pytest.raises(ValueError, match=".xlsx"):
+        cargas.leer_carga(b"x", "x.pdf", set())
+
+
+def test_lector_xls_real_de_paris():
+    import pytest
+    pytest.importorskip("xlrd")
+    from pathlib import Path
+    from app import cargas
+    ruta = Path(__file__).parent / "datos" / "predistribucion_paris.xls"
+    lec = cargas.leer_carga(ruta.read_bytes(), ruta.name, {"240097509"}, obligatorios=("sucursal", "sku", "unidades"))
+    assert lec.hoja == "OC" and lec.leidas == 50 and len(lec.filas) == 5
+    assert {f.sku for f in lec.filas} == {"240097509"} and sum(f.qty for f in lec.filas) == 50
+    assert {f.sucursal for f in lec.filas} >= {"PLAZA OESTE", "ALTO LAS CONDES"}
+    assert lec.columnas["sku"] == "Cód. Prov."                 # la tilde mal exportada se limpia en la etiqueta
+
+
+def test_importar_archivo_de_cliente_respeta_el_modo_en_pantalla(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "240097509", "240097509 FREIDORA")
+        s.commit()
+    filas = [("B1", 10, "PLAZA OESTE", "518578999", "240097509", "F", 1, "g")] * 6 + \
+            [("B2", 20, "ALTO LAS CONDES", "518578999", "240097509", "F", 1, "g")] * 4
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("p.xlsx", _archivo_cliente(filas))},
+               data={"modo": "MDA PREDISTRIBUIDO"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["modo"] == "MDA PREDISTRIBUIDO" and d["lectura"]["sucursales"] == 2
+    assert [(l["sku"], l["qty"]) for l in d["lineas"]] == [("240097509", 10.0)]
+    assert not any("se cubicó en" in a for a in d["avisos"])       # ya estaba en ese modo: nada que avisar
+    assert sorted((f["sucursal"], f["unidades"]) for f in d["filas"]) == [("ALTO LAS CONDES", 4), ("PLAZA OESTE", 6)]
+
+
+def test_reglas_del_reparto_avisan_lo_que_no_se_carga(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 A")
+        _medida(s, "9001", "9001 B")
+        s.commit()
+    r = c.post("/api/cubicaje-libre", json={
+        "modo": "MDA PREDISTRIBUIDO",
+        "lineas": [{"sku": "9000", "qty": 10}, {"sku": "9001", "qty": 5}],
+        "predistribuido": [{"sucursal": "A", "sku": "9000", "qty": 8}, {"sucursal": "B", "sku": "9000", "qty": 8}]})
+    assert r.status_code == 200, r.text
+    av = " ".join(r.json()["avisos"])
+    assert "9000 (+6)" in av and "9001 (5 un.)" in av
