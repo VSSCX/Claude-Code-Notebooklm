@@ -26,7 +26,7 @@ function vistaBandeja(){
    Cada edición pide un cálculo; mientras hay uno en curso, las ediciones nuevas se juntan y se
    calcula una sola vez más con lo último: gana siempre la edición más reciente. */
 UI.cubIn = null; UI.cub = null; UI.cubError = ''; UI.cubCalculando = false; UI.cubSucio = false;
-UI.cubSug = []; UI.cubQ = ''; UI.cubSel = 0; UI.cubInfo = {}; UI.cubFoco = null; UI.cubCam = 0;
+UI.cubSug = []; UI.cubQ = ''; UI.cubSugQ = ''; UI.cubSel = 0; UI.cubInfo = {}; UI.cubFoco = null; UI.cubCam = 0;
 UI.cubIniciado = false; UI.cubFiltro = null; UI.cubFalta = false; UI.cubGen = 0; UI.cubOcupado = false; UI.ajustes = null; UI.verAjustes = false; UI.vistaCamion = 'rampla';
 
 const VISTAS = [['rampla', 'Rampla 53'], ['camion50', 'Camión 50'], ['pallet', 'Un pallet']];
@@ -101,17 +101,34 @@ let _sugSeq = 0, _sugTimer = 0, _qtyTimer = 0;
 function pedirSugerencias(q){
   clearTimeout(_sugTimer);
   UI.cubQ = q;
-  if (q.trim().length < 2){ UI.cubSug = []; UI.cubSel = 0; ++_sugSeq; return renderSoon(); }
+  if (q.trim().length < 2){ UI.cubSug = []; UI.cubSugQ = ''; UI.cubSel = 0; ++_sugSeq; return renderSoon(); }
   _sugTimer = setTimeout(async () => {
     const mi = ++_sugSeq;
     try {
       const r = (await api('GET', '/medidas/sugerir?q=' + encodeURIComponent(q))).sugerencias;
       if (mi !== _sugSeq) return;                                // llegó tarde: ya se escribió otra cosa
-      UI.cubSug = r; UI.cubSel = 0;
+      UI.cubSug = r; UI.cubSugQ = q.trim(); UI.cubSel = 0;
       r.forEach(x => UI.cubInfo[x.sku] = x);
     } catch(e){ if (mi === _sugSeq) UI.cubSug = []; }
     renderSoon();
   }, 140);
+}
+/* Enter con lo escrito: si las sugerencias ya son de este texto se usan; si no (se tecleó o escaneó
+   más rápido que la red) se piden ahora, sin esperar el retardo, y se agrega el SKU exacto o el primero. */
+async function agregarConEnter(v){
+  clearTimeout(_sugTimer);
+  if (v.length < 2) return;
+  let lista = UI.cubSugQ === v ? UI.cubSug : null, sel = UI.cubSel;
+  if (!lista){
+    const mi = ++_sugSeq;
+    try { lista = (await api('GET', '/medidas/sugerir?q=' + encodeURIComponent(v))).sugerencias; }
+    catch(e){ return toast(e.message); }
+    if (mi !== _sugSeq) return;                                  // se siguió escribiendo: manda lo último
+    lista.forEach(x => UI.cubInfo[x.sku] = x); sel = 0;
+  }
+  const exacto = lista.find(x => x.sku.toLowerCase() === v.toLowerCase());
+  const elegido = sel > 0 ? lista[sel] : (exacto || lista[0]);
+  if (elegido) agregarSku(elegido.sku, 1); else toast(`No encontré «${v}» en la Base de Medidas`);
 }
 function agregarSku(sku, qty){
   const l = UI.cubIn.lineas;
@@ -184,8 +201,10 @@ function quitarRepartoCub(){
   pedirCalculo();
 }
 function vaciarCub(){
+  const previo = {lineas: clone(UI.cubIn.lineas), pedido: UI.cubIn.pedido, predistribuido: UI.cubIn.predistribuido};
   Object.assign(UI.cubIn, {lineas: [], pedido: '', predistribuido: []});
   UI.cubCam = 0; pedirCalculo();
+  if (previo.lineas.length) toast('Carga vaciada', {texto: 'Deshacer', fn: () => { Object.assign(UI.cubIn, previo); pedirCalculo(); render(); }});
 }
 
 /* ---- Importar / traer un pedido ---- */
@@ -219,7 +238,14 @@ async function traerPedido(numero){
 
 /* ---- Tras cada render: foco de la carga producto por producto ---- */
 function postRenderCub(){
-  if (UI.view !== 'cubicador' || !UI.cubFoco) return;
+  if (UI.view !== 'cubicador') return;
+  // el render no toca el campo enfocado: su estado de combobox se pone a mano
+  const campo = document.querySelector('[data-cub-q]');
+  if (campo){
+    campo.setAttribute('aria-expanded', UI.cubSug.length > 0);
+    if (UI.cubSug.length) campo.setAttribute('aria-activedescendant', 'sug-' + UI.cubSel); else campo.removeAttribute('aria-activedescendant');
+  }
+  if (!UI.cubFoco) return;
   const fila = document.querySelector(`[data-cubsku="${CSS.escape(UI.cubFoco)}"]`);
   UI.cubFoco = null;
   if (!fila) return;
@@ -283,20 +309,21 @@ function vistaCubicador(){
       <button class="letra" style="background:${esc(color)};color:${tintaSobre(color)}" data-cub-filtro="${esc(l.sku)}" aria-pressed="${UI.cubFiltro === l.sku}" title="Aislar este producto en el 3D" aria-label="Aislar ${esc(l.sku)} en el 3D">${esc(d.letra || letraItem(i))}</button>
       <div class="cuerpo">
         <div class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err">sin medidas</span>' : ''}</div>
-        <div class="l2" title="${esc(d.descripcion || info.descripcion || '')}">${esc(d.descripcion || info.descripcion || '')}${(d.medidas || info.medidas) ? ' · ' + esc(d.medidas || info.medidas) : ''}</div>
+        <div class="l2" title="${esc(d.descripcion || info.descripcion || '')}">${esc(d.descripcion || info.descripcion || '')}</div>
+        ${(d.medidas || info.medidas) ? `<div class="l3 num">${esc(d.medidas || info.medidas)}</div>` : ''}
       </div>
       <div class="step">
-        <button class="btn quiet icon sm" data-cub-menos="${i}" aria-label="Una unidad menos">−</button>
+        <button class="btn quiet icon sm" data-cub-menos="${i}" aria-label="Una unidad menos">${ICON.minus}</button>
         <input class="qty" type="number" inputmode="numeric" min="0" step="1" value="${l.qty}" data-cubqty="${i}" aria-label="Unidades de ${esc(l.sku)}">
-        <button class="btn quiet icon sm" data-cub-mas="${i}" aria-label="Una unidad más">+</button>
+        <button class="btn quiet icon sm" data-cub-mas="${i}" aria-label="Una unidad más">${ICON.plus}</button>
       </div>
       <button class="btn quiet icon sm" data-cub-quitar="${i}" aria-label="Quitar ${esc(l.sku)}" title="Quitar">${ICON.x}</button>
     </li>`;
   }).join('');
 
-  const sugerencias = UI.cubSug.length ? `<ul class="sug" role="listbox" aria-label="Productos encontrados">${UI.cubSug.map((x, k) => {
+  const sugerencias = UI.cubSug.length ? `<ul class="sug" id="sug-lista" role="listbox" aria-label="Productos encontrados">${UI.cubSug.map((x, k) => {
       const n = (lineas.find(l => l.sku === x.sku) || {}).qty;
-      return `<li role="option" aria-selected="${k === UI.cubSel}"><button data-cub-sug="${esc(x.sku)}" ${k === UI.cubSel ? 'class="sel"' : ''}>
+      return `<li role="presentation"><button role="option" id="sug-${k}" tabindex="-1" aria-selected="${k === UI.cubSel}" data-cub-sug="${esc(x.sku)}" ${k === UI.cubSel ? 'class="sel"' : ''}>
         <span class="l1"><span class="code">${esc(x.sku)}</span>${x.caja_master ? `<span class="tag warn">caja master ×${x.piezas}</span>` : ''}${n ? `<span class="tag ink">ya van ${fmt(n)}</span>` : ''}</span>
         <span class="l2">${esc(x.descripcion)} · ${esc(x.medidas)}</span></button></li>`; }).join('')}</ul>`
     : (UI.cubQ.trim().length >= 2 ? '<p class="small muted sin-res">Sin coincidencias en la Base de Medidas.</p>' : '');
@@ -334,19 +361,19 @@ function vistaCubicador(){
     const o = ocupPorCam[v.numero] || 0;
     const tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
     return `<button class="chip-cam" data-cub-cam="${i}" aria-pressed="${i === UI.cubCam}" title="Ver este camión en el 3D">
-      <span class="l1"><b>${enPallet ? 'Pallet' : esc(v.tipo)} ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.</span></span>
+      <span class="l1"><b>${enPallet ? 'Pallet' : esc(v.tipo) + ' ·'} n.º ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.</span></span>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
-      <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${v.vol_m3.toFixed(1)} m³</span></span></button>`;
+      <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${m3(v.vol_m3)} m³</span></span></button>`;
   }).join('');
   const resumen = camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${enPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
-        <span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> unidades
-        <span class="sep"></span>ocupación máx. <b class="num">${pctCub(ocupMax)}</b>
+        ${(c.unidades || 0) !== unidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(unidades)} unidades` : ''}
+        <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}
         ${!enPallet && pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
         ${aPiso ? `<span class="sep"></span><b class="num">${fmt(aPiso)}</b> a piso` : ''}
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span>
         ${inp.pedido ? `<span class="sep"></span>pedido <span class="code">${esc(inp.pedido)}</span>` : ''}</div>
-      <div class="chips">${chips}</div></div>` : '';
+      ${camiones.length > 1 ? `<div class="chips">${chips}</div>` : ''}</div>` : '';
 
   /* --- avisos: solo lo que hay que atender --- */
   const msgs = [
@@ -367,9 +394,9 @@ function vistaCubicador(){
         ${lineas.length ? `<a class="btn quiet sm" href="/api/cubicaje-libre/excel">Exportar</a><span class="spacer"></span><button class="btn quiet sm" data-cub="vaciar">Vaciar</button>` : ''}</div>
       </div>
       <div class="agregar">
-        <div class="searchbox">${ICON.search}<input type="text" data-cub-q value="${esc(UI.cubQ)}" placeholder="Agregar producto: SKU o descripción" autocomplete="off" spellcheck="false" aria-label="Agregar producto" role="combobox" aria-expanded="${UI.cubSug.length > 0}"></div>
+        <div class="searchbox">${ICON.search}<input type="text" data-cub-q value="${esc(UI.cubQ)}" placeholder="Agregar producto: SKU o descripción" autocomplete="off" spellcheck="false" aria-label="Agregar producto" role="combobox" aria-expanded="${UI.cubSug.length > 0}" aria-controls="sug-lista" aria-autocomplete="list"${UI.cubSug.length ? ` aria-activedescendant="sug-${UI.cubSel}"` : ''}></div>
         ${sugerencias}
-        ${!UI.cubSug.length && !UI.cubQ ? '<p class="small muted ayuda">Enter agrega y salta a las unidades; otro Enter vuelve aquí. También puedes pegar una lista desde Excel (SKU y unidades).</p>' : ''}
+        ${lineas.length && !UI.cubSug.length && !UI.cubQ ? '<p class="small muted ayuda">Enter agrega y salta a las unidades; otro Enter vuelve aquí. También puedes pegar una lista desde Excel (SKU y unidades).</p>' : ''}
       </div>
       <ol class="items">${filas || `<li class="vacio"><b>Empieza por el primer producto</b><span>Escribe un SKU arriba, pega una lista desde Excel, o trae un pedido analizado.</span></li>`}</ol>
       ${bloqueReparto}
@@ -427,9 +454,7 @@ document.addEventListener('keydown', ev => {
       UI.cubSel = (UI.cubSel + (ev.key === 'ArrowDown' ? 1 : -1) + UI.cubSug.length) % UI.cubSug.length; render();
     } else if (ev.key === 'Enter'){
       ev.preventDefault();
-      const v = el.value.trim();
-      const elegido = UI.cubSug[UI.cubSel] || UI.cubSug.find(x => x.sku.toLowerCase() === v.toLowerCase());
-      if (elegido) agregarSku(elegido.sku, 1);
+      agregarConEnter(el.value.trim());
     } else if (ev.key === 'Escape'){ UI.cubQ = ''; UI.cubSug = []; el.value = ''; render(); }
   } else if (el.matches('[data-cubqty]') && ev.key === 'Enter'){
     ev.preventDefault(); clearTimeout(_qtyTimer); cambiarQty(+el.dataset.cubqty, el.value);

@@ -39,7 +39,19 @@ function isoWeek(iso){
   d.setDate(d.getDate() - day + 3); const w1 = new Date(d.getFullYear(), 0, 4);
   return 1 + Math.round(((d - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7);
 }
-function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove('on'), 2600); }
+/* Un aviso breve; con `accion` ({texto, fn}) ofrece deshacer y dura más */
+function toast(msg, accion){
+  const t = $('#toast'); t.textContent = msg;
+  if (accion){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-acc'; b.textContent = accion.texto;
+    b.onclick = () => { t.classList.remove('on'); accion.fn(); };
+    t.append(b);
+  }
+  t.classList.toggle('con-acc', !!accion);
+  t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), accion ? 7000 : 2600);
+}
+/* Decimales con coma, como el resto de los números de la plataforma */
+const m3 = (x, d = 1) => (+x || 0).toFixed(d).replace('.', ',');
 
 /* Resultados que no se pueden perder de vista (SAP, cubicaje, cargas): quedan
    fijos arriba hasta que la persona los cierra, en vez de irse solos como el toast. */

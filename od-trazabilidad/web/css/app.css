@@ -222,7 +222,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .label-top > *{min-width:0}
 .lab-num{overflow-wrap:anywhere}
 .label-code{display:flex;flex-direction:column;align-items:flex-end;gap:3px;color:var(--ink);max-width:100%}
-.label-code .barras{display:block;max-width:100%;height:44px}
+.label-code .barras{display:block;max-width:100%;height:44px;background:#fff;color:#000;padding:4px 8px;border-radius:var(--r)}   /* placa clara fija: las barras se leen con escáner también en tema oscuro */
 .label-code .code{font-size:11px;letter-spacing:.14em;color:var(--muted);overflow-wrap:anywhere;text-align:right}
 .cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));border-top:2px solid var(--ink)}
 .cell{padding:8px 12px 9px;border-right:1px solid var(--hair);border-bottom:1px solid var(--hair);min-width:0}
@@ -234,6 +234,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .label-obs{padding:0 16px 12px;color:var(--ink-2)}
 .label-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-top:1px solid var(--hair);background:var(--paper-2)}
 .label-foot .spacer{flex:1}
+.label-foot .escribe{border-color:var(--ink);font-weight:650}   /* escriben en SAP: se distinguen de las que solo leen */
 .label-foot + .label-foot{border-top:0;padding-top:0}
 .label-files{padding:8px 12px;border-top:1px solid var(--hair)}
 .label > p.small{margin:0;padding:8px 16px;border-top:1px solid var(--hair)}
@@ -329,6 +330,9 @@ dialog.angosto{width:min(460px,96vw)}
 #toast{position:fixed;left:50%;bottom:20px;z-index:50;max-width:min(560px,92vw);background:var(--ink);color:var(--paper);padding:9px 16px;border-radius:var(--r);font-size:var(--t-sm);font-weight:550;box-shadow:var(--shadow);
   opacity:0;transform:translate(-50%,8px);pointer-events:none;transition:opacity 120ms var(--ease-out),transform 120ms var(--ease-out)}
 #toast.on{opacity:1;transform:translate(-50%,0);transition-duration:160ms}
+#toast.con-acc{pointer-events:auto}
+.toast-acc{all:unset;cursor:pointer;margin-left:14px;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.toast-acc:focus-visible{outline:2px solid var(--paper);outline-offset:2px}
 
 /* ---------- Cubicador: mesa de carga ---------- */
 .spacer{flex:1}
@@ -357,7 +361,9 @@ dialog.angosto{width:min(460px,96vw)}
 .item .cuerpo{flex:1;min-width:0}
 .item .l1{display:flex;gap:6px;align-items:center;font-size:var(--t-sm);font-weight:650;flex-wrap:wrap}
 .item .l2{font-size:var(--t-xs);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .l3{font-size:var(--t-xs);color:var(--ink-2)}
 .item .step{display:flex;align-items:center;gap:0;flex:none}
+.item .step .btn.icon{min-width:32px;min-height:32px}
 .item .step .qty{width:62px;text-align:center;min-height:28px;padding:2px 4px;margin:0 1px}
 .item .step input::-webkit-outer-spin-button,.item .step input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .item .step input[type=number]{-moz-appearance:textfield}
@@ -418,8 +424,7 @@ dialog.angosto{width:min(460px,96vw)}
   .rail{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:8px 12px}
   .rail-brand{padding:6px 10px}
   .rail-brand span{font-size:var(--t-md)}
-  .rail-nav{flex-direction:row;overflow-x:auto;order:3;width:100%;scrollbar-width:none}
-  .rail-nav::-webkit-scrollbar{display:none}
+  .rail-nav{flex-direction:row;flex-wrap:wrap;order:3;width:100%}
   .rail-item{white-space:nowrap;padding:7px 10px;flex:none}
   .rail-foot{margin:0 0 0 auto;border:0;padding:0;flex-direction:row;align-items:center}
   #app{padding:12px;min-height:0}

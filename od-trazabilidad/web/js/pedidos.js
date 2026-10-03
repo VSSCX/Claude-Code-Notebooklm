@@ -93,7 +93,7 @@ function detallePedido(p){
   const celda = (cap, val, extra = '') => `<div class="cell ${extra}"><span class="cap">${cap}</span><span class="val">${val}</span></div>`;
   return `<div class="label" data-k="label-${esc(safeId(p.pedido))}">
     <div class="label-top">
-      <h2 class="lab-num"><span class="lab-pre">Pedido</span>${esc(p.pedido)}</h2>
+      <h2 class="lab-num"><span class="lab-pre">Pedido</span> ${esc(p.pedido)}</h2>
       <div class="label-act"><button class="btn sm" data-act="editarPedido">Editar pedido</button>
         <button class="btn primary sm" data-act="nuevaEntrega">${ICON.plus} Nueva entrega</button></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
@@ -111,7 +111,9 @@ function detallePedido(p){
     ${p.obs ? `<p class="label-obs small">${esc(p.obs)}</p>` : ''}
     <div class="label-foot">
       <button class="btn sm" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">Actualizar desde SAP</button>
-      ${botonAccion('leer_pedido', 'sm')}${botonAccion('cubicar', 'sm')}${botonAccion('crear_entregas', 'sm')}${botonAccion('crear_grupos', 'sm')}${botonAccion('visor', 'sm')}
+      ${botonAccion('leer_pedido', 'sm')}${botonAccion('cubicar', 'sm')}${botonAccion('visor', 'sm')}
+      <span class="spacer"></span>
+      ${botonAccion('crear_entregas', 'sm escribe')}${botonAccion('crear_grupos', 'sm escribe')}
     </div>
     ${estadoJob()}
     <div class="label-files">${listaArchivos(p.pedido, '')}</div>
@@ -330,9 +332,9 @@ function fichasCamion(p, cb){
   return `<div class="chips">${cb.camiones.map((c, i) => {
     const o = porCamion[c.numero] || 0, tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
     return `<button class="chip-cam" data-ped-cam="${esc(p.pedido)}|${i}" aria-pressed="${i === sel}">
-      <span class="l1"><b>${esc(c.tipo)} ${c.numero}</b></span>
+      <span class="l1"><b>${esc(c.tipo)} · n.º ${c.numero}</b></span>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
-      <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${c.vol_m3.toFixed(1)} m³</span></span></button>`; }).join('')}</div>`;
+      <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${m3(c.vol_m3)} m³</span></span></button>`; }).join('')}</div>`;
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-ped-cam]'); if (!b) return;
@@ -386,7 +388,7 @@ function vistaCubicaje(p){
       <div class="dk-h"><div class="dk-id">Camión ${c.numero} <span class="tag">${esc(c.tipo)}</span>
         <span class="tag ${fs[0] && fs[0].tipo_carga === 'Mono-pedido' ? 'ok' : 'warn'}">${esc(fs[0] ? fs[0].tipo_carga : '')}</span></div>
         <div class="dk-qty">${fmt(fs.reduce((a, f) => a + f.unidades, 0))} <small>un. · ${pctCub(ocup)} ocupado</small></div></div>
-      <div class="meta">${m('Medidas', `${fmt(c.L)} × ${fmt(c.w)} × ${fmt(c.h)} cm`)}${m('Capacidad', `${c.vol_m3.toFixed(2)} m³`)}${m('Libre', `${(fs.length ? fs[fs.length - 1].libre_m3 : c.vol_m3).toFixed(2)} m³`)}</div>
+      <div class="meta">${m('Medidas', `${fmt(c.L)} × ${fmt(c.w)} × ${fmt(c.h)} cm`)}${m('Capacidad', `${m3(c.vol_m3, 2)} m³`)}${m('Libre', `${m3(fs.length ? fs[fs.length - 1].libre_m3 : c.vol_m3, 2)} m³`)}</div>
       <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr>${fs.some(f => f.sucursal) ? '<th>Sucursal</th>' : ''}<th>SKU</th><th>Descripción</th><th class="n">Unidades</th></tr></thead><tbody>
         ${fs.map(f => `<tr>${fs.some(x => x.sucursal) ? `<td>${esc(f.sucursal)}</td>` : ''}<td class="code">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td><td class="n">${fmt(f.unidades)}</td></tr>`).join('')}
       </tbody></table></div></article>`;
