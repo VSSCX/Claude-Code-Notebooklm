@@ -211,6 +211,80 @@ def test_paginacion_con_mas_filas_visibles():
     assert len(r.posiciones) == 30
 
 
+# ---------------------------------------------------------------- rapidez de la lectura
+def _medir(monkeypatch, n, visibles=12, **kw):
+    """Pausas acumuladas y consultas a SAP de una lectura (el tiempo real es pausas + consultas × ~10 ms)."""
+    ses = SesionFake(filas(n), visibles=visibles, **kw)
+    llamadas = {"n": 0}
+    original = ses.findById
+
+    def contado(ident):
+        llamadas["n"] += 1
+        return original(ident)
+
+    ses.findById = contado
+    pausas = {"s": 0.0}
+    monkeypatch.setattr(sap.time, "sleep", lambda s=0: pausas.__setitem__("s", pausas["s"] + s))
+    r = sap.leer_pedido("4001", "PN01", "22.09.2026", ses=ses)
+    return r, pausas["s"], llamadas["n"], ses
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 8, 11])
+def test_un_pedido_chico_no_espera_pantallas_vacias(monkeypatch, n):
+    """Con un solo producto SAP informa 'sin scroll': antes se leían 100 filas vacías con cinco reintentos
+    cada una (~28 s). Ahora termina en cuanto se acaban los productos."""
+    r, pausas, consultas, ses = _medir(monkeypatch, n)
+    assert len(r.posiciones) == n and r.aviso == ""
+    assert pausas <= 0.6, f"{n} producto(s): {pausas:.1f} s de pausas"
+    assert consultas <= 70, f"{n} producto(s): {consultas} consultas"
+    assert len(ses.scroll.historia) == 1                        # no se movió el scroll de más
+
+
+@pytest.mark.parametrize("n", [11, 12, 13, 23, 24, 25, 60, 120])
+def test_pedido_grande_se_lee_completo_y_sin_vueltas_de_mas(monkeypatch, n):
+    r, pausas, consultas, ses = _medir(monkeypatch, n)
+    assert [p.sku for p in r.posiciones] == [x[0] for x in filas(n)]
+    assert len(ses.scroll.historia) <= (n // 11) + 3
+    assert pausas <= 0.25 * (n // 11 + 2) + 0.4, f"{n} productos: {pausas:.1f} s de pausas"
+
+
+def test_tabla_con_scroll_declarado_en_cero_se_lee_igual(monkeypatch):
+    """SAP a veces informa máximo 0 aunque haya muchas filas: la pantalla llena manda seguir."""
+    ses = SesionFake(filas(30), visibles=12)
+    ses.scroll.Maximum = 0
+    monkeypatch.setattr(sap.time, "sleep", lambda *_: None)
+    r = sap.leer_pedido("4001", "PN01", "22.09.2026", ses=ses)
+    assert len(r.posiciones) == 30
+
+
+def test_un_atraso_de_sap_a_mitad_de_pantalla_no_corta_la_lectura(monkeypatch):
+    """Una fila que llega vacía un par de veces (SAP lento) no debe truncar el pedido."""
+    ses = SesionFake(filas(20), visibles=12)
+    original = ses._celda
+    estado = {"vacias": 0}
+
+    def con_atraso(resto):
+        if ses.scroll.Position == 0 and resto.endswith(",5]") and "MATNR" in resto and estado["vacias"] < 3:
+            estado["vacias"] += 1
+            return Campo("")
+        return original(resto)
+
+    ses._celda = con_atraso
+    monkeypatch.setattr(sap.time, "sleep", lambda *_: None)
+    r = sap.leer_pedido("4001", "PN01", "22.09.2026", ses=ses)
+    assert len(r.posiciones) == 20 and estado["vacias"] == 3
+
+
+def test_la_columna_de_fabrica_se_detecta_sin_recorrer_las_demas(monkeypatch):
+    ses = SesionFake(filas(2))
+    consultadas = []
+    original = ses.findById
+    ses.findById = lambda ident: (consultadas.append(ident), original(ident))[1]
+    monkeypatch.setattr(sap.time, "sleep", lambda *_: None)
+    assert sap._detectar_columna(ses, sap.F_PENDIENTE) == 22
+    assert len(consultadas) <= 2                                # antes: ~45 consultas hasta llegar a la 22
+
+
 # ---------------------------------------------------------------- borrado en SAP
 class SesionBorrado(SesionFake):
     """Simula VL06 / VG02: registra los ids usados y controla si aparece el popup."""

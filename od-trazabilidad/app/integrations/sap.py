@@ -45,7 +45,8 @@ COL_DEFECTO = {F_MATERIAL: 1, F_ENTREGA: 4, F_PENDIENTE: 22}
 ESPERA_OCUPADO = 20.0      # segundos
 REINTENTOS_CELDA = 5
 PAUSA_REINTENTO = 0.15
-PAUSA_PAGINA = 0.2         # espera tras mover el scroll (antes 0,5 por fila)
+REINTENTOS_FILA_SIGUIENTE = 3  # confirmaciones antes de dar por vacía una fila que sigue a otra con datos
+PAUSA_PAGINA = 0.1         # espera tras mover el scroll (antes 0,5 por fila)
 FILAS_VISIBLES = 4         # mínimo de filas por pantalla (se usa PageSize si es mayor)
 PANTALLAS_VACIAS = 2       # pantallas seguidas sin datos antes de cortar la lectura
 
@@ -135,9 +136,15 @@ def _cerrar_popup(ses):
             pass
 
 
-def _leer_celda(ses, campo: str, col: int, fila: int) -> str:
-    for intento in range(REINTENTOS_CELDA):
-        for prefijo in ("txt", "ctxt"):
+_prefijo_celda: dict[str, str] = {}      # "txt" o "ctxt" que usa cada campo: se prueba primero el que ya funcionó
+
+
+def _leer_celda(ses, campo: str, col: int, fila: int, reintentos: int = REINTENTOS_CELDA) -> str:
+    """Texto de una celda de la tabla. Los reintentos esperan a que SAP termine de pintar; una fila
+    vacía no los necesita, por eso quien la lee decide cuántos."""
+    orden = sorted(("txt", "ctxt"), key=lambda p: p != _prefijo_celda.get(campo))
+    for intento in range(reintentos):
+        for prefijo in orden:
             celda = _por_id(ses, f"{TABLA}/{prefijo}{campo}[{col},{fila}]")
             if celda is not None:
                 try:
@@ -145,14 +152,18 @@ def _leer_celda(ses, campo: str, col: int, fila: int) -> str:
                 except Exception:  # noqa: BLE001
                     valor = ""
                 if valor:
+                    _prefijo_celda[campo] = prefijo
                     return valor
-        if intento < REINTENTOS_CELDA - 1:
+        if intento < reintentos - 1:
             time.sleep(PAUSA_REINTENTO)
     return ""
 
 
 def _detectar_columna(ses, campo: str) -> int:
-    for idx in range(31):
+    """Columna del campo en el layout de este analista. Casi siempre es la de fábrica: se prueba
+    primero y solo si no está se recorren las demás (antes eran hasta 60 consultas por campo)."""
+    candidatas = [COL_DEFECTO[campo]] + [i for i in range(31) if i != COL_DEFECTO[campo]]
+    for idx in candidatas:
         for prefijo in ("txt", "ctxt"):
             if _por_id(ses, f"{TABLA}/{prefijo}{campo}[{idx},0]") is not None:
                 return idx
@@ -168,13 +179,11 @@ def _tabla_picking(ses, intentos: int = 3):
                 pest.Select()
             except Exception as e:  # noqa: BLE001
                 anotar("No se pudo abrir la pestaña de picking", e)
-            time.sleep(0.3)
             _esperar(ses)
-        tabla = _por_id(ses, TABLA)
-        if tabla is not None:
-            return tabla
+        if _esperar_objeto(ses, TABLA, 1.0 + 0.5 * i):       # en cuanto aparece sigue, sin pausa fija
+            return _por_id(ses, TABLA)
         _cerrar_popup(ses)          # a veces queda un aviso tapando la pantalla
-        time.sleep(0.6 * (i + 1))
+        time.sleep(0.3 * (i + 1))
     return None
 
 
@@ -189,6 +198,49 @@ def _mensaje_sap(ses) -> str:
         return ""
 
 
+def _posicion(tabla, pedida: int) -> int:
+    """Fila en la que quedó realmente la tabla (SAP no deja pasar del final)."""
+    try:
+        return int(tabla.verticalScrollbar.Position)
+    except Exception:  # noqa: BLE001
+        return pedida
+
+
+def _mover(ses, tabla, destino: int, actual: int) -> int:
+    """Mueve el scroll y devuelve la fila en la que quedó, esperando a que SAP termine de repintar."""
+    try:
+        tabla.verticalScrollbar.Position = destino
+    except Exception as e:  # noqa: BLE001
+        anotar(f"No se pudo mover la tabla a la fila {destino}", e)
+    _esperar(ses)
+    real = _posicion(tabla, destino)
+    for _ in range(3):                                   # pidió avanzar y sigue donde estaba: puede ser lentitud
+        if real != actual or destino == actual:
+            break
+        time.sleep(PAUSA_PAGINA)
+        _esperar(ses)
+        real = _posicion(tabla, destino)
+    time.sleep(PAUSA_PAGINA)
+    return real
+
+
+def _leer_pantalla(ses, cols: dict, visibles: int) -> list[tuple[int, str, float, float]]:
+    """Filas de la pantalla actual. Las posiciones son seguidas: en la primera fila vacía se acaba.
+
+    La primera fila de cada pantalla puede llegar tarde, así que tiene todos los reintentos. Después
+    de la última con datos basta una confirmación corta: antes cada fila vacía costaba cinco reintentos,
+    y un pedido con pocos productos esperaba toda una pantalla de filas vacías."""
+    out: list[tuple[int, str, float, float]] = []
+    for fila in range(visibles):
+        sku = _leer_celda(ses, F_MATERIAL, cols[F_MATERIAL], fila, REINTENTOS_CELDA if fila == 0 else REINTENTOS_FILA_SIGUIENTE)
+        if not sku:
+            break
+        out.append((fila, sku,
+                    _numero(_leer_celda(ses, F_ENTREGA, cols[F_ENTREGA], fila)),
+                    _numero(_leer_celda(ses, F_PENDIENTE, cols[F_PENDIENTE], fila))))
+    return out
+
+
 def _leer_tabla(ses, lectura: "Lectura") -> list[Posicion]:
     cols = {c: _detectar_columna(ses, c) for c in (F_MATERIAL, F_ENTREGA, F_PENDIENTE)}
     vistos: dict[str, Posicion] = {}
@@ -196,53 +248,38 @@ def _leer_tabla(ses, lectura: "Lectura") -> list[Posicion]:
     if tabla is None:
         return []
     try:
-        maximo = int(tabla.verticalScrollbar.Maximum) or 100
+        maximo = int(tabla.verticalScrollbar.Maximum)
     except Exception:  # noqa: BLE001
-        maximo = 100
+        maximo = 0
     try:
         visibles = max(int(tabla.verticalScrollbar.PageSize), FILAS_VISIBLES)
     except Exception:  # noqa: BLE001
         visibles = FILAS_VISIBLES
-    lectura.filas_tabla = maximo + 1 if maximo != 100 else 0
-    vacias = 0
-    leidas_abs: set[int] = set()        # filas ya procesadas (las pantallas se superponen)
+    lectura.filas_tabla = maximo + 1 if maximo > 0 else 0
 
-    # El VBA avanza de a UNA fila (4 lecturas por fila visible). Se avanza por pantalla
-    # dejando una fila de traslape: mismas filas leídas, ~4 veces menos vueltas.
-    paso = max(visibles - 1, 1)
-    posiciones = list(range(0, maximo + 1, paso))
-    if posiciones[-1] != maximo:
-        posiciones.append(maximo)          # la última pantalla siempre se lee
-    for scroll in posiciones:
-        tabla = _por_id(ses, TABLA)
-        if tabla is None:
-            time.sleep(0.5)
-            tabla = _por_id(ses, TABLA)
-            if tabla is None:
-                continue
-        foco = _por_id(ses, FOCO)
-        if foco is not None:
-            try:
-                foco.SetFocus()
-                time.sleep(0.15)
-                foco.CaretPosition = 0
-                time.sleep(0.15)
-            except Exception as e:  # noqa: BLE001
-                anotar("No se pudo poner el foco en la tabla", e)
+    foco = _por_id(ses, FOCO)
+    if foco is not None:
         try:
-            tabla.verticalScrollbar.Position = scroll
+            foco.SetFocus()
+            foco.CaretPosition = 0
         except Exception as e:  # noqa: BLE001
-            anotar(f"No se pudo mover la tabla a la fila {scroll}", e)
-        _esperar(ses)
-        time.sleep(PAUSA_PAGINA)
+            anotar("No se pudo poner el foco en la tabla", e)
 
-        leidas = 0
-        for fila in range(visibles):
-            sku = _leer_celda(ses, F_MATERIAL, cols[F_MATERIAL], fila)
-            if not sku:
-                continue
-            leidas += 1
-            absoluta = scroll + fila                    # fila real dentro de la tabla
+    # Se avanza por pantalla dejando una fila de traslape. La tabla se acaba cuando una pantalla no se
+    # llena y SAP no declara más filas por delante; el máximo que informa SAP es solo una pista (a veces
+    # dice 0 aunque haya muchas filas, y con un solo producto también dice 0).
+    paso = max(visibles - 1, 1)
+    leidas_abs: set[int] = set()        # filas ya procesadas (las pantallas se superponen)
+    pedido_scroll, actual, vacias = 0, -1, 0
+    while True:
+        actual_nuevo = _mover(ses, tabla, pedido_scroll, actual)
+        if actual_nuevo == actual:
+            break                                       # no pudo avanzar: se llegó al final
+        actual = actual_nuevo
+        tabla = _por_id(ses, TABLA) or tabla
+        pantalla = _leer_pantalla(ses, cols, visibles)
+        for fila, sku, ent, pen in pantalla:
+            absoluta = actual + fila                    # fila real dentro de la tabla
             if absoluta in leidas_abs:
                 continue                                # ya la leímos en la pantalla anterior
             leidas_abs.add(absoluta)
@@ -250,14 +287,15 @@ def _leer_tabla(ses, lectura: "Lectura") -> list[Posicion]:
                 if sku not in lectura.duplicados:
                     lectura.duplicados.append(sku)      # igual que el Excel: manda la 1a fila
                 continue
-            vistos[sku] = Posicion(
-                sku=sku,
-                qty_entrega=_numero(_leer_celda(ses, F_ENTREGA, cols[F_ENTREGA], fila)),
-                qty_pendiente=_numero(_leer_celda(ses, F_PENDIENTE, cols[F_PENDIENTE], fila)),
-            )
-        # Se corta con varias pantallas vacías seguidas: una sola puede ser lentitud de SAP
-        vacias = vacias + 1 if leidas == 0 else 0
-        if vacias >= PANTALLAS_VACIAS and scroll > 0:
+            vistos[sku] = Posicion(sku=sku, qty_entrega=ent, qty_pendiente=pen)
+        vacias = vacias + 1 if not pantalla else 0
+        llena = len(pantalla) >= visibles
+        if not llena and actual >= maximo:
+            break                                       # la pantalla no se llenó y SAP no declara más
+        if vacias >= PANTALLAS_VACIAS:
+            break                                       # varias pantallas vacías seguidas: no hay más
+        pedido_scroll = actual + paso if llena else min(actual + paso, maximo)
+        if not llena and pedido_scroll <= actual:
             break
     return list(vistos.values())
 
@@ -271,7 +309,7 @@ def leer_pedido(pedido: str, puesto: str, fecha: str, ses=None) -> Lectura:
     okcd.Text = "/nVL01N"
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses)
-    time.sleep(0.5)
+    _esperar_objeto(ses, "wnd[0]/usr/ctxtLV50C-VBELN", 3)      # la pantalla de entrada ya está lista
     _cerrar_popup(ses)
 
     for ident in ("wnd[0]/usr/ctxtLIKP-VSTEL", "wnd[0]/usr/ctxtLV50C-DATBI",
@@ -285,7 +323,6 @@ def leer_pedido(pedido: str, puesto: str, fecha: str, ses=None) -> Lectura:
 
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses)
-    time.sleep(0.5)
     _cerrar_popup(ses)
 
     limpiar_incidencias()
@@ -531,7 +568,7 @@ def _esperar_objeto(ses, ident: str, seg: float) -> bool:
     while time.time() - t0 < seg:
         if _por_id(ses, ident) is not None:
             return True
-        time.sleep(0.15)
+        time.sleep(0.05)
     return False
 
 
