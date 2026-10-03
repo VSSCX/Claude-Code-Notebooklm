@@ -1,0 +1,891 @@
+"""Cubicaje, medidas y cubicador libre."""
+import shutil
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from .. import domain
+from ..db import get_session
+from ..integrations import acciones, bases, clientes as cli_mod, maestra, medidas as med_mod
+from sqlalchemy import select
+
+from ..models import Archivo, Entrega
+from ..schemas import EntregaIn, PaqueteIn, PedidoIn
+
+
+def _commit(s: Session):
+    try:
+        s.commit()
+    except IntegrityError as e:
+        s.rollback()
+        raise HTTPException(409, "El registro choca con otro existente.") from e
+
+from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
+                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
+
+router = APIRouter()
+
+@router.get("/medidas")
+def get_medidas(buscar: str = "", limite: int = 50, s: Session = Depends(get_session)):
+    from sqlalchemy import or_, select as _sel
+    from ..models import Medida
+    q = _sel(Medida)
+    if buscar:
+        p = f"%{buscar.strip()}%"
+        q = q.where(or_(Medida.sku.like(p), Medida.descripcion.like(p)))
+    filas = s.scalars(q.order_by(Medida.sku).limit(max(1, min(limite, 500)))).all()
+    return {**med_mod.estado(s), "filas": [
+        {"sku": m.sku, "descripcion": m.descripcion, "piezas": m.piezas, "largo": m.largo,
+         "ancho": m.ancho, "alto": m.alto, "peso": m.peso, "apilar": m.apilar,
+         "inclinar": m.inclinar, "rotar": m.rotar, "max_camion": m.max_camion,
+         "max_pallet": m.max_pallet, "actualizado": domain._iso(m.actualizado)} for m in filas]}
+
+
+@router.post("/medidas/importar")
+def importar_medidas(file: UploadFile = File(...), s: Session = Depends(get_session)):
+    """Carga masiva desde Base de Medidas.xlsm: agrega los nuevos y actualiza los cambiados."""
+    if Path(file.filename or "").suffix.lower() not in (".xlsm", ".xlsx"):
+        raise HTTPException(422, "El archivo debe ser .xlsm o .xlsx")
+    try:
+        filas = med_mod.leer_archivo(file.file)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:200]}") from e
+    if not filas:
+        raise HTTPException(422, "No se encontró la hoja 'Base para carga' con sus encabezados.")
+    r = med_mod.importar(s, filas)
+    _commit(s)
+    return {**r.__dict__, **med_mod.estado(s)}
+
+
+@router.put("/medidas/{sku}")
+def put_medida(sku: str, body: dict, s: Session = Depends(get_session)):
+    """Corrección puntual de un producto (por ejemplo, uno que falta y frena el cubicaje)."""
+    fila = {"Grupo": sku, "Descripción": body.get("descripcion"), "Piezas": body.get("piezas"),
+            "Longitud": body.get("largo"), "Anchura": body.get("ancho"), "Altura": body.get("alto"),
+            "Peso total": body.get("peso"), "Apilar": body.get("apilar"),
+            "Inclinar": body.get("inclinar"), "Rotar": body.get("rotar"),
+            "Máx Camión": body.get("max_camion"), "Máx Pallet": body.get("max_pallet")}
+    r = med_mod.importar(s, [fila])
+    if r.ignorados:
+        raise HTTPException(422, "Largo, ancho y alto tienen que ser mayores que cero.")
+    _commit(s)
+    return get_medidas(buscar=sku, s=s)
+
+
+@router.get("/ajustes-cubicaje")
+def get_ajustes_cubicaje(s: Session = Depends(get_session)):
+    return _ajustes_cubicaje(s)
+
+
+@router.put("/ajustes-cubicaje")
+def put_ajustes_cubicaje(body: dict, s: Session = Depends(get_session)):
+    orient = str(body.get("orientacion_pallet", "largo")).lower()
+    if orient not in ("excel", "largo"):
+        raise HTTPException(422, "Orientación no válida (largo o excel).")
+    celda = int(body.get("celda_cm") or 1)
+    if celda not in (1, 2):
+        raise HTTPException(422, "La precisión tiene que ser 1 o 2 cm.")
+    cap = str(body.get("capacidad_pallet", "geometria")).lower()
+    if cap not in ("geometria", "tabla"):
+        raise HTTPException(422, "Capacidad no válida (geometria o tabla).")
+    datos = {"orientacion_pallet": orient, "celda_cm": celda, "capacidad_pallet": cap}
+    domain.guardar_config(s, "ajustes_cubicaje", datos)
+    _commit(s)
+    return datos
+
+
+def _clave_predist(pedido: str) -> str:
+    return f"predist:{pedido}"
+
+
+PREDIST_COLS = ["Sucursal", "SKU", "Unidades", "Unidades por bulto (opcional)"]
+PREDIST_CAMPOS = {"sucursal": {"sucursal", "suc", "tienda", "local"},
+                  "sku": {"sku", "codigo", "material"},
+                  "unidades": {"unidades", "cantidad", "qty", "unid"},
+                  "bulto": {"unidades por bulto", "por bulto", "bulto", "un por bulto"}}
+NOMBRE_CAMPO = {"sucursal": "Sucursal", "sku": "SKU", "unidades": "Unidades"}
+
+
+def _norm_col(x) -> str:
+    import re as _re
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode().lower()
+    return " ".join(_re.sub(r"\(.*?\)|[.:]", " ", t).split())
+
+
+def _leer_tabla(ws, campos: dict, por_defecto: list[str], obligatorios: list[str]) -> list:
+    """Lee una hoja ubicando cada columna por su nombre. Así sirve aunque el cliente
+    cambie el orden, agregue columnas o use la plantilla antigua. Si la primera fila no
+    es encabezado, asume el orden de la plantilla. Devuelve [(n_fila, {campo: valor})]."""
+    filas = list(ws.iter_rows(values_only=True))
+    if not filas:
+        raise HTTPException(422, "El archivo está vacío.")
+    nombres = [_norm_col(x) for x in filas[0]]
+    col = {}
+    for campo, alias in campos.items():
+        j = next((j for j, n in enumerate(nombres) if n in alias), None)
+        if j is not None:
+            col[campo] = j
+    encabezado = bool(col)
+    if not encabezado:
+        col = {c: j for j, c in enumerate(por_defecto)}
+    faltan = [NOMBRE_CAMPO.get(c, c) for c in obligatorios if c not in col]
+    if faltan:
+        raise HTTPException(422, "Falta la columna " + " y ".join(faltan) + " en el encabezado.")
+    salida = []
+    for n, fila in enumerate(filas[1:] if encabezado else filas, start=2 if encabezado else 1):
+        v = {c: (fila[j] if j < len(fila) else None) for c, j in col.items()}
+        if all(x in (None, "") or str(x).strip() == "" for x in v.values()):
+            continue
+        salida.append((n, v))
+    return salida
+
+
+def _fila_predist(n: int, suc, sku, cant, bulto=None) -> tuple[dict | None, str | None]:
+    """Valida una fila del reparto. Mismas reglas para el texto pegado y para el Excel.
+    Devuelve (fila, None), (None, error) o (None, None) si la fila se ignora."""
+    suc = str(suc if suc is not None else "").strip().upper()
+    sku = domain.norm_sku(sku)
+    if not suc or not sku:
+        return None, f"fila {n}: faltan datos (sucursal, SKU y unidades)"
+    if isinstance(cant, (int, float)):
+        unidades = float(cant)
+    else:
+        try:
+            unidades = float(str(cant).strip().replace(".", "").replace(",", "."))
+        except ValueError:
+            return None, f"fila {n}: '{cant}' no es una cantidad"
+    if unidades <= 0:
+        return None, None
+    por_bulto = 0
+    if bulto not in (None, ""):
+        try:
+            por_bulto = int(float(str(bulto).replace(",", ".")))
+        except ValueError:
+            return None, f"fila {n}: '{bulto}' no es una cantidad por bulto"
+    return {"sucursal": suc, "sku": sku, "unidades": unidades, "por_bulto": max(0, por_bulto)}, None
+
+
+def _guardar_predist(s: Session, numero: str, filas: list, errores: list) -> dict:
+    doc = {"pedido": numero, "filas": filas, "errores": errores,
+           "sucursales": sorted({f["sucursal"] for f in filas}),
+           "unidades": sum(f["unidades"] for f in filas)}
+    domain.guardar_config(s, _clave_predist(numero), doc)
+    _commit(s)
+    return doc
+
+
+# Va antes de /predistribuido/{numero}: si no, "plantilla" se toma como número de pedido.
+@router.get("/predistribuido/plantilla")
+def plantilla_predistribuido():
+    """Excel para cargar el reparto por sucursal de un pedido predistribuido."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Predistribuido"
+    ws.append(PREDIST_COLS)
+    ws.append(["SUC-01", "900081624", 20, None])
+    ws.append(["SUC-02", "900081624", 10, None])
+    for celda in ws[1]:
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill("solid", fgColor="1A2B4A")
+        celda.alignment = Alignment(horizontal="center")
+    for col, ancho in zip("ABCD", (18, 16, 12, 30)):
+        ws.column_dimensions[col].width = ancho
+    ws.freeze_panes = "A2"
+
+    ayuda = wb.create_sheet("Cómo se usa")
+    for linea in [
+        ["Reparto por sucursal (pedidos predistribuidos)"],
+        [""],
+        ["1. Una fila por cada sucursal y producto, en la hoja Predistribuido."],
+        ["2. Si un producto va a varias sucursales, repítelo en una fila por sucursal."],
+        ["3. Unidades: cuántas van a esa sucursal. Las filas en 0 o vacías se ignoran."],
+        ["4. Unidades por bulto: solo si el cliente arma bultos propios (SDA Predistribuido)."],
+        ["   Déjala vacía para usar la caja del producto."],
+        [""],
+        ["Al importar, este reparto reemplaza al que tenía el pedido."],
+        ["Si la suma de una sucursal supera la carga del análisis, se carga hasta ese tope."],
+        ["Las filas de ejemplo se pueden borrar."],
+    ]:
+        ayuda.append(linea)
+    ayuda.column_dimensions["A"].width = 90
+    ayuda["A1"].font = Font(bold=True, size=13)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="plantilla_predistribuido.xlsx"'})
+
+
+@router.post("/predistribuido/{numero}/importar")
+def importar_predistribuido(numero: str, file: UploadFile = File(...),
+                            s: Session = Depends(get_session)):
+    """Carga masiva del reparto desde la plantilla. Reemplaza el reparto del pedido."""
+    from openpyxl import load_workbook
+    if Path(file.filename or "").suffix.lower() not in (".xlsx", ".xlsm"):
+        raise HTTPException(422, "El archivo debe ser .xlsx o .xlsm")
+    try:
+        wb = load_workbook(file.file, read_only=True, data_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:150]}") from e
+    ws = wb["Predistribuido"] if "Predistribuido" in wb.sheetnames else wb.worksheets[0]
+
+    filas, errores = [], []
+    for n, v in _leer_tabla(ws, PREDIST_CAMPOS, ["sucursal", "sku", "unidades", "bulto"],
+                            ["sucursal", "sku", "unidades"]):
+        f, error = _fila_predist(n, v["sucursal"], v["sku"], v["unidades"], v.get("bulto"))
+        if error:
+            errores.append(error)
+        elif f:
+            filas.append(f)
+    if not filas:
+        raise HTTPException(422, "El archivo no trae filas de reparto válidas. "
+                                 + "; ".join(errores[:3]))
+    return _guardar_predist(s, numero, filas, errores)
+
+
+@router.get("/predistribuido/{numero}")
+def get_predistribuido(numero: str, s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, _clave_predist(numero))
+    return _json.loads(c.valor) if c else {"filas": []}
+
+
+@router.put("/predistribuido/{numero}")
+def put_predistribuido(numero: str, body: dict, s: Session = Depends(get_session)):
+    """Tabla de reparto por sucursal: se pega desde el archivo del cliente."""
+    import re as _re
+    filas = []
+    errores = []
+    for i, linea in enumerate(str(body.get("texto", "")).splitlines(), 1):
+        if not linea.strip():
+            continue
+        partes = [x.strip() for x in _re.split(r"\t|;|,", linea)]
+        partes = [x for x in partes if x != ""]
+        if len(partes) < 3:
+            errores.append(f"línea {i}: faltan datos (sucursal, SKU y unidades)")
+            continue
+        if partes[0].lower() in ("sucursal", "suc"):    # encabezado pegado por error
+            continue
+        f, error = _fila_predist(i, partes[0], partes[1], partes[-1])
+        if error:
+            errores.append(error.replace("fila", "línea", 1))
+        elif f:
+            filas.append(f)
+    return _guardar_predist(s, numero, filas, errores)
+
+
+@router.get("/cubicaje/{numero}")
+def get_cubicaje(numero: str, s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, _clave_cubicaje(numero))
+    if c is None:
+        raise HTTPException(404, "Este pedido todavía no está cubicado.")
+    return _json.loads(c.valor)
+
+
+@router.post("/cubicaje/{numero}")
+def cubicar(numero: str, body: dict, s: Session = Depends(get_session)):
+    return _cubicar(numero, body or {}, s)
+
+
+def _cubicar(numero: str, body: dict, s: Session):
+    """Cubica con la carga del análisis (incluidos los ajustes manuales)."""
+    import copy as _copy
+    import json as _json
+    from datetime import date as _date
+    from ..cubicaje.datos import cargar_cache_dims, leer_camiones
+    from ..cubicaje.mda import Posicion
+    from ..cubicaje.mda_predist import FilaPredist
+    from ..cubicaje.motor import Entrada, ModoNoPortado, segmentar
+    from ..cubicaje.visor import construir_json
+    from ..integrations import base_medidas
+    from ..models import Config
+
+    ca = s.get(Config, _clave_analisis(numero))
+    if ca is None:
+        raise HTTPException(422, "Primero hay que analizar el pedido: la carga sale del análisis.")
+    an = _json.loads(ca.valor)
+    filas = an["resultado"]["filas"]
+    if not filas:
+        raise HTTPException(422, "El análisis no tiene productos.")
+
+    cfg = s.get(Config, "app")
+    cfg_val = _json.loads(cfg.valor) if cfg else {}
+    camiones_cfg = body.get("camiones") or cfg_val.get("camiones") or CAMIONES_DEFECTO
+    modo = str(body.get("modo") or an.get("modo_cubicaje") or "MDA").strip().upper()
+    cliente = an.get("cliente", "")
+
+    med_filas = med_mod.filas_para_cubicaje(s)          # la cargada en la plataforma
+    origen_medidas = "plataforma"
+    if not med_filas:                                    # si no hay, se lee el archivo de red
+        med_filas = base_medidas.filas()
+        origen_medidas = "archivo de red"
+    if not med_filas:
+        raise HTTPException(422, "No hay Base de Medidas: impórtala en la pestaña SAP y archivos.")
+
+    ajustes = _aplicar_ajustes(s)
+    regla = cli_mod.buscar(s, cliente)
+    entrada = Entrada(
+        cliente=cliente, modo=modo,
+        posiciones=[Posicion(sku=f["sku"], desc=f["descripcion"], carga=f["carga"],
+                             pedido=numero, fila=i + 5) for i, f in enumerate(filas)],
+        pedidos=[numero], medidas=cargar_cache_dims(med_filas),
+        camiones=leer_camiones(camiones_cfg),
+        caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")),
+        pallet=tuple(cli_mod.doc(regla)["pallet"]) if regla else None,
+        hibrido=regla.hibrido if regla else None,
+        orientacion_pallet=ajustes["orientacion_pallet"],
+        capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
+        piso_pallet=str(body.get("piso_pallet") or ""),
+        calefones=set(body.get("calefones") or _calefones_de(cliente, s)),
+        predistribuido=[FilaPredist(sucursal=f["sucursal"], sku=f["sku"], unidades=f["unidades"],
+                                    por_bulto=int(f.get("por_bulto") or 0))
+                        for f in _json.loads(pre.valor)["filas"]] if (pre := s.get(Config, _clave_predist(numero))) else [])
+    try:
+        r = segmentar(entrada)
+    except ModoNoPortado as e:
+        raise HTTPException(422, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+    doc = {"pedido": numero, "cliente": cliente, "modo": r.modo, "generado": _date.today().isoformat(),
+           "caja_master": entrada.caja_master, "piso_pallet": entrada.piso_pallet,
+           "pallet": list(entrada.pallet or (120.0, 100.0, 140.0)),
+           "camiones": [{"numero": c.numero, "tipo": c.tipo, "L": c.L, "w": c.w, "h": c.h,
+                         "vol_m3": c.vol_m3} for c in r.camiones],
+           "filas": [f.__dict__ for f in r.filas03],
+           "filas04": [f.__dict__ for f in r.filas04],
+           "pallets_detalle": r.pallets,
+           "avisos": r.avisos, "sin_medidas": r.sin_medidas, "no_encontrados": r.no_encontrados,
+           "sin_ubicar": r.sin_ubicar, "unidades": r.unidades, "origen_medidas": origen_medidas,
+           "ajustes": ajustes}
+    domain.guardar_config(s, _clave_cubicaje(numero), doc)
+
+    # Visor 3D: misma plantilla del Excel, servida desde la plataforma con sus librerías
+    doc["visor"] = ""
+    try:
+        from pathlib import Path as _Path
+        from ..config import BASE_DIR as _BD, settings as _st
+        from ..cubicaje.visor import html_visor, preparar_carpeta
+        carpeta = _BD / "data" / "visores"
+        faltan = preparar_carpeta(carpeta, _st.visor_assets)
+        if faltan:
+            doc["avisos"] = list(doc["avisos"]) + [
+                "Al visor le faltan librerías (" + ", ".join(faltan) + "). "
+                "Revisa VISOR_ASSETS en el archivo .env."]
+        plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
+        from ..cubicaje.mda import Camion as _Cam
+        # Sin carga no se dibuja una plantilla en blanco: se muestra la rampla vacía
+        cams = r.camiones or [_Cam(numero=1, tipo="Rampla 53", L=1540, w=245, h=230)]
+        html = html_visor(plantilla, construir_json(r.placed, cams, es_sda=bool(r.pallets),
+                                                    pallets=r.pallets))
+        for viejo in carpeta.glob(f"pedido_{numero}_*.html"):        # deja solo el último
+            viejo.unlink(missing_ok=True)
+        nombre_fs = f"pedido_{numero}_{uuid.uuid4().hex[:8]}.html"
+        (carpeta / nombre_fs).write_text(html, encoding="utf-8")
+        doc["visor"] = f"/visor/{nombre_fs}"
+    except Exception as e:  # noqa: BLE001 - el cubicaje vale aunque el visor falle
+        doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor 3D: {str(e)[:150]}"]
+    domain.guardar_config(s, _clave_cubicaje(numero), doc)
+    _commit(s)
+    return doc
+
+
+@router.get("/medidas/sugerir")
+def sugerir_medidas(q: str = "", s: Session = Depends(get_session)):
+    """Autocompletar de SKU: devuelve el producto y, si existe, su caja master."""
+    from sqlalchemy import or_, select as _sel
+    from ..models import Medida
+    t = str(q or "").strip()
+    if len(t) < 2:
+        return {"sugerencias": []}
+    p = f"%{t}%"
+    filas = s.scalars(_sel(Medida).where(or_(Medida.sku.like(p), Medida.descripcion.like(p)))
+                      .order_by(Medida.sku).limit(15)).all()
+    por_sku = {m.sku: m for m in filas}
+    # se agregan las cajas master de los SKU encontrados aunque no coincidan con el texto
+    cajas = s.scalars(_sel(Medida).where(Medida.sku.in_([f"C{m.sku}" for m in filas
+                                                         if not m.sku.startswith("C")]))).all()
+    out = []
+    for m in list(filas) + list(cajas):
+        if m.sku in [x["sku"] for x in out]:
+            continue
+        es_caja = m.sku.startswith("C") and m.sku[1:] in por_sku
+        out.append({"sku": m.sku, "descripcion": m.descripcion, "piezas": m.piezas,
+                    "caja_master": es_caja or m.piezas > 1,
+                    "medidas": f"{m.largo:g} × {m.ancho:g} × {m.alto:g} cm",
+                    "max_camion": m.max_camion, "max_pallet": m.max_pallet})
+    return {"sugerencias": out[:20]}
+
+
+@router.get("/cubicaje-libre")
+def get_cubicaje_libre(s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, "cubicaje_libre")
+    return _json.loads(c.valor) if c else {"lineas": [], "cliente": "", "modo": "MDA",
+                                           "vista": "rampla"}
+
+
+@router.post("/cubicaje-libre/desde-pedido")
+def cubicaje_desde_pedido(body: dict, s: Session = Depends(get_session)):
+    """Trae al cubicador las líneas de un pedido ya analizado, para editarlas a mano."""
+    import json as _json
+    from ..models import Config
+    numero = str(body.get("pedido", "")).strip()
+    if not numero:
+        raise HTTPException(422, "Falta el número de pedido.")
+    ca = s.get(Config, _clave_analisis(numero))
+    if ca is None:
+        raise HTTPException(422, f"El pedido {numero} no está analizado. Analízalo en la pestaña "
+                                 f"Pedidos y vuelve acá.")
+    an = _json.loads(ca.valor)
+    lineas = [{"sku": f["sku"], "qty": f["carga"]} for f in an["resultado"]["filas"]
+              if (f.get("carga") or 0) > 0]
+    if not lineas:
+        raise HTTPException(422, "El análisis de ese pedido no tiene carga.")
+    return cubicaje_libre({"lineas": lineas, "cliente": an.get("cliente", ""),
+                           "modo": body.get("modo") or "MDA", "vista": body.get("vista") or "rampla",
+                           "caja_master": body.get("caja_master") or "", "pedido": numero}, s)
+
+
+def _reubicar(p, dx: float, dy: float, dz: float):
+    """Copia una colocación moviéndola al origen del pallet."""
+    from dataclasses import replace
+    return replace(p, container=1, x=p.x - dx, y=p.y - dy, z=max(p.z - dz, 0.0))
+
+
+def _merge_resultados(partes: list, pallet: list) -> dict:
+    """Une varios cubicajes (los fijados a un camión y el resto) renumerando camiones."""
+    camiones, filas, filas04, pallets, placed, avisos = [], [], [], [], [], []
+    sin_medidas, sin_ubicar = [], {}
+    for r in partes:
+        off_cam = len(camiones)
+        off_pal = len(pallets)
+        for c in r.camiones:
+            camiones.append({"numero": c.numero + off_cam, "tipo": c.tipo, "L": c.L, "w": c.w,
+                             "h": c.h, "vol_m3": c.vol_m3})
+        for f in r.filas03:
+            d = dict(f.__dict__)
+            d["camion"] += off_cam
+            filas.append(d)
+        for f in r.filas04:
+            d = dict(f.__dict__)
+            d["vehiculo"] += off_cam
+            d["pallet"] = d["pallet"] + off_pal if d["pallet"] else 0
+            filas04.append(d)
+        for pl in r.pallets:
+            d = dict(pl)
+            d["numero"] += off_pal
+            d["vehiculo"] += off_cam
+            pallets.append(d)
+        for p in r.placed:
+            p.container += off_cam
+            placed.append(p)
+        avisos += r.avisos
+        sin_medidas += r.sin_medidas
+        sin_ubicar.update(r.sin_ubicar)
+    return {"camiones": camiones, "filas": filas, "filas04": filas04, "pallets_detalle": pallets,
+            "placed": placed, "avisos": avisos, "sin_medidas": sin_medidas,
+            "sin_ubicar": sin_ubicar, "pallet": list(pallet),
+            "unidades": sum(f["unidades"] for f in (filas04 or filas))}
+
+
+@router.post("/cubicaje-libre")
+def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
+    """Cubica una carga armada a mano: sin pedido, sin SAP.
+
+    Con reparto por sucursal (predistribuido), las unidades por SKU son el tope de carga.
+    """
+    import copy as _copy
+    import json as _json
+    from datetime import date as _date
+    from ..cubicaje.datos import cargar_cache_dims, leer_camiones
+    from ..cubicaje.mda import Posicion
+    from ..cubicaje.mda_predist import FilaPredist
+    from ..cubicaje.motor import Entrada, ModoNoPortado, segmentar
+    from ..cubicaje.visor import construir_json
+
+    cliente = str(body.get("cliente") or "").strip().upper()
+    modo = str(body.get("modo") or "MDA").strip().upper()
+    vista = str(body.get("vista") or "rampla").strip().lower()
+    lineas = [x for x in (body.get("lineas") or []) if str(x.get("sku", "")).strip()]
+
+    ajustes = _aplicar_ajustes(s)
+    regla = cli_mod.buscar(s, cliente) if cliente else None
+    pallet = tuple(cli_mod.doc(regla)["pallet"]) if regla else (120.0, 100.0, 140.0)
+    med_filas = med_mod.filas_para_cubicaje(s)
+    if not med_filas:
+        raise HTTPException(422, "No hay Base de Medidas cargada: impórtala en SAP y archivos.")
+    cache = cargar_cache_dims(med_filas)
+
+    if vista == "pallet":
+        # Un pallet solo: se cubica normal (en pallets) y después se muestra uno.
+        # En MDA no existen pallets, así que para esta vista se usa el motor de pallets.
+        if "SDA" not in modo:
+            modo = "SDA STOCK"
+            # los modos SDA exigen indicar caja master: si no viene, se asume sin caja
+            if not str(body.get("caja_master") or "").strip():
+                body = {**body, "caja_master": "SIN CAJA MASTER"}
+        camiones = leer_camiones([list(CAMIONES_VISTA["rampla"])])
+    elif vista == "camion50":
+        camiones = leer_camiones([list(CAMIONES_VISTA["camion50"])])
+    else:
+        camiones = leer_camiones([list(CAMIONES_VISTA["rampla"])])
+
+    posiciones = []
+    desconocidos = []
+    for i, l in enumerate(lineas):
+        sku = domain.norm_sku(l.get("sku"))
+        d = cache.get(sku.lower())
+        if d is None:
+            desconocidos.append(sku)
+            continue
+        posiciones.append(
+            Posicion(sku=sku, desc=d.desc or sku, carga=float(l.get("qty") or 0),
+                     pedido=str(body.get("pedido") or "LIBRE"), fila=i + 1))
+
+    pre = [FilaPredist(sucursal=str(x.get("sucursal", "")).strip().upper(),
+                       sku=domain.norm_sku(x.get("sku")), unidades=float(x.get("qty") or 0))
+           for x in (body.get("predistribuido") or [])]
+
+    partes = []
+    if posiciones:
+        entrada = Entrada(cliente=cliente or "SIN CLIENTE", modo=modo, posiciones=posiciones,
+                          pedidos=[str(body.get("pedido") or "LIBRE")], medidas=cache,
+                          camiones=camiones,
+                          caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")),
+                          piso_pallet=str(body.get("piso_pallet") or ""),
+                          calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
+                          hibrido=regla.hibrido if regla else None,
+                          orientacion_pallet=ajustes["orientacion_pallet"],
+                          capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"))
+        try:
+            partes.append(segmentar(entrada))
+        except (ModoNoPortado, ValueError) as e:
+            raise HTTPException(422, str(e)) from e
+
+    base = _merge_resultados(partes, list(pallet)) if partes else {
+        "camiones": [], "filas": [], "filas04": [], "pallets_detalle": [], "placed": [],
+        "avisos": [], "sin_medidas": [], "sin_ubicar": {}, "pallet": list(pallet), "unidades": 0}
+    placed = base.pop("placed")
+    from ..cubicaje.visor import PALETA, letra as _letra
+    # La letra y el color son los mismos que dibuja el visor: se asignan por orden de carga
+    orden, n = {}, 0
+    skus_carga = {domain.norm_sku(x.get("sku")) for x in lineas}
+    for pl in placed:
+        # la caja master (C + sku) se muestra con la letra de su producto
+        cod = pl.cod[1:] if pl.cod.startswith("C") and pl.cod[1:] in skus_carga else pl.cod
+        if cod not in orden:
+            orden[cod] = (_letra(n), PALETA[n % len(PALETA)])
+            n += 1
+    detalle = {}
+    for i, l in enumerate(lineas):
+        sku = domain.norm_sku(l.get("sku"))
+        d = cache.get(sku.lower())
+        letra, color = orden.get(sku, (_letra(i), PALETA[i % len(PALETA)]))
+        if d is not None:
+            detalle[sku] = {"descripcion": d.desc or sku,
+                            "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
+                            "apilable": d.apilable, "peso": d.peso,
+                            "letra": letra, "color": color}
+    doc = {**base, "cliente": cliente, "modo": modo, "vista": vista, "lineas": lineas,
+           "detalle_lineas": detalle,
+           "caja_master": str(body.get("caja_master") or ""), "piso_pallet": str(body.get("piso_pallet") or ""),
+           "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
+           "generado": _date.today().isoformat(), "ajustes": ajustes,
+           "desconocidos": desconocidos, "modo_usado": modo}
+
+    try:
+        from pathlib import Path as _Path
+        from ..config import BASE_DIR as _BD, settings as _st
+        from ..cubicaje.mda import Camion as _Cam
+        from ..cubicaje.sda import TARIMA
+        from ..cubicaje.visor import html_visor, preparar_carpeta
+        carpeta = _BD / "data" / "visores"
+        preparar_carpeta(carpeta, _st.visor_assets)
+        pallets_visor = doc["pallets_detalle"]
+        if vista == "pallet":
+            # Se aísla el pallet elegido: sus cajas se mueven al origen y se dibuja su tarima
+            todos = sorted({p.pallet for p in placed if p.pallet})
+            n_pal = int(body.get("pallet_n") or (todos[0] if todos else 0))
+            if n_pal not in todos:
+                n_pal = todos[0] if todos else 0
+            geo = next((x for x in doc["pallets_detalle"] if x["numero"] == n_pal), None)
+            dx = geo["x"] if geo else 0.0
+            dy = geo["y"] if geo else 0.0
+            # Se mueven al origen en X e Y, pero la altura se conserva: las cajas van
+            # apoyadas sobre la tarima, no atravesándola.
+            placed = [_reubicar(p, dx, dy, 0.0) for p in placed if p.pallet == n_pal]
+            cams = [_Cam(numero=1, tipo=f"Pallet {n_pal}", L=pallet[1], w=pallet[0],
+                         h=pallet[2] + TARIMA)]
+            pallets_visor = [{"numero": n_pal, "vehiculo": 1, "x": 0.0, "y": 0.0,
+                              "dl": pallet[1], "dw": pallet[0],
+                              "tipo": (geo or {}).get("tipo", ""),
+                              "sucursal": (geo or {}).get("sucursal", "")}]
+            doc["pallet_visto"] = n_pal
+            doc["pallets_disponibles"] = todos
+            if n_pal:
+                doc["camiones"] = [{"numero": n_pal, "tipo": "Pallet", "L": pallet[1],
+                                    "w": pallet[0], "h": pallet[2],
+                                    "vol_m3": pallet[0] * pallet[1] * pallet[2] / 1_000_000}]
+                dentro = [f for f in doc["filas04"] if f.get("pallet") == n_pal]
+                vol = pallet[0] * pallet[1] * pallet[2] / 1_000_000 or 1
+                usado = sum(p.volM3 for p in placed)      # lo que ocupan sus cajas
+                doc["filas"] = [{**f, "camion": n_pal, "tipo_camion": "Pallet",
+                                 "cap_m3": round(vol, 2), "ocup_linea": usado / vol,
+                                 "ocup_acum": usado / vol,
+                                 "libre_m3": 0, "pedido": "", "pedidos_camion": "",
+                                 "tipo_carga": f.get("tipo", ""), "descripcion": f["descripcion"],
+                                 "sku": f["sku"], "unidades": f["unidades"],
+                                 "fila_origen": 0, "sucursal": f.get("sucursal", "")}
+                                for f in dentro]
+        else:
+            cams = ([_Cam(numero=c["numero"], tipo=c["tipo"], L=c["L"], w=c["w"], h=c["h"])
+                     for c in doc["camiones"]] or
+                    [_Cam(numero=1, tipo=camiones[0].tipo, L=camiones[0].L, w=camiones[0].w,
+                          h=camiones[0].h)])
+        plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
+        html = html_visor(plantilla, construir_json(placed, cams, es_sda=bool(pallets_visor),
+                                                    pallets=pallets_visor))
+        for viejo in carpeta.glob("libre_*.html"):
+            viejo.unlink(missing_ok=True)
+        nombre_fs = f"libre_{uuid.uuid4().hex[:8]}.html"
+        (carpeta / nombre_fs).write_text(html, encoding="utf-8")
+        doc["visor"] = f"/visor/{nombre_fs}"
+    except Exception as e:  # noqa: BLE001
+        doc["visor"] = ""
+        doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor: {str(e)[:150]}"]
+
+    domain.guardar_config(s, "cubicaje_libre", doc)
+    _commit(s)
+    return doc
+
+
+PLANTILLA_COLS = ["SKU", "Unidades", "Sucursal (opcional)"]
+CARGA_CAMPOS = {"sku": {"sku", "codigo", "material", "grupo"},
+                "qty": {"unidades", "cantidad", "qty", "unid"},
+                "sucursal": PREDIST_CAMPOS["sucursal"]}
+
+
+@router.get("/cubicaje-libre/plantilla")
+def plantilla_carga(s: Session = Depends(get_session)):
+    """Excel para armar una carga fuera de la plataforma y después importarla."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Carga"
+    ws.append(PLANTILLA_COLS)
+    ejemplos = med_mod.filas_para_cubicaje(s)[:3]
+    for fila in ejemplos:
+        ws.append([fila[0], 10, ""])
+    if not ejemplos:
+        ws.append(["900081624", 10, ""])
+    for celda in ws[1]:
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill("solid", fgColor="1A2B4A")
+        celda.alignment = Alignment(horizontal="center")
+    for col, ancho in zip("ABC", (18, 12, 22)):
+        ws.column_dimensions[col].width = ancho
+    ws.freeze_panes = "A2"
+
+    ayuda = wb.create_sheet("Cómo se usa")
+    for linea in [
+        ["Carga masiva para el cubicador"],
+        [""],
+        ["1. Escribe un producto por fila en la hoja Carga."],
+        ["2. SKU: el código del producto. Si tiene caja master, usa C delante (C900081624)."],
+        ["3. Unidades: cuántas cargar. Las filas en 0 o vacías se ignoran."],
+        ["4. Sucursal: solo para reparto predistribuido. Si un producto va a varias sucursales,"],
+        ["   repítelo en una fila por sucursal. Si la usas, llénala en todas las filas."],
+        ["   Con sucursales, el cubicador pasa solo al modo predistribuido."],
+        [""],
+        ["Las filas de ejemplo se pueden borrar. Los productos tienen que estar en la"],
+        ["Base de Medidas cargada en Configuración."],
+    ]:
+        ayuda.append(linea)
+    ayuda.column_dimensions["A"].width = 95
+    ayuda["A1"].font = Font(bold=True, size=13)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="plantilla_cubicaje.xlsx"'})
+
+
+@router.post("/cubicaje-libre/importar")
+def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
+                   s: Session = Depends(get_session)):
+    """Carga masiva: lee el Excel y deja los productos listos para cubicar."""
+    import json as _json
+
+    from openpyxl import load_workbook
+
+    from ..models import Config
+    if Path(file.filename or "").suffix.lower() not in (".xlsx", ".xlsm"):
+        raise HTTPException(422, "El archivo debe ser .xlsx o .xlsm")
+    try:
+        wb = load_workbook(file.file, read_only=True, data_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:150]}") from e
+    ws = wb["Carga"] if "Carga" in wb.sheetnames else wb.worksheets[0]
+
+    lineas, errores, sin_medidas, reparto = [], [], [], []
+    conocidos = {m[0].lower() for m in med_mod.filas_para_cubicaje(s)}
+    leidas = []                                      # (fila, sku, qty, sucursal)
+    for i, v in _leer_tabla(ws, CARGA_CAMPOS, ["sku", "qty", "sucursal"], ["sku", "qty"]):
+        sku = domain.norm_sku(v["sku"])
+        if not sku:
+            continue
+        try:
+            qty = float(str(v["qty"]).replace(",", ".")) if v["qty"] not in (None, "") else 0
+        except (TypeError, ValueError):
+            errores.append(f"fila {i}: '{v['qty']}' no es una cantidad")
+            continue
+        if qty <= 0:
+            continue
+        if sku.lower() not in conocidos:
+            sin_medidas.append(sku)
+            continue
+        leidas.append((i, sku, qty, str(v.get("sucursal") or "").strip().upper()))
+
+    # Con sucursales, el archivo es un reparto: una fila por sucursal y SKU. Las unidades
+    # por SKU se suman (es el tope de carga) y el detalle va al motor como predistribuido.
+    con_reparto = any(x[3] for x in leidas)
+    por_sku: dict = {}
+    for i, sku, qty, suc in leidas:
+        if con_reparto and not suc:
+            errores.append(f"fila {i}: falta la sucursal (el archivo trae reparto por sucursal)")
+            continue
+        if con_reparto:
+            reparto.append({"sucursal": suc, "sku": sku, "qty": qty})
+        l = por_sku.setdefault(sku, {"sku": sku, "qty": 0})
+        l["qty"] += qty
+    lineas = list(por_sku.values())
+
+    if not lineas:
+        detalle = "; ".join(errores[:3]) or ("SKU sin medidas: " + ", ".join(sin_medidas[:5])
+                                             if sin_medidas else "")
+        raise HTTPException(422, "El archivo no trae productos cubicables. " + detalle)
+
+    c_prev = s.get(Config, "cubicaje_libre")
+    anterior = _json.loads(c_prev.valor) if c_prev else {}
+    previas = []
+    if str(reemplazar).lower() not in ("si", "sí", "true", "1"):
+        previas = anterior.get("lineas") or []
+        reparto = (anterior.get("predistribuido") or []) + reparto
+    juntas = {l["sku"]: dict(l) for l in previas}
+    for l in lineas:
+        if l["sku"] in juntas:
+            juntas[l["sku"]]["qty"] = (juntas[l["sku"]].get("qty") or 0) + l["qty"]
+            juntas[l["sku"]].update({k: v for k, v in l.items() if k != "qty"})
+        else:
+            juntas[l["sku"]] = l
+
+    modo = str(anterior.get("modo") or "MDA").upper()
+    caja_master = anterior.get("caja_master") or ""
+    aviso_modo = ""
+    if reparto and "PREDISTRIBUIDO" not in modo:
+        modo = "SDA PREDISTRIBUIDO" if "SDA" in modo else "MDA PREDISTRIBUIDO"
+        caja_master = caja_master or "SIN CAJA MASTER"     # el modo exige indicarla
+        aviso_modo = (f"El archivo trae reparto por sucursal: se cubicó en {modo}, "
+                      f"{caja_master.lower()}. Los modos de stock no separan por sucursal.")
+    doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto,
+                          "cliente": anterior.get("cliente") or "", "modo": modo,
+                          "caja_master": caja_master, "vista": anterior.get("vista") or "rampla",
+                          "piso_pallet": anterior.get("piso_pallet") or ""}, s)
+    if aviso_modo:
+        doc["avisos"] = [aviso_modo, *(doc.get("avisos") or [])]
+    doc["importadas"] = len(lineas)
+    doc["sin_medidas_archivo"] = sin_medidas
+    doc["errores_archivo"] = errores
+    return doc
+
+
+@router.get("/cubicaje-libre/excel")
+def excel_cubicaje_libre(s: Session = Depends(get_session)):
+    """Descarga el cubicaje armado a mano como Excel (resumen por camión y detalle)."""
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, "cubicaje_libre")
+    if c is None:
+        raise HTTPException(404, "Todavía no hay un cubicaje armado.")
+    return _excel_cubicaje(_json.loads(c.valor), "cubicaje")
+
+
+@router.get("/cubicaje/{numero}/excel")
+def excel_cubicaje_pedido(numero: str, s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, _clave_cubicaje(numero))
+    if c is None:
+        raise HTTPException(404, "Este pedido todavía no está cubicado.")
+    return _excel_cubicaje(_json.loads(c.valor), f"cubicaje_{numero}")
+
+
+def _excel_cubicaje(doc: dict, nombre: str):
+    """Arma el archivo con las mismas columnas de las hojas 03 y 04 del Excel."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb = Workbook()
+    cab = Font(bold=True, color="FFFFFF")
+    fondo = PatternFill("solid", fgColor="1A2B4A")
+
+    ws = wb.active
+    ws.title = "Camiones"
+    ws.append(["Camión", "Tipo", "Capacidad m3", "SKU", "Descripción", "Unidades",
+               "Sucursal", "Pedido", "Tipo de carga"])
+    for f in doc.get("filas", []):
+        ws.append([f["camion"], f["tipo_camion"], f["cap_m3"], f["sku"], f["descripcion"],
+                   f["unidades"], f.get("sucursal", ""), f.get("pedido", ""), f["tipo_carga"]])
+
+    if doc.get("filas04"):
+        ws2 = wb.create_sheet("Pallets")
+        ws2.append(["Vehículo", "Tipo vehículo", "Pallet", "Sucursal", "SKU", "Descripción",
+                    "Cajas master", "Bultos", "Unidades", "Tipo"])
+        for f in doc["filas04"]:
+            ws2.append([f["vehiculo"], f["tipo_vehiculo"], f["pallet"] or "", f.get("sucursal", ""),
+                        f["sku"], f["descripcion"], f["cajas"], f["bultos"], f["unidades"],
+                        f["tipo"]])
+
+    for hoja in wb.worksheets:
+        for celda in hoja[1]:
+            celda.font = cab
+            celda.fill = fondo
+        for col in hoja.columns:
+            ancho = max(len(str(x.value or "")) for x in col) + 2
+            hoja.column_dimensions[col[0].column_letter].width = min(ancho, 42)
+        hoja.freeze_panes = "A2"
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})

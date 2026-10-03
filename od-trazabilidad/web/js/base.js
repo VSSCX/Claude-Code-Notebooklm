@@ -1,0 +1,289 @@
+/* Configuración, utilidades, capa de datos, dominio y estado de la interfaz.
+   Parte de la interfaz de Trazabilidad Order Desk. */
+
+/* ============ Configuración ============ */
+const STEPS = [
+  {k:'solicitada', t:'Cita pedida'},
+  {k:'confirmada', t:'Cita confirmada'},
+  {k:'sap',        t:'Fecha en SAP'},
+  {k:'etq',        t:'ETQ'},
+  {k:'portal',     t:'Portal despacho'},
+  {k:'proyeccion', t:'Proyección'},
+  {k:'facturada',  t:'Facturada'},
+  {k:'packlist',   t:'Pack list'},
+  {k:'entregado',  t:'Entregado'},
+];
+// Al reprogramar una cita se reabren estos pasos
+const REABRE_AL_REPROGRAMAR = ['confirmada','sap','portal','proyeccion'];
+const CAT = {
+  vehiculo:['Rampla 53','Camión 50'], carga:['MIX','MONO'], un:['MDA','SDA'],
+  region:['RM','Fuera de RM','Retira'], canal:['RETAIL','ECOMMERCE','OUTLET','ESPECIALISTA'],
+  tipo:['Stock','Predistribuido'],
+};
+const DEF_ENT = {vehiculo:'Rampla 53', carga:'MIX', un:'MDA', region:'RM', tipo:'Stock'};
+const EVENTOS = {pedido:'pedido extraído de VL01N', entregas:'entregas creadas', grupos:'grupos creados', fecha_sap:'fecha y cita actualizadas en SAP'};
+
+/* ============ Utilidades ============ */
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf = new Intl.NumberFormat('es-CL');
+const fmt = n => nf.format(Math.round(+n || 0));
+const nowISO = () => new Date().toISOString();
+const clone = o => JSON.parse(JSON.stringify(o ?? {}));
+const safeId = s => String(s ?? '').trim().replace(/[^A-Za-z0-9_\-~:@+]/g, '_').slice(0, 120);
+const normH = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const normSku = s => String(s ?? '').trim().replace(/^0+(?=\d)/, '');
+function fmtFecha(iso){ if(!iso) return ''; const [y,m,d] = iso.split('-'); return `${d}-${m}-${y}`; }
+function isoWeek(iso){
+  const d = new Date(iso + 'T12:00:00'); const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day + 3); const w1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+}
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove('on'), 2600); }
+
+/* Resultados que no se pueden perder de vista (SAP, cubicaje, cargas): quedan
+   fijos arriba hasta que la persona los cierra, en vez de irse solos como el toast. */
+const Avisos = {
+  lista: [],
+  agregar(tipo, titulo, detalle, pasos){
+    this.lista.unshift({id: Date.now() + '-' + Math.random().toString(16).slice(2, 6),
+                        tipo, titulo, detalle: detalle || '', pasos: pasos || [],
+                        hora: new Date().toTimeString().slice(0, 5)});
+    this.lista = this.lista.slice(0, 5);
+    if (typeof render === 'function') render();
+  },
+  cerrar(id){ this.lista = this.lista.filter(x => x.id !== id); render(); },
+  html(){
+    if (!this.lista.length) return '';
+    return `<div class="avisos">${this.lista.map(a => `
+      <div class="aviso ${esc(a.tipo)}">
+        <div class="row" style="justify-content:space-between;align-items:flex-start">
+          <div><b>${esc(a.titulo)}</b> <span class="small muted">${esc(a.hora)}</span>
+            ${a.detalle ? `<div class="small">${esc(a.detalle)}</div>` : ''}
+            ${(a.pasos || []).length ? `<ul class="small muted" style="margin:6px 0 0 16px">${a.pasos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
+          </div>
+          <button class="btn ghost small" data-cerrar-aviso="${esc(a.id)}" title="Cerrar">✕</button>
+        </div>
+      </div>`).join('')}</div>`;
+  },
+};
+function setSync(state, text){
+  const quien = typeof Usuario !== 'undefined' ? Usuario.get() : '';
+  $('#sync').innerHTML = `<span class="dot ${state}"></span><span>${esc(text)}</span>` +
+    (quien ? ` <button class="btn ghost small" data-act="cambiarUsuario" title="Cambiar de usuario">${esc(quien)}</button>` : '');
+}
+function toDateISO(v){
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  if (typeof v === 'number'){ const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0,10); }
+  const m = String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (m){ const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return String(v).slice(0,10);
+  return '';
+}
+function toHora(v){
+  if (v instanceof Date && !isNaN(v)) return v.toTimeString().slice(0,5);
+  if (typeof v === 'number' && v >= 0 && v < 1){ const mins = Math.round(v * 1440); return String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins % 60).padStart(2,'0'); }
+  const m = String(v ?? '').match(/^(\d{1,2}):(\d{2})/); return m ? m[1].padStart(2,'0') + ':' + m[2] : '';
+}
+function normTipo(v){ const s = normH(v); if (s.startsWith('pred')) return 'Predistribuido'; if (s.startsWith('stock')) return 'Stock'; return v ? String(v) : ''; }
+
+/* ============ Capa de datos: API REST ============
+   Toda la app habla con Store. El servidor es la fuente de verdad. */
+/* Quién está usando la plataforma: viaja en cada llamada y queda en el historial */
+const Usuario = {
+  get(){ try { return localStorage.getItem('od_usuario') || ''; } catch(e){ return ''; } },
+  set(v){ try { localStorage.setItem('od_usuario', (v || '').trim().slice(0, 40)); } catch(e){} },
+};
+async function api(method, path, body){
+  let r;
+  const cabeceras = body ? {'Content-Type':'application/json'} : {};
+  if (Usuario.get()) cabeceras['X-Usuario'] = Usuario.get();
+  try {
+    r = await fetch('/api' + path, {method, headers: cabeceras, body: body ? JSON.stringify(body) : undefined});
+  } catch(e){ throw new Error('Sin conexión con el servidor. Revisa que run.bat siga abierto.'); }
+  if (r.status === 401 && !path.startsWith('/sesion')){
+    if (typeof pedirSesion === 'function') await pedirSesion();
+    throw new Error('Hay que entrar con la clave para continuar.');
+  }
+  if (!r.ok){
+    let msg = `Error ${r.status}`;
+    try {
+      const j = await r.json();
+      msg = typeof j.detail === 'string' ? j.detail : (j.detail || []).map(d => `${(d.loc || []).slice(1).join('.')}: ${d.msg}`).join('; ') || msg;
+    } catch(e) {}
+    throw new Error(msg);
+  }
+  return r.status === 204 ? null : r.json();
+}
+const COLS = ['pedidos','entregas','config'];
+const Store = {
+  data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [],
+  loaded: new Set(), offline: false, version: '', queues: new Map(),
+  async init(){
+    await this.refresh();
+    setInterval(() => this.poll(), 10000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.poll(); });
+  },
+  async refresh(){
+    try {
+      const st = await api('GET', '/estado');
+      this.data.pedidos = new Map(st.pedidos.map(p => [safeId(p.pedido), p]));
+      this.data.entregas = new Map(st.entregas.map(e => [safeId(e.entrega), e]));
+      this.data.config = new Map(Object.entries(st.config || {}));
+      this.archivos = st.archivos || [];
+      this.version = st.version; this.offline = false;
+      COLS.forEach(c => this.loaded.add(c));
+      setSync('ok', 'Conectado al servidor');
+    } catch(e){ this.offline = true; setSync('err', 'Sin conexión con el servidor'); }
+    render();
+  },
+  async poll(){
+    try {
+      const {version} = await api('GET', '/version');
+      const editando = dlg.open || (document.activeElement && document.activeElement.closest('#app input, #app textarea, #app select'));
+      if (version !== this.version && !editando) await this.refresh();
+      else if (this.offline) await this.refresh();
+    } catch(e){ this.offline = true; setSync('err', 'Sin conexión con el servidor'); }
+  },
+  list(col){ return [...this.data[col].values()]; },
+  get(col, id){ return this.data[col].get(id); },
+  enqueue(key, fn){
+    const prev = this.queues.get(key) || Promise.resolve();
+    const p = prev.then(fn, fn); this.queues.set(key, p.catch(()=>{})); return p;
+  },
+  ruta(col, id, obj){
+    if (col === 'pedidos') return '/pedidos/' + encodeURIComponent(obj.pedido);
+    if (col === 'entregas') return '/entregas/' + encodeURIComponent(obj.entrega);
+    return '/config/' + encodeURIComponent(id);
+  },
+  async set(col, id, obj){
+    return this.enqueue(col + '/' + id, async () => {
+      const guardado = await api('PUT', this.ruta(col, id, obj), obj);
+      this.data[col].set(id, guardado); render();
+    });
+  },
+  async del(col, id){
+    const obj = this.get(col, id); if (!obj) return;
+    await api('DELETE', this.ruta(col, id, obj));
+    this.data[col].delete(id);
+    if (col === 'pedidos') for (const [k, e] of this.data.entregas) if (e.pedido === obj.pedido) this.data.entregas.delete(k);
+    render();
+  },
+};
+const dbErr = e => (e && e.message) || 'No se pudo guardar.';
+async function save(col, id, obj){ try { await Store.set(col, id, obj); return true; } catch(e){ toast(dbErr(e)); return false; } }
+
+/* ============ Dominio ============ */
+const pasoOk = (e, k) => !!(e.pasos && e.pasos[k] && e.pasos[k].ok);
+const unidades = e => (e.lineas || []).reduce((a, l) => a + (+l.qty || 0), 0);
+const siguiente = e => e.anulada ? null : (STEPS.find(s => !pasoOk(e, s.k)) || null);
+const entregasDe = ped => Store.list('entregas').filter(e => e.pedido === ped)
+  .sort((a,b) => (a.cita?.fecha || '9').localeCompare(b.cita?.fecha || '9') || String(a.entrega).localeCompare(String(b.entrega)));
+const config = () => Store.get('config', 'app') || {};
+// Región y canal siguen lo último usado para ese cliente
+function patron(cliente){
+  const byAct = (a, b) => (b.actualizado || '').localeCompare(a.actualizado || '');
+  const peds = Store.list('pedidos').filter(p => cliente && p.cliente === cliente).sort(byAct);
+  const ids = new Set(peds.map(p => p.pedido));
+  const ent = Store.list('entregas').filter(e => ids.has(e.pedido) && e.region).sort(byAct)[0];
+  return {region: ent ? ent.region : DEF_ENT.region, canal: (peds.find(p => p.canal) || {}).canal || 'RETAIL'};
+}
+const normVeh = v => { const s = normH(v); return s.includes('rampla') ? 'Rampla 53' : s.includes('cami') ? 'Camión 50' : String(v || ''); };
+
+function resumen(p){
+  const m = new Map();
+  for (const l of (p.lineas || [])){
+    const k = normSku(l.sku); const r = m.get(k) || {sku:k, desc:l.desc || '', pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, externa:0};
+    r.pedida += +l.qty || 0; r.externa += +l.externa || 0; if (!r.desc) r.desc = l.desc || ''; m.set(k, r);
+  }
+  for (const e of entregasDe(p.pedido)){
+    if (e.anulada) continue;
+    const ent = pasoOk(e,'entregado'), conf = pasoOk(e,'confirmada'), fac = pasoOk(e,'facturada');
+    for (const l of (e.lineas || [])){
+      const k = normSku(l.sku), q = +l.qty || 0;
+      const r = m.get(k) || {sku:k, desc:l.desc || '', pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, externa:0, fuera:true};
+      r.enEntrega += q; if (fac) r.facturado += q;
+      if (ent) r.entregado += q; else if (conf) r.agendado += q; else r.sinCita += q;
+      m.set(k, r);
+    }
+  }
+  const filas = [...m.values()].map(r => ({...r, pendiente: Math.max(0, r.pedida - r.enEntrega - r.externa), exceso: Math.max(0, r.enEntrega + r.externa - r.pedida)}));
+  const tot = filas.reduce((a, r) => { for (const k of ['pedida','enEntrega','entregado','agendado','sinCita','facturado','pendiente','exceso','externa']) a[k] += r[k]; return a; },
+    {pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, pendiente:0, exceso:0, externa:0});
+  return {filas, tot};
+}
+const cerrado = p => { const {tot} = resumen(p); return tot.pedida > 0 && tot.pendiente === 0 && tot.entregado >= tot.pedida; };
+
+function barHTML(tot, big){
+  const base = Math.max(tot.pedida, tot.enEntrega) || 1;
+  const w = v => (100 * v / base).toFixed(2) + '%';
+  return `<div class="bar ${big ? 'big' : ''}" role="img" aria-label="Entregado ${fmt(tot.entregado)}, agendado ${fmt(tot.agendado)}, sin cita ${fmt(tot.sinCita)}, pendiente ${fmt(tot.pendiente)}">
+    <i class="s-ent" style="width:${w(tot.entregado)}"></i><i class="s-age" style="width:${w(tot.agendado)}"></i><i class="s-sin" style="width:${w(tot.sinCita)}"></i></div>`;
+}
+const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
+
+/* Un grupo = un camión. Puede tener varias entregas, incluso de otros pedidos
+   (conchos). Los pasos del camión se derivan: hechos solo si TODAS sus entregas
+   los tienen. 'facturada' se marca por entrega, porque la factura es por entrega. */
+const POR_ENTREGA = ['facturada'];
+function grupos(){
+  const m = new Map();
+  for (const e of Store.list('entregas')){
+    if (e.anulada) continue;
+    const key = e.grupo ? 'G' + e.grupo : 'E' + e.entrega;
+    const g = m.get(key) || {key, grupo:e.grupo || '', sinGrupo:!e.grupo, entregas:[]};
+    g.entregas.push(e); m.set(key, g);
+  }
+  for (const g of m.values()){
+    const e0 = g.entregas[0];
+    Object.assign(g, {cita:e0.cita || {}, vehiculo:e0.vehiculo, carga:e0.carga, un:e0.un,
+                      region:e0.region, tipo:e0.tipo});
+    g.unidades = g.entregas.reduce((a, e) => a + unidades(e), 0);
+    g.pedidos = [...new Set(g.entregas.map(e => e.pedido))];
+    g.pasos = {}; g.parcial = false;
+    for (const s of STEPS){
+      const n = g.entregas.filter(e => pasoOk(e, s.k)).length;
+      g.pasos[s.k] = n === g.entregas.length;
+      if (n > 0 && n < g.entregas.length) g.parcial = true;
+    }
+    g.next = STEPS.find(s => !g.pasos[s.k]) || null;
+  }
+  return [...m.values()];
+}
+const gruposDe = ped => grupos().filter(g => g.entregas.some(e => e.pedido === ped))
+  .sort((a, b) => (a.cita.fecha || '9').localeCompare(b.cita.fecha || '9') || String(a.grupo).localeCompare(String(b.grupo)));
+const grupo1 = key => grupos().find(g => g.key === key);
+
+async function marcarPasoGrupo(key, k, forzar){
+  const g = grupo1(key); if (!g || POR_ENTREGA.includes(k)) return;
+  const nuevo = forzar ?? !g.pasos[k];
+  if (nuevo && k === 'confirmada' && !(g.cita.fecha && g.cita.hora))
+    return abrirGrupo(key, {marcar:'confirmada', msg:'Para confirmar la cita ingresa fecha y hora.'});
+  for (const e of g.entregas) await marcarPaso(safeId(e.entrega), k, nuevo);
+}
+
+async function marcarPaso(id, k, forzar){
+  const e = clone(Store.get('entregas', id)); if (!e.entrega) return;
+  e.pasos = e.pasos || {};
+  const estaba = pasoOk(e, k), nuevo = forzar ?? !estaba;
+  if (nuevo && k === 'confirmada' && !(e.cita && e.cita.fecha && e.cita.hora)) return abrirEntrega(e.pedido, id, {marcar:'confirmada', msg:'Para confirmar la cita ingresa fecha y hora.'});
+  if (nuevo && k === 'facturada' && !e.factura) return abrirEntrega(e.pedido, id, {marcar:'facturada', msg:'Para marcar facturada ingresa el N° de factura.'});
+  if (nuevo === estaba) return;
+  e.pasos[k] = {ok: nuevo, at: nowISO()};
+  addLog(e, `${nuevo ? 'Hecho' : 'Reabierto'}: ${STEPS.find(s => s.k === k).t}`);
+  if (await save('entregas', safeId(e.entrega), e)) toast(`${STEPS.find(s => s.k === k).t}: ${nuevo ? 'hecho' : 'reabierto'}`);
+}
+function addLog(e, txt){ e.log = [{at: nowISO(), txt}, ...(e.log || [])].slice(0, 40); }
+
+/* ============ Estado de UI ============ */
+const UI = { view:'pedidos', sel:null, sub:'entregas', q:'', soloAbiertos:true, cliente:'', open:new Set(),
+  pDesde: new Date(Date.now() - 7*864e5).toISOString().slice(0,10), pHasta: '', pPorConf:true, imp:null };
+
+function go(view){ UI.view = view; render(); }
+function renderNav(){
+  const pendientes = Store.list('entregas').filter(e => siguiente(e)).length;
+  const items = [['pedidos','Pedidos'], ['bandeja','Por hacer', pendientes], ['cubicador','Cubicador'],
+                 ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
+  $('#nav').innerHTML = items.map(([v,t,c]) => `<button data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ''}>${t}${c ? `<span class="count">${c}</span>` : ''}</button>`).join('');
+}

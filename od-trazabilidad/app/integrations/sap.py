@@ -1,0 +1,704 @@
+"""Lectura de posiciones de VL01N directo desde Python, sin Excel.
+
+Port de Extraer_Datos_VL01N.bas: mismos IDs de pantalla, misma navegación y las
+mismas tolerancias (reintentos por celda, espera de sesión ocupada, detección de
+columna). Solo LEE: no crea, no modifica y no borra nada en SAP.
+
+Requisitos: Windows, pywin32 y una sesión SAP abierta con scripting habilitado.
+"""
+import logging
+import re
+import time
+from dataclasses import dataclass, field
+
+log = logging.getLogger("sap")
+
+# Rastro de lo que SAP no aceptó. Antes estos errores se silenciaban y un campo mal
+# escrito se veía igual que uno correcto; ahora quedan anotados y viajan al resultado.
+_incidencias: list[str] = []
+
+
+def limpiar_incidencias() -> None:
+    _incidencias.clear()
+
+
+def incidencias() -> list[str]:
+    return list(_incidencias)
+
+
+def anotar(paso: str, error: "Exception | str" = "") -> None:
+    txt = f"{paso}: {str(error)[:120]}" if error else paso
+    if txt not in _incidencias:
+        _incidencias.append(txt)
+    log.debug("incidencia SAP - %s", txt)
+
+
+PESTANA_PICKING = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02"
+TABLA = (PESTANA_PICKING + "/ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK")
+BARRA_ESTADO = "wnd[0]/sbar"
+FOCO = TABLA + "/ctxtLIPS-MATNR[1,3]"
+F_MATERIAL = "LIPS-MATNR"
+F_ENTREGA = "LIPSD-G_LFIMG"
+F_PENDIENTE = "RV50A-LFPMG"
+COL_DEFECTO = {F_MATERIAL: 1, F_ENTREGA: 4, F_PENDIENTE: 22}
+
+ESPERA_OCUPADO = 20.0      # segundos
+REINTENTOS_CELDA = 5
+PAUSA_REINTENTO = 0.15
+PAUSA_PAGINA = 0.2         # espera tras mover el scroll (antes 0,5 por fila)
+FILAS_VISIBLES = 4         # mínimo de filas por pantalla (se usa PageSize si es mayor)
+PANTALLAS_VACIAS = 2       # pantallas seguidas sin datos antes de cortar la lectura
+
+
+class ErrorSap(RuntimeError):
+    pass
+
+
+@dataclass
+class Posicion:
+    sku: str
+    qty_entrega: float = 0.0
+    qty_pendiente: float = 0.0
+
+
+@dataclass
+class Lectura:
+    pedido: str
+    posiciones: list[Posicion] = field(default_factory=list)
+    aviso: str = ""
+    duplicados: list[str] = field(default_factory=list)   # materiales repetidos en el pedido
+    incidencias: list[str] = field(default_factory=list)  # lo que SAP no aceptó por el camino
+    filas_tabla: int = 0                                  # filas que declara SAP en la tabla
+
+
+def conectar():
+    """Devuelve la primera sesión SAP abierta."""
+    try:
+        import win32com.client
+    except ImportError as e:
+        raise ErrorSap("Leer SAP requiere Windows con pywin32 instalado.") from e
+    try:
+        gui = win32com.client.GetObject("SAPGUI").GetScriptingEngine
+        return gui.Children(0).Children(0)
+    except Exception as e:  # noqa: BLE001
+        raise ErrorSap("No se encontró una sesión SAP activa. Abre SAP e inicia sesión.") from e
+
+
+def _esperar(ses, timeout: float = ESPERA_OCUPADO):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        try:
+            if not ses.Busy:
+                return
+        except Exception:  # noqa: BLE001
+            return
+        time.sleep(0.05)
+
+
+def _numero(s: str) -> float:
+    """'1.234,5' (formato SAP) -> 1234.5"""
+    s = (s or "").strip().replace(" ", "")
+    if not s or s == "-":
+        return 0.0
+    s = s.replace(".", "").replace(",", ".")
+    m = re.match(r"^-?\d+(\.\d+)?", s)
+    return float(m.group()) if m else 0.0
+
+
+def _por_id(ses, ident):
+    try:
+        return ses.findById(ident)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _escribir(ses, ident: str, valor: str):
+    campo = _por_id(ses, ident)
+    if campo is None:
+        return
+    try:
+        campo.SetFocus()
+        campo.Text = ""
+        campo.CaretPosition = 0
+        campo.Text = valor
+        campo.CaretPosition = len(valor)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _cerrar_popup(ses):
+    ventana = _por_id(ses, "wnd[1]")
+    if ventana is not None:
+        try:
+            ventana.sendVKey(0)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _leer_celda(ses, campo: str, col: int, fila: int) -> str:
+    for intento in range(REINTENTOS_CELDA):
+        for prefijo in ("txt", "ctxt"):
+            celda = _por_id(ses, f"{TABLA}/{prefijo}{campo}[{col},{fila}]")
+            if celda is not None:
+                try:
+                    valor = str(celda.Text).strip()
+                except Exception:  # noqa: BLE001
+                    valor = ""
+                if valor:
+                    return valor
+        if intento < REINTENTOS_CELDA - 1:
+            time.sleep(PAUSA_REINTENTO)
+    return ""
+
+
+def _detectar_columna(ses, campo: str) -> int:
+    for idx in range(31):
+        for prefijo in ("txt", "ctxt"):
+            if _por_id(ses, f"{TABLA}/{prefijo}{campo}[{idx},0]") is not None:
+                return idx
+    return COL_DEFECTO[campo]
+
+
+def _tabla_picking(ses, intentos: int = 3):
+    """GetPickingTable_NB: selecciona la pestaña de picking y devuelve la tabla."""
+    for i in range(intentos):
+        pest = _por_id(ses, PESTANA_PICKING)
+        if pest is not None:
+            try:
+                pest.Select()
+            except Exception as e:  # noqa: BLE001
+                anotar("No se pudo abrir la pestaña de picking", e)
+            time.sleep(0.3)
+            _esperar(ses)
+        tabla = _por_id(ses, TABLA)
+        if tabla is not None:
+            return tabla
+        _cerrar_popup(ses)          # a veces queda un aviso tapando la pantalla
+        time.sleep(0.6 * (i + 1))
+    return None
+
+
+def _mensaje_sap(ses) -> str:
+    """Texto de la barra de estado: dice por qué SAP no mostró el picking."""
+    barra = _por_id(ses, BARRA_ESTADO)
+    if barra is None:
+        return ""
+    try:
+        return str(barra.Text or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _leer_tabla(ses, lectura: "Lectura") -> list[Posicion]:
+    cols = {c: _detectar_columna(ses, c) for c in (F_MATERIAL, F_ENTREGA, F_PENDIENTE)}
+    vistos: dict[str, Posicion] = {}
+    tabla = _por_id(ses, TABLA)
+    if tabla is None:
+        return []
+    try:
+        maximo = int(tabla.verticalScrollbar.Maximum) or 100
+    except Exception:  # noqa: BLE001
+        maximo = 100
+    try:
+        visibles = max(int(tabla.verticalScrollbar.PageSize), FILAS_VISIBLES)
+    except Exception:  # noqa: BLE001
+        visibles = FILAS_VISIBLES
+    lectura.filas_tabla = maximo + 1 if maximo != 100 else 0
+    vacias = 0
+    leidas_abs: set[int] = set()        # filas ya procesadas (las pantallas se superponen)
+
+    # El VBA avanza de a UNA fila (4 lecturas por fila visible). Se avanza por pantalla
+    # dejando una fila de traslape: mismas filas leídas, ~4 veces menos vueltas.
+    paso = max(visibles - 1, 1)
+    posiciones = list(range(0, maximo + 1, paso))
+    if posiciones[-1] != maximo:
+        posiciones.append(maximo)          # la última pantalla siempre se lee
+    for scroll in posiciones:
+        tabla = _por_id(ses, TABLA)
+        if tabla is None:
+            time.sleep(0.5)
+            tabla = _por_id(ses, TABLA)
+            if tabla is None:
+                continue
+        foco = _por_id(ses, FOCO)
+        if foco is not None:
+            try:
+                foco.SetFocus()
+                time.sleep(0.15)
+                foco.CaretPosition = 0
+                time.sleep(0.15)
+            except Exception as e:  # noqa: BLE001
+                anotar("No se pudo poner el foco en la tabla", e)
+        try:
+            tabla.verticalScrollbar.Position = scroll
+        except Exception as e:  # noqa: BLE001
+            anotar(f"No se pudo mover la tabla a la fila {scroll}", e)
+        _esperar(ses)
+        time.sleep(PAUSA_PAGINA)
+
+        leidas = 0
+        for fila in range(visibles):
+            sku = _leer_celda(ses, F_MATERIAL, cols[F_MATERIAL], fila)
+            if not sku:
+                continue
+            leidas += 1
+            absoluta = scroll + fila                    # fila real dentro de la tabla
+            if absoluta in leidas_abs:
+                continue                                # ya la leímos en la pantalla anterior
+            leidas_abs.add(absoluta)
+            if sku in vistos:
+                if sku not in lectura.duplicados:
+                    lectura.duplicados.append(sku)      # igual que el Excel: manda la 1a fila
+                continue
+            vistos[sku] = Posicion(
+                sku=sku,
+                qty_entrega=_numero(_leer_celda(ses, F_ENTREGA, cols[F_ENTREGA], fila)),
+                qty_pendiente=_numero(_leer_celda(ses, F_PENDIENTE, cols[F_PENDIENTE], fila)),
+            )
+        # Se corta con varias pantallas vacías seguidas: una sola puede ser lentitud de SAP
+        vacias = vacias + 1 if leidas == 0 else 0
+        if vacias >= PANTALLAS_VACIAS and scroll > 0:
+            break
+    return list(vistos.values())
+
+
+def leer_pedido(pedido: str, puesto: str, fecha: str, ses=None) -> Lectura:
+    """Abre VL01N con el pedido y devuelve sus posiciones. fecha en dd.MM.yyyy."""
+    ses = ses or conectar()
+    okcd = _por_id(ses, "wnd[0]/tbar[0]/okcd")
+    if okcd is None:
+        raise ErrorSap("La ventana de SAP no responde al scripting.")
+    okcd.Text = "/nVL01N"
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    time.sleep(0.5)
+    _cerrar_popup(ses)
+
+    for ident in ("wnd[0]/usr/ctxtLIKP-VSTEL", "wnd[0]/usr/ctxtLV50C-DATBI",
+                  "wnd[0]/usr/ctxtLV50C-VBELN"):
+        campo = _por_id(ses, ident)
+        if campo is not None:
+            campo.Text = ""
+    _escribir(ses, "wnd[0]/usr/ctxtLIKP-VSTEL", puesto)
+    _escribir(ses, "wnd[0]/usr/ctxtLV50C-DATBI", fecha)
+    _escribir(ses, "wnd[0]/usr/ctxtLV50C-VBELN", pedido)
+
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    time.sleep(0.5)
+    _cerrar_popup(ses)
+
+    limpiar_incidencias()
+    lectura = Lectura(pedido=pedido)
+    if _tabla_picking(ses) is None:
+        msg = _mensaje_sap(ses)
+        lectura.aviso = ("No se encontró la tabla de picking." +
+                         (f" SAP dice: {msg}" if msg else
+                          " Revisa el pedido, el puesto y la fecha, o si ya está entregado."))
+        return lectura
+    lectura.posiciones = _leer_tabla(ses, lectura)
+    avisos = []
+    if not lectura.posiciones:
+        msg = _mensaje_sap(ses)
+        avisos.append("El pedido no devolvió posiciones." + (f" SAP dice: {msg}" if msg else ""))
+    if lectura.duplicados:
+        avisos.append("El pedido trae más de una línea para: " + ", ".join(lectura.duplicados) +
+                      ". Se leyó la primera de cada uno, igual que el Excel.")
+    if lectura.filas_tabla and len(lectura.posiciones) + len(lectura.duplicados) < lectura.filas_tabla:
+        avisos.append(f"SAP declara {lectura.filas_tabla} líneas y se leyeron "
+                      f"{len(lectura.posiciones) + len(lectura.duplicados)}: revisa el pedido en VL01N.")
+    lectura.incidencias = incidencias()
+    if lectura.incidencias:
+        avisos.append(f"{len(lectura.incidencias)} paso(s) que SAP no aceptó: " +
+                      "; ".join(lectura.incidencias[:3]))
+    lectura.aviso = " ".join(avisos)
+    return lectura
+
+
+# ===========================================================================
+# ZSD001_03 — Qty en entrega por producto (port de Qty_Entrega.bas)
+# Mismos filtros que el Excel: TC04 / VCT4 / canal 14-15 / clases ZC34-ZC32,
+# pedidos desde hace un mes hasta dentro de un mes, cliente y materiales.
+# ===========================================================================
+MULTI = ("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/"
+         "tblSAPLALDBSINGLE")
+
+
+def _multi_celda(fila: int) -> str:
+    return f"{MULTI}/ctxtRSCSEL_255-SLOW_I[1,{fila}]"
+
+
+def _presionar(ses, ident: str, espera: float = 5):
+    obj = _por_id(ses, ident)
+    if obj is not None:
+        try:
+            obj.press()
+        except Exception:  # noqa: BLE001
+            pass
+        _esperar(ses, espera)
+
+
+def _texto(ses, ident: str, valor: str):
+    obj = _por_id(ses, ident)
+    if obj is not None:
+        try:
+            obj.Text = valor
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _cargar_multiseleccion(ses, valores: list[str]) -> int:
+    tabla = _por_id(ses, MULTI)
+    if tabla is None:
+        return 0
+    try:
+        visibles = int(tabla.verticalScrollbar.PageSize) or 20
+    except Exception:  # noqa: BLE001
+        visibles = 20
+    escritos = 0
+    for i, v in enumerate(valores):
+        base = (i // visibles) * visibles
+        local = i - base
+        if local == 0 and i > 0:
+            tabla = _por_id(ses, MULTI)
+            try:
+                tabla.verticalScrollbar.Position = base
+            except Exception:  # noqa: BLE001
+                pass
+            _esperar(ses, 3)
+        celda = _por_id(ses, _multi_celda(local))
+        if celda is not None:
+            celda.Text = str(v)
+            escritos += 1
+    return escritos
+
+
+def _sumar_meses(d, meses: int):
+    import calendar
+    m = d.month - 1 + meses
+    y, m = d.year + m // 12, m % 12 + 1
+    return d.replace(year=y, month=m, day=min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str) -> list[dict]:
+    """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios."""
+    import datetime as dt
+    from pathlib import Path
+
+    ses = conectar()
+    try:
+        ses.findById("wnd[0]").maximize()
+    except Exception:  # noqa: BLE001
+        pass
+    okcd = _por_id(ses, "wnd[0]/tbar[0]/okcd")
+    okcd.Text = "/NZSD001_03"
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses, 30)
+    _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 10)
+    if _por_id(ses, "wnd[0]/usr/ctxtSOSOCFAC-LOW") is None:
+        raise ErrorSap("No se pudo abrir ZSD001_03.")
+
+    _texto(ses, "wnd[0]/usr/ctxtSOSOCFAC-LOW", "TC04")
+    _texto(ses, "wnd[0]/usr/ctxtSOORGVEN-LOW", "VCT4")
+
+    # Canal de distribución 14 y 15
+    _presionar(ses, "wnd[0]/usr/btn%_SOCANDIS_%_APP_%-VALU_PUSH", 10)
+    if _por_id(ses, "wnd[1]") is not None:
+        _presionar(ses, "wnd[1]/tbar[0]/btn[16]", 3)
+        _texto(ses, _multi_celda(0), "14")
+        _texto(ses, _multi_celda(1), "15")
+        _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
+        _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
+
+    # Clase de documento ZC34 y ZC32
+    _texto(ses, "wnd[0]/usr/ctxtSOCLADOC-LOW", "ZC34")
+    _presionar(ses, "wnd[0]/usr/btn%_SOCLADOC_%_APP_%-VALU_PUSH", 10)
+    if _por_id(ses, "wnd[1]") is not None:
+        _texto(ses, _multi_celda(1), "ZC32")
+        _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
+        _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
+
+    hoy = dt.date.today()
+    desde, hasta = _sumar_meses(hoy, -1), _sumar_meses(hoy, 1)   # igual que DateAdd("m", ±1)
+    _texto(ses, "wnd[0]/usr/ctxtSOFECPED-LOW", desde.strftime("%d.%m.%Y"))
+    _texto(ses, "wnd[0]/usr/ctxtSOFECPED-HIGH", hasta.strftime("%d.%m.%Y"))
+    if cliente_cod:
+        _texto(ses, "wnd[0]/usr/ctxtSOSOLIC-LOW", cliente_cod)
+
+    if materiales:
+        _presionar(ses, "wnd[0]/usr/btn%_SOCODMAT_%_APP_%-VALU_PUSH", 10)
+        if _por_id(ses, "wnd[1]") is not None:
+            _presionar(ses, "wnd[1]/tbar[0]/btn[16]", 3)
+            _cargar_multiseleccion(ses, materiales)
+            _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
+            _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
+
+    _presionar(ses, "wnd[0]/tbar[1]/btn[8]", 120)   # Ejecutar
+
+    # Layout y exportación (mismos pasos que el Excel)
+    _presionar(ses, "wnd[0]/tbar[1]/btn[33]", 5)
+    layout = _por_id(ses, "wnd[1]/usr/ssubD0500_SUBSCREEN:SAPLSLVC_DIALOG:0501/cntlG51_CONTAINER/shellcont/shell")
+    if layout is not None:
+        try:
+            layout.setCurrentCell(43, "TEXT")
+            layout.firstVisibleRow = 36
+            layout.selectedRows = "43"
+            layout.clickCurrentCell()
+        except Exception:  # noqa: BLE001
+            pass
+        _esperar(ses, 5)
+    menu = _por_id(ses, "wnd[0]/mbar/menu[0]/menu[3]/menu[1]")
+    if menu is not None:
+        menu.Select()
+        _esperar(ses, 5)
+    radio = _por_id(ses, "wnd[1]/usr/radRB_3")
+    if radio is not None:
+        radio.Select()
+    _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 5)
+    if _por_id(ses, "wnd[1]/usr/ctxtDY_PATH") is None:
+        raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo.")
+
+    Path(carpeta).mkdir(parents=True, exist_ok=True)
+    destino = Path(carpeta) / nombre
+    if destino.exists():
+        destino.unlink()
+    _texto(ses, "wnd[1]/usr/ctxtDY_PATH", str(carpeta))
+    _texto(ses, "wnd[1]/usr/ctxtDY_FILENAME", nombre)
+    _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar
+
+    t0 = time.time()
+    while not destino.exists() and time.time() - t0 < 30:
+        time.sleep(0.5)
+    if not destino.exists():
+        raise ErrorSap(f"ZSD001_03 no generó el archivo {destino}.")
+    time.sleep(1.0)   # que SAP termine de escribir
+    return leer_export(destino)
+
+
+def leer_export(ruta) -> list[dict]:
+    """Lee el archivo exportado por SAP. Acepta xlsx real o texto con tabuladores."""
+    from pathlib import Path
+    ruta = Path(ruta)
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(ruta, read_only=True, data_only=True)
+        filas = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+        wb.close()
+    except Exception:  # noqa: BLE001 - SAP a veces guarda texto con extensión .xlsx
+        texto = None
+        for enc in ("utf-16", "utf-8-sig", "cp1252"):
+            try:
+                texto = ruta.read_text(encoding=enc)
+                if "\t" in texto:
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        filas = [linea.split("\t") for linea in (texto or "").splitlines()]
+    filas = [f for f in filas if any(str(c or "").strip() for c in f)]
+    if not filas:
+        return []
+    i_cab = next((i for i, f in enumerate(filas[:15])
+                  if any("material" in str(c or "").lower() for c in f)), 0)
+    cab = [str(c or "").strip() for c in filas[i_cab]]
+    return [{cab[j]: f[j] for j in range(min(len(cab), len(f))) if cab[j]}
+            for f in filas[i_cab + 1:]]
+
+
+# ===========================================================================
+# MMBE — stock por almacén (port de Consultar_MMBE.bas)
+# ===========================================================================
+MMBE_ARBOL = "wnd[0]/usr/cntlCC_CONTAINER/shellcont/shell/shellcont[1]/shell[1]"
+MMBE_GRILLA = "wnd[1]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell"
+FILA_CD30, FILA_EC01, FILA_TP01 = "          4", "          6", "          8"
+COL_STOCK = "C          2"
+
+
+def _entero_sap(v) -> int:
+    s = str(v or "").strip().replace(" ", "").replace(".", "").replace(",", ".")
+    if not s or s == "-":
+        return 0
+    try:
+        return int(float(s))
+    except ValueError:
+        return 0
+
+
+def _esperar_objeto(ses, ident: str, seg: float) -> bool:
+    t0 = time.time()
+    while time.time() - t0 < seg:
+        if _por_id(ses, ident) is not None:
+            return True
+        time.sleep(0.15)
+    return False
+
+
+def _popup_almacen(ses, fila: str) -> tuple[int, int]:
+    """Abre el detalle de un almacén y devuelve (stock neto, reserva)."""
+    arbol = _por_id(ses, MMBE_ARBOL)
+    if arbol is None:
+        return 0, 0
+    try:
+        arbol.selectItem(fila, COL_STOCK)
+        arbol.ensureVisibleHorizontalItem(fila, COL_STOCK)
+        arbol.doubleClickItem(fila, COL_STOCK)
+    except Exception:  # noqa: BLE001
+        return 0, 0
+    if not _esperar_objeto(ses, "wnd[1]", 8):
+        return 0, 0
+    stock = reserva = 0
+    grilla = _por_id(ses, MMBE_GRILLA)
+    if grilla is not None:
+        try:
+            libre = _entero_sap(grilla.GetCellValue(0, "BSTNDTXT"))
+            e = _entero_sap(grilla.GetCellValue(10, "BSTNDTXT"))
+            reserva = _entero_sap(grilla.GetCellValue(13, "BSTNDTXT"))
+            stock = libre - e - reserva
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        ses.findById("wnd[1]").Close()
+    except Exception:  # noqa: BLE001
+        pass
+    return stock, reserva
+
+
+def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
+    """Stock neto CD30, reserva CD30, stock neto EC01 y TP01 por SKU (centro CE02)."""
+    if not skus:
+        return {}
+    ses = conectar()
+    try:
+        ses.findById("wnd[0]").maximize()
+    except Exception:  # noqa: BLE001
+        pass
+    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/NMMBE"
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    time.sleep(0.5)
+    _texto(ses, "wnd[0]/usr/ctxtMS_WERKS-LOW", "CE02")
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+
+    _presionar(ses, "wnd[0]/usr/btn%_MS_LGORT_%_APP_%-VALU_PUSH", 5)
+    time.sleep(0.4)
+    for i, alm in enumerate(("CD30", "EC01", "TP01")):
+        _texto(ses, _multi_celda(i), alm)
+    _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
+    _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
+
+    _texto(ses, "wnd[0]/usr/ctxtMS_CHARG-LOW", "LOTE1")
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    for ident, valor in (("wnd[0]/usr/chkKZNUL", False), ("wnd[0]/usr/chkKZLSO", False),
+                         ("wnd[0]/usr/chkKZLON", True)):
+        obj = _por_id(ses, ident)
+        if obj is not None:
+            try:
+                obj.Selected = valor
+            except Exception:  # noqa: BLE001
+                pass
+    time.sleep(0.2)
+
+    out = {}
+    for n, sku in enumerate(skus, 1):
+        if avance:
+            avance(f"Consultando stock MMBE {n} de {len(skus)}")
+        _texto(ses, "wnd[0]/usr/ctxtMS_MATNR-LOW", sku)
+        ses.findById("wnd[0]/tbar[1]/btn[8]").press()
+        _esperar(ses)
+        _esperar_objeto(ses, MMBE_ARBOL, 12)
+        cd30, reserva = _popup_almacen(ses, FILA_CD30)
+        ec01, _ = _popup_almacen(ses, FILA_EC01)
+        tp01, _ = _popup_almacen(ses, FILA_TP01)
+        out[sku] = {"cd30": cd30, "reserva_cd30": reserva, "ec01": ec01, "tp01": tp01}
+        _presionar(ses, "wnd[0]/tbar[0]/btn[3]", 5)   # volver a la selección
+    return out
+
+
+# ===========================================================================
+# Borrado en SAP (port de los scripts grabados: VL06 para entregas, VG02 para grupos)
+# Solo se ejecuta con confirmación explícita del usuario y se verifica el resultado.
+# ===========================================================================
+POPUP_SI = "wnd[1]/usr/btnSPOP-OPTION1"
+
+
+def _hay_popup(ses) -> bool:
+    return _por_id(ses, "wnd[1]") is not None
+
+
+def borrar_entrega(entrega: str, ses=None) -> tuple[bool, str]:
+    """VL06 -> lista de entregas -> selecciona la entrega -> borrar -> confirmar."""
+    ses = ses or conectar()
+    try:
+        ses.findById("wnd[0]").maximize()
+    except Exception:  # noqa: BLE001
+        pass
+    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nvl06"
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    _presionar(ses, "wnd[0]/usr/btnBUTTON1", 10)          # entregas para picking
+    for campo in ("wnd[0]/usr/ctxtIT_KODAT-LOW", "wnd[0]/usr/ctxtIT_KODAT-HIGH"):
+        obj = _por_id(ses, campo)
+        if obj is not None:
+            obj.Text = ""
+    _presionar(ses, "wnd[0]/tbar[1]/btn[19]", 10)         # más criterios de selección
+    campo = _por_id(ses, "wnd[0]/usr/ctxtIT_VBELN-LOW")
+    if campo is None:
+        return False, "VL06 no mostró el campo de entrega; revisa la pantalla en SAP."
+    campo.Text = str(entrega)
+    _presionar(ses, "wnd[0]/tbar[1]/btn[8]", 60)          # ejecutar
+
+    fila = _por_id(ses, "wnd[0]/usr/lbl[6,5]")
+    if fila is None:
+        msg = _mensaje_sap(ses)
+        return False, f"La entrega {entrega} no aparece en VL06." + (f" SAP dice: {msg}" if msg else "")
+    try:
+        fila.SetFocus()
+        fila.CaretPosition = 2
+    except Exception:  # noqa: BLE001
+        pass
+    ses.findById("wnd[0]").sendVKey(2)                    # abrir la entrega
+    _esperar(ses, 30)
+    _presionar(ses, "wnd[0]/tbar[1]/btn[25]", 10)         # marcar todas las posiciones
+    _presionar(ses, "wnd[0]/tbar[1]/btn[14]", 10)         # borrar
+    if not _hay_popup(ses):
+        msg = _mensaje_sap(ses)
+        return False, ("SAP no pidió confirmación: probablemente la entrega no se puede borrar "
+                       "(facturada, con salida de mercancía o dentro de un grupo)." +
+                       (f" Dice: {msg}" if msg else ""))
+    _presionar(ses, POPUP_SI, 30)
+    mensaje = _mensaje_sap(ses)
+    for _ in range(3):
+        _presionar(ses, "wnd[0]/tbar[0]/btn[3]", 5)       # volver al menú
+    ok = "borrad" in mensaje.lower() or "elimin" in mensaje.lower() or mensaje == ""
+    return ok, mensaje or f"Entrega {entrega} borrada."
+
+
+def borrar_grupo(grupo: str, ses=None) -> tuple[bool, str]:
+    """VG02 -> abre el grupo -> borrar -> confirmar."""
+    ses = ses or conectar()
+    try:
+        ses.findById("wnd[0]").maximize()
+    except Exception:  # noqa: BLE001
+        pass
+    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nvg02"
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    campo = _por_id(ses, "wnd[0]/usr/ctxtVBSK-SAMMG")
+    if campo is None:
+        return False, "VG02 no mostró el campo de grupo."
+    campo.Text = str(grupo)
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses, 30)
+    msg = _mensaje_sap(ses)
+    if "no existe" in msg.lower():
+        return False, f"El grupo {grupo} no existe en SAP."
+    _presionar(ses, "wnd[0]/tbar[1]/btn[14]", 10)         # borrar
+    if not _hay_popup(ses):
+        return False, ("SAP no pidió confirmación: el grupo no se puede borrar." +
+                       (f" Dice: {_mensaje_sap(ses)}" if _mensaje_sap(ses) else ""))
+    _presionar(ses, POPUP_SI, 30)
+    mensaje = _mensaje_sap(ses)
+    _presionar(ses, "wnd[0]/tbar[0]/btn[15]", 5)          # salir
+    ok = "borrad" in mensaje.lower() or "elimin" in mensaje.lower() or mensaje == ""
+    return ok, mensaje or f"Grupo {grupo} borrado."
