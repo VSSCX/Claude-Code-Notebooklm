@@ -78,8 +78,24 @@ async function guardarPedido(id){
   if (errs.length) return dErr(`Revisa las líneas ${errs.join(', ')}: falta SKU o cantidad válida.`);
   const cur = clone(Store.get('pedidos', nid) || {pedido:ped, creado:nowISO()});
   Object.assign(cur, {oc:dval('oc'), cliente:dval('cliente').toUpperCase(), canal:dval('canal'), fechaOC:dval('fechaOC'), obs:dval('obs'), lineas});
+  const antes = id ? ((Store.get('pedidos', nid) || {}).cliente || '') : '';
   dlg.close(); UI.sel = nid; UI.view = 'pedidos';
-  if (await save('pedidos', nid, cur)) toast(id ? 'Pedido actualizado' : 'Pedido creado');
+  if (await save('pedidos', nid, cur)){
+    toast(id ? 'Pedido actualizado' : 'Pedido creado');
+    if (id && antes && cur.cliente && antes.toUpperCase() !== cur.cliente.toUpperCase() && flujoDe(cur).desact) await reanalizarPorCliente(nid, antes);
+  }
+}
+/* Cambiar el cliente cambia el plan SOP, lo facturado y la Qty en entrega: hay que analizar de nuevo con el cliente nuevo */
+async function reanalizarPorCliente(pedido, antes){
+  const p = Store.get('pedidos', safeId(pedido)); if (!p) return;
+  const fl = flujoDe(p);
+  const r = await preguntar({titulo: 'Cambió el cliente del pedido',
+    texto: `El análisis es de <b>${esc(antes || (fl.an || {}).cliente || 'otro cliente')}</b> y ahora el pedido es de <b>${esc(p.cliente)}</b>. Para traer el plan SOP, lo facturado y la Qty en entrega de <b>${esc(p.cliente)}</b> hay que analizar de nuevo: usa tu SAP (no uses el mouse ni el teclado mientras corre).${fl.cb ? ' El cubicaje se rehace con la carga nueva.' : ''}`,
+    ok: `Analizar con ${p.cliente}`});
+  if (!r){ toast('El análisis sigue siendo del cliente anterior. Puedes actualizarlo desde la pestaña Análisis.'); return; }
+  let previo = {};
+  try { previo = await api('GET', `/analisis/${encodeURIComponent(p.pedido)}`); } catch(e){ /* sin análisis guardado: se usan los valores por defecto */ }
+  await lanzarAnalisis(p.pedido, {puesto: previo.puesto || config().puesto || 'PN01', fecha: previo.fecha || new Date().toISOString().slice(0, 10), cliente: p.cliente});
 }
 async function borrarPedido(id){
   const p = Store.get('pedidos', id); const ents = entregasDe(p.pedido);
@@ -360,20 +376,14 @@ document.addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t) return;
   if (t.dataset.go){ go(t.dataset.go); return; }
   if (t.hasAttribute('data-close')){ dlg.close(); return; }
-  if (t.dataset.sel){ UI.sel = t.dataset.sel; UI.sub = 'entregas'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
+  if (t.dataset.flujo){ avanzarFlujo(t.dataset.flujo); return; }
+  if (t.dataset.sel){ UI.sel = t.dataset.sel; const ps = Store.get('pedidos', t.dataset.sel); UI.sub = ps ? flujoDe(ps).tabSig : 'analisis'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
   if (t.dataset.sub){ UI.sub = t.dataset.sub; render(); return; }
   if (t.closest && t.closest('[data-ajustes]')) UI.verAjustes = true;   // no se cierra al recalcular
   if (t.dataset.cerrarAviso){ Avisos.cerrar(t.dataset.cerrarAviso); return; }
   if (t.hasAttribute('data-pregunta-ok')){ responderPregunta(); return; }
-  if (t.dataset.abrir){ UI.sel = t.dataset.abrir; UI.sub = t.dataset.sub || 'entregas'; go('pedidos'); return; }
+  if (t.dataset.abrir){ UI.sel = t.dataset.abrir; UI.sub = t.dataset.sub || 'analisis'; go('pedidos'); return; }
   if (t.dataset.gpaso){ marcarPasoGrupo(t.dataset.grupo, t.dataset.gpaso, t.dataset.forzar ? true : undefined); return; }
-  if (t.dataset.accion){
-    const id = t.dataset.accion;
-    const args = t.dataset.args ? [t.dataset.args] : [];
-    const p = UI.sel && Store.get('pedidos', UI.sel);
-    if (!args.length && p && (accion1(id) || {}).args.length) args.push(p.pedido);
-    correrAccion(id, args); return;
-  }
   if (t.dataset.paso){ marcarPaso(t.dataset.ent, t.dataset.paso, t.dataset.forzar ? true : undefined); return; }
   const a = t.dataset.act; const ent = t.dataset.ent;
   const ped = UI.sel && Store.get('pedidos', UI.sel);
@@ -426,7 +436,6 @@ document.addEventListener('click', ev => {
     case 'guardarPredist': { const p = Store.get('pedidos', UI.sel);
       const ta = document.querySelector('[data-predist]');
       if (p && ta) guardarPredist(p.pedido, ta.value); break; }
-    case 'ocultarVivo': UI.visorVivo = UI.visorVivo === false; render(); break;
     case 'cubicar': { const p = Store.get('pedidos', UI.sel);
       if (p) cubicar(p.pedido, {modo: modoElegido(UI.cubicaje[p.pedido]),
                                 caja_master: UI.cubOpts.caja_master,
@@ -436,7 +445,10 @@ document.addEventListener('click', ev => {
     case 'leerSap': leerSap(); break;
     case 'verArchivo': UI.verArchivo = UI.verArchivo === +t.dataset.id ? null : +t.dataset.id; render(); break;
     case 'desasignar': asignarArchivo(t.dataset.id, ''); break;
-    case 'refrescarPlan': { const p = Store.get('pedidos', UI.sel); if (p) cargarPlan(p.pedido, true); break; }
+    case 'actualizarBases': actualizarBases(); break;
+    case 'reanalizarCliente': { const p = Store.get('pedidos', UI.sel); if (p) reanalizarPorCliente(p.pedido, ''); break; }
+    case 'autorizarExceso': autorizarExceso(); break;
+    case 'limitarAlPlan': limitarAlPlan(); break;
     case 'descartarPkg': UI.pkg = null; render(); break;
   }
 });
@@ -491,4 +503,25 @@ document.addEventListener('change', async ev => {
 
 render();
 pedirSesion().then(() => Store.init());   // primero quién eres, después se carga todo
-cargarAcciones();
+
+/* ---- Carga por sobre el plan SOP: autorización por lote ---- */
+async function autorizarExceso(){
+  const p = Store.get('pedidos', UI.sel), a = p && UI.analisis[p.pedido]; if (!a || !a.resultado) return;
+  const filas = a.resultado.filas.filter(f => f.carga_calculada < f.qty_entrega && f.carga < f.qty_entrega);
+  if (!filas.length) return;
+  const extra = filas.reduce((x, f) => x + (f.qty_entrega - f.carga), 0);
+  const r = await preguntar({titulo: 'Exceder el plan SOP', texto: `Vas a cargar <b>${fmt(extra)}</b> unidades por sobre lo que deja el plan en <b>${filas.length}</b> producto(s). Queda registrado a tu nombre.`, ok: 'Autorizar'});
+  if (!r) return;
+  await ajustarLote(p.pedido, Object.fromEntries(filas.map(f => [f.sku, f.qty_entrega])));
+  toast('Carga ajustada a lo pedido');
+}
+async function limitarAlPlan(){
+  const p = Store.get('pedidos', UI.sel), a = p && UI.analisis[p.pedido]; if (!a || !a.resultado) return;
+  const filas = a.resultado.filas.filter(f => f.carga_calculada < f.qty_entrega && f.ajustada);
+  if (filas.length) await ajustarLote(p.pedido, Object.fromEntries(filas.map(f => [f.sku, null])));
+}
+async function actualizarBases(){
+  toast('Consultando SQL Server…');
+  try { const r = await api('POST', '/bases/actualizar'); toast(r.ok ? 'Bases actualizadas' : r.mensaje); }
+  catch(e){ toast(e.message); }
+}

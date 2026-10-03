@@ -43,6 +43,19 @@ def _calefones_de(cliente: str, s: Session = None) -> set:
         return set()
 
 
+def _sop_de(cliente: str, s: Session = None) -> tuple[str, str]:
+    """(grupo SOP, código de solicitante en SAP) del cliente. Lo editado en Configuración
+    (tabla de clientes) manda sobre lo que viene de fábrica en el código."""
+    from ..analisis import codigo_cliente, grupo_sop
+    grupo, codigo = grupo_sop(cliente), codigo_cliente(cliente)
+    regla = cli_mod.buscar(s, cliente) if s is not None else None
+    if regla is not None:
+        codigo = regla.codigo or codigo
+        if (regla.grupo_sop or "").strip().upper() in ("REGION 2", "REGION 3"):
+            grupo = regla.grupo_sop.strip().upper()
+    return grupo, codigo
+
+
 AJUSTES_DEFECTO = {"orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria"}
 
 

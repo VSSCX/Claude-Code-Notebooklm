@@ -25,7 +25,7 @@ def _commit(s: Session):
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
 from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
-                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
+                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje, _sop_de)
 
 router = APIRouter()
 
@@ -84,8 +84,7 @@ def get_plan(numero: str, refrescar: bool = False, s: Session = Depends(get_sess
     p = domain._get_pedido(s, numero)
     if p is None:
         raise HTTPException(404, "Pedido no encontrado.")
-    from ..analisis import grupo_sop
-    grupo = grupo_sop(p.cliente)
+    grupo, _codigo = _sop_de(p.cliente, s)
     if refrescar:
         bases.limpiar_cache()
     try:

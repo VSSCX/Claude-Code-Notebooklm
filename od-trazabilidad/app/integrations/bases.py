@@ -94,17 +94,29 @@ _CACHE: dict[str, tuple[float, object]] = {}
 CACHE_SEG = 600   # 10 minutos
 
 
+_FALLOS: dict[str, tuple[float, Exception]] = {}
+PAUSA_TRAS_FALLO = 60     # segundos sin volver a preguntar a un servidor que no respondió
+
+
 def _cache(clave: str, fn):
     ahora = time.time()
     if clave in _CACHE and ahora - _CACHE[clave][0] < CACHE_SEG:
         return _CACHE[clave][1]
-    valor = fn()
+    if clave in _FALLOS and ahora - _FALLOS[clave][0] < PAUSA_TRAS_FALLO:
+        raise _FALLOS[clave][1]                  # cada intento fallido costaba la espera completa de la conexión
+    try:
+        valor = fn()
+    except Exception as e:  # noqa: BLE001
+        _FALLOS[clave] = (ahora, e)
+        raise
+    _FALLOS.pop(clave, None)
     _CACHE[clave] = (ahora, valor)
     return valor
 
 
 def limpiar_cache():
     _CACHE.clear()
+    _FALLOS.clear()
 
 
 def _sku(v) -> str:

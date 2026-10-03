@@ -25,6 +25,7 @@ async def _vida(_app):
     """Lo que se hace al abrir la plataforma."""
     _cargar_conexion_bases()
     _respaldo_al_iniciar()
+    _rellenar_flujo()
     yield
 
 
@@ -58,6 +59,20 @@ def _cargar_conexion_bases():
                 bases.usar_conexion(_json.loads(c.valor))
     except Exception as e:  # noqa: BLE001
         log.warning("No se pudo leer la conexión guardada: %s", e)
+
+
+def _rellenar_flujo():
+    """Los análisis y cubicajes hechos antes de que existiera el resumen del flujo lo reciben ahora."""
+    from . import domain
+    from .db import SessionLocal
+    try:
+        with SessionLocal() as s:
+            n = domain.rellenar_flujo(s)
+            s.commit()
+        if n:
+            log.info("Resumen de flujo creado para %s pedidos", n)
+    except Exception as e:  # noqa: BLE001
+        log.warning("No se pudo preparar el resumen del flujo: %s", e)
 
 
 def _respaldo_al_iniciar():

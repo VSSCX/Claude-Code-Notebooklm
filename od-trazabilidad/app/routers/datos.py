@@ -138,3 +138,14 @@ def put_cliente(nombre: str, body: dict, s: Session = Depends(get_session)):
         raise HTTPException(422, str(e)) from e
     _commit(s)
     return cli_mod.doc(c)
+
+
+@router.post("/bases/actualizar")
+def actualizar_bases():
+    """Vuelve a consultar el plan de ventas y los saldos en SQL Server (lo que hacía "Actualizar bases" en Excel)."""
+    bases.limpiar_cache()
+    try:
+        bases.disponibilidad()
+        return {"ok": True, "mensaje": "Bases actualizadas."}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "mensaje": str(e)[:300]}

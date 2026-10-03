@@ -1,6 +1,9 @@
 """Port de M_Visor3D: arma el JSON del visor 3D y lo inserta en Plantilla_Visor.html."""
 from __future__ import annotations
 
+import threading
+import time
+
 from .core import Placement
 from .vb import fmt_num, round1
 
@@ -172,7 +175,13 @@ def leer_datos_visor(carpeta, nombre: str) -> str:
 LIBRERIAS = ("three.min.js", "jspdf.min.js", "gltf_loader.js", "scania_data.js")
 
 
-def preparar_carpeta(destino, origen) -> list[str]:
+REVISAR_LIBRERIAS_CADA = 600          # segundos entre revisiones de la carpeta de red
+_revision: dict[tuple[str, str], float] = {}
+_revisando: set[tuple[str, str]] = set()
+_candado_revision = threading.Lock()
+
+
+def _sincronizar(destino, origen) -> list[str]:
     """Copia la plantilla y sus librerías a la carpeta local (solo si faltan o cambiaron)."""
     import shutil
     from pathlib import Path
@@ -193,4 +202,32 @@ def preparar_carpeta(destino, origen) -> list[str]:
         except OSError:
             if not dst.exists():
                 faltan.append(nombre)
+    _revision[(str(destino), str(origen))] = time.time()
     return faltan
+
+
+def preparar_carpeta(destino, origen, forzar: bool = False) -> list[str]:
+    """Deja las librerías del visor en la carpeta local y devuelve las que faltan.
+
+    Preguntarle a la carpeta de red (\\\\servidor\\...) en cada cálculo costaba varios segundos
+    por cada consulta de archivo. Ahora, si ya hay copia local, se responde al instante y la
+    comparación con la red se hace como mucho cada 10 minutos, en segundo plano."""
+    from pathlib import Path
+    clave = (str(Path(destino)), str(Path(origen)))
+    locales = [n for n in LIBRERIAS if (Path(destino) / "visor" / n).exists()]
+    if forzar or len(locales) < len(LIBRERIAS):
+        return _sincronizar(destino, origen)              # primera vez o falta algo: hay que copiarlas ya
+    if time.time() - _revision.get(clave, 0.0) >= REVISAR_LIBRERIAS_CADA:
+        with _candado_revision:
+            if clave in _revisando:
+                return []
+            _revisando.add(clave)
+
+        def revisar():
+            try:
+                _sincronizar(destino, origen)
+            finally:
+                with _candado_revision:
+                    _revisando.discard(clave)
+        threading.Thread(target=revisar, daemon=True).start()
+    return []

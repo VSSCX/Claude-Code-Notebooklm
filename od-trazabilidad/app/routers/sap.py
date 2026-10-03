@@ -28,7 +28,7 @@ def _commit(s: Session):
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
 from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
-                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
+                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje, _sop_de)
 
 router = APIRouter()
 
@@ -85,10 +85,11 @@ def analizar(numero: str, body: dict):
     import json as _json
     import re as _re
     from datetime import date as _date
-    from ..analisis import calcular, codigo_cliente, en_entrega_por_modelo, grupo_sop
+    from ..analisis import calcular, en_entrega_por_modelo
     from ..config import BASE_DIR
     from ..db import SessionLocal
     from ..integrations import base_medidas, sap
+    from ..models import Config, Medida
 
     puesto = str(body.get("puesto", "")).strip().upper()
     cliente = str(body.get("cliente", "")).strip().upper()
@@ -114,15 +115,21 @@ def analizar(numero: str, body: dict):
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
         avance("2/4 Consultando Qty en entrega en ZSD001_03")
+        with SessionLocal() as ses:
+            grupo, codigo = _sop_de(cliente, ses)
+            # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
+            filas_med = ses.execute(select(Medida.sku, Medida.descripcion, Medida.max_camion)).all()
+        if not codigo:
+            raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
         carpeta = BASE_DIR / "data" / "sap"
-        filas_zsd = sap.zsd001_03(codigo_cliente(cliente), [p["sku"] for p in posiciones],
+        filas_zsd = sap.zsd001_03(codigo, [p["sku"] for p in posiciones],
                                   str(carpeta), "Qty En Entrega.xlsx")
 
         avance("3/4 Calculando saldos y alertas")
-        grupo = grupo_sop(cliente)
         plan = bases.plan_sop(grupo)
         disp = bases.disponibilidad()
-        med = base_medidas.medidas()
+        med = ({sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
+               if filas_med else base_medidas.medidas())
         en_ent = en_entrega_por_modelo(filas_zsd)
         res = calcular(posiciones, plan, en_ent, med, disp)
 
@@ -144,10 +151,27 @@ def analizar(numero: str, body: dict):
                "generado": _date.today().isoformat()}
         with SessionLocal() as ses:
             domain.cargar_lectura_sap(ses, numero, cliente, posiciones)
+            p_ped = domain._get_pedido(ses, numero)
+            if p_ped is not None and p_ped.cliente != cliente:
+                p_ped.cliente = cliente                  # el análisis manda: el pedido queda con el cliente analizado
             domain.guardar_config(ses, _clave_analisis(numero), doc)
+            domain.anotar_flujo(ses, numero, analisis=domain.resumen_analisis(doc))
             ses.commit()
+            # si el pedido ya estaba cubicado, el cubicaje se rehace con la carga nueva (y el cliente nuevo)
+            recubicado = None
+            previo = ses.get(Config, _clave_cubicaje(numero))
+            if previo is not None:
+                from .cubicaje import _cubicar
+                anterior = _json.loads(previo.valor)
+                try:
+                    _cubicar(numero, {"modo": anterior.get("modo"), "caja_master": anterior.get("caja_master", ""),
+                                      "piso_pallet": anterior.get("piso_pallet", "")}, ses)
+                    recubicado = True
+                except HTTPException as e:
+                    recubicado = str(e.detail)
         return {"pedido": numero, "posiciones": len(posiciones), "alertadas": len(res["alertadas"]),
-                "aviso_sap": lectura.aviso}
+                "limitadas": domain.resumen_analisis(doc)["limitadas"], "aviso_sap": lectura.aviso,
+                "recubicado": recubicado}
 
     try:
         return acciones.lanzar_python("analizar_pedido", "Analizar pedido", [numero], correr)
@@ -167,31 +191,52 @@ def get_analisis(numero: str, s: Session = Depends(get_session)):
 
 @router.put("/analisis/{numero}/carga")
 def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
-    """Ajuste manual de la CARGA de un SKU (como editar la columna F del Excel)."""
+    """Ajuste manual de la CARGA (como editar la columna F del Excel).
+
+    Un SKU:    {"sku": "...", "carga": 40}      (carga vacía = volver al valor calculado)
+    Varios:    {"ajustes": {"sku": 40, "otro": null}}
+    Subir la carga por sobre lo que deja el plan SOP es una autorización: queda anotado quién la dio."""
     import json as _json
+    from datetime import datetime as _dt
     from ..analisis import calcular
     from ..models import Config
     c = s.get(Config, _clave_analisis(numero))
     if c is None:
         raise HTTPException(404, "Este pedido todavía no tiene análisis.")
     doc = _json.loads(c.valor)
-    sku = domain.norm_sku(body.get("sku", ""))
-    if sku not in {p["sku"] for p in doc["posiciones"]}:
-        raise HTTPException(422, "Ese SKU no está en el análisis.")
-    if body.get("carga") in (None, ""):
-        doc["ajustes"].pop(sku, None)                    # volver al valor calculado
-    else:
+    cambios = body.get("ajustes")
+    if cambios is None:
+        cambios = {body.get("sku", ""): body.get("carga")}
+    if not isinstance(cambios, dict) or not cambios:
+        raise HTTPException(422, "No hay ajustes que aplicar.")
+    en_analisis = {p["sku"] for p in doc["posiciones"]}
+    calculada = {f["sku"]: f["carga_calculada"] for f in (doc.get("resultado") or {}).get("filas", [])}
+    doc.setdefault("autorizaciones", {})
+    for sku_raw, valor in cambios.items():
+        sku = domain.norm_sku(sku_raw)
+        if sku not in en_analisis:
+            raise HTTPException(422, f"El SKU {sku or sku_raw} no está en el análisis.")
+        if valor in (None, ""):
+            doc["ajustes"].pop(sku, None)                    # volver al valor calculado
+            doc["autorizaciones"].pop(sku, None)
+            continue
         try:
-            carga = float(body["carga"])
+            carga = float(valor)
         except (TypeError, ValueError) as e:
             raise HTTPException(422, "Cantidad inválida.") from e
         if not math.isfinite(carga) or carga < 0:
             raise HTTPException(422, "La cantidad no puede ser negativa ni infinita.")
         doc["ajustes"][sku] = carga
+        if carga > calculada.get(sku, 0):
+            doc["autorizaciones"][sku] = {"por": domain.usuario_actual(), "at": _dt.now().isoformat(timespec="seconds"),
+                                          "calculada": calculada.get(sku, 0), "carga": carga}
+        else:
+            doc["autorizaciones"].pop(sku, None)
     # Recalcula con los mismos datos guardados (no vuelve a consultar SAP)
     doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
                                 doc["disponibilidad"], doc["stock"], doc["ajustes"])
     domain.guardar_config(s, _clave_analisis(numero), doc)
+    domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
     _commit(s)
     # Cubicaje en vivo: si el pedido ya estaba cubicado, se rehace con la carga nueva
     cubicaje = None

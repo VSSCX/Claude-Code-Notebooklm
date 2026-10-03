@@ -62,20 +62,38 @@ function vistaPedidos(){
   </div>`;
 }
 
-const TABS_PEDIDO = [['entregas', 'Entregas'], ['grupos', 'Camiones'], ['analisis', 'Análisis'], ['cubicaje', 'Cubicaje'], ['pendientes', 'Pendientes'], ['productos', 'Productos, plan y stock']];
+const TABS_PEDIDO = [['analisis', 'Análisis'], ['cubicaje', 'Cubicador'], ['entregas', 'Entregas'], ['grupos', 'Grupos'], ['pendientes', 'Pendientes']];
+
+function flujoHTML(f){
+  return `<div class="ruta flujo" role="group" aria-label="Flujo del pedido">${f.pasos.map((s, i) =>
+    `<button class="paso ${s.hecho ? 'done' : ''} ${s.sig ? 'next' : ''} ${s.omit ? 'fixed' : ''}" data-flujo="${s.k}" aria-current="${!!s.sig}"
+      title="${esc(s.t + (s.hecho ? ' · hecho' : s.sig ? ' · siguiente' : s.omit ? ' · no aplica' : ''))}"><span class="k">${s.hecho ? ICON.check : i + 1}</span>
+      <span class="t">${esc(s.t)}</span>${s.det ? `<span class="d">${esc(s.det)}</span>` : ''}</button>`).join('')}</div>`;
+}
+/* El botón de un paso (o "siguiente") lleva a donde se hace */
+function avanzarFlujo(k){
+  const p = UI.sel && Store.get('pedidos', UI.sel); if (!p) return;
+  const f = flujoDe(p), paso = f.pasos.find(x => x.k === k);
+  if (k === 'analisis' && !(paso && paso.hecho)){ abrirLecturaSap('analizar'); return; }
+  UI.sub = f.tab[k];
+  if (k === 'cubicaje' && !f.cb) UI.autoCub[p.pedido] = false;      // al entrar se cubica solo, una vez
+  render();
+}
 
 function detallePedido(p){
   const {filas, tot} = resumen(p); const ents = entregasDe(p.pedido);
   const activas = ents.filter(e => !e.anulada);
   const gs = gruposDe(p.pedido);
   let cuerpo = '';
+  if (!TABS_PEDIDO.some(t => t[0] === UI.sub)) UI.sub = 'analisis';
+  const flujo = flujoDe(p);
   if (UI.sub === 'analisis'){
     cuerpo = vistaAnalisis(p);
   } else if (UI.sub === 'cubicaje'){
     cuerpo = vistaCubicaje(p);
   } else if (UI.sub === 'grupos'){
     cuerpo = gs.length ? gs.map(grupoHTML).join('') :
-      `<div class="empty"><h3>Todavía no hay camiones</h3><p>Aparecen cuando la entrega tiene grupo. Las entregas sin grupo se muestran igual, como camión pendiente.</p></div>`;
+      `<div class="empty"><h3>Todavía no hay grupos</h3><p>Cada entrega se agrupa por camión. Primero se crean las entregas desde el cubicaje.</p></div>`;
   } else if (UI.sub === 'entregas'){
     cuerpo = ents.length ? ents.map(entregaHTML).join('') :
       `<div class="empty"><h3>Este pedido no tiene entregas</h3><p>Crea la primera con las cantidades que suministraste en VL01N.</p><button class="btn primary" data-act="nuevaEntrega">Nueva entrega</button></div>`;
@@ -85,8 +103,6 @@ function detallePedido(p){
       ${pen.map(r => `<tr><td class="code">${esc(r.sku)}</td><td>${esc(r.desc)}</td><td class="n">${fmt(r.pedida)}</td><td class="n">${fmt(r.enEntrega + r.externa)}</td><td class="n"><b>${fmt(r.pendiente)}</b></td></tr>`).join('')}
       </tbody></table></div><div class="row" style="margin-top:14px"><button class="btn primary" data-act="nuevaEntrega">Crear entrega con estos pendientes</button></div>`
       : `<div class="empty"><h3>Nada por suministrar</h3><p>Todas las unidades del pedido ya están en alguna entrega.</p></div>`;
-  } else {
-    cuerpo = tablaProductos(p, filas, tot);
   }
   const cuenta = {entregas: activas.length, grupos: gs.length, pendientes: tot.pendiente ? fmt(tot.pendiente) + ' un.' : ''};
   const enCurso = UI.job && UI.job.estado === 'en_curso';
@@ -109,11 +125,11 @@ function detallePedido(p){
     <div class="label-bar">${barHTML(tot, true)}
       <div class="legend" style="margin-top:8px"><span><span class="sw s-ent"></span>Entregado</span><span><span class="sw s-age"></span>Agendado</span><span><span class="sw s-sin"></span>Sin cita</span><span><span class="sw s-pen"></span>Pendiente</span></div></div>
     ${p.obs ? `<p class="label-obs small">${esc(p.obs)}</p>` : ''}
+    <div class="label-flujo">${flujoHTML(flujo)}</div>
     <div class="label-foot">
-      <button class="btn sm" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">Actualizar desde SAP</button>
-      ${botonAccion('leer_pedido', 'sm')}${botonAccion('cubicar', 'sm')}${botonAccion('visor', 'sm')}
+      <button class="btn sm" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar' : 'Analizar pedido'}</button>
       <span class="spacer"></span>
-      ${botonAccion('crear_entregas', 'sm escribe')}${botonAccion('crear_grupos', 'sm escribe')}
+      ${flujo.sig ? `<button class="btn primary sm" data-flujo="${flujo.sig.k}">${esc(FLUJO_ACCION[flujo.sig.k])}</button>` : ''}
     </div>
     ${estadoJob()}
     <div class="label-files">${listaArchivos(p.pedido, '')}</div>
@@ -190,62 +206,8 @@ function grupoHTML(g){
   </article>`;
 }
 
-/* ---- Plan SOP, saldo y disponibilidad (SQL Server) ---- */
-UI.plan = {};
-async function cargarPlan(pedido, refrescar){
-  UI.plan[pedido] = {cargando:true};
-  render();
-  try { UI.plan[pedido] = await api('GET', `/plan/${encodeURIComponent(pedido)}${refrescar ? '?refrescar=true' : ''}`); }
-  catch(e){ UI.plan[pedido] = {ok:false, error:e.message, productos:{}}; }
-  render();
-}
-function tablaProductos(p, filas, tot){
-  const pl = UI.plan[p.pedido];
-  if (!pl) setTimeout(() => cargarPlan(p.pedido), 0);
-  // La "en entrega" (ZSD001_03) viene del último análisis del pedido
-  const an = UI.analisis[p.pedido];
-  if (!an) setTimeout(() => cargarAnalisis(p.pedido), 0);
-  const conAnalisis = an && an.resultado;
-  const enEntZsd = {};
-  if (conAnalisis) for (const f of an.resultado.filas) enEntZsd[f.sku] = f.en_entrega;
-  let aviso = '';
-  if (!pl || pl.cargando) aviso = '<p class="small muted">Consultando plan y stock en SQL Server…</p>';
-  else if (!pl.ok) aviso = `<p class="small"><span class="tag err">Sin plan</span> No se pudo consultar SQL Server: ${esc(pl.error)}</p>`;
-  else if (!pl.grupo_encontrado) aviso = `<p class="small"><span class="tag warn">Atención</span> El grupo SOP <b>${esc(pl.grupo)}</b> no tiene plan cargado este mes. Revisa que el cliente del pedido se llame igual que el grupo SOP.</p>`;
-  else aviso = `<p class="small muted">Plan ${esc(pl.tipo_plan)} del mes · grupo SOP ${esc(pl.grupo)} · <b>Saldo SOP = plan − real − en entrega</b>${conAnalisis ? ` (en entrega según el análisis del ${fmtFecha(an.generado)})` : ''}. <button class="btn quiet small" data-act="refrescarPlan">Actualizar plan</button></p>
-    ${conAnalisis ? '' : `<p class="small"><span class="tag warn">Falta la Qty en entrega</span> El saldo se calcula con la Qty en entrega de ZSD001_03, que se obtiene al analizar el pedido. <button class="btn sm" data-act="abrirAnalisis">Analizar pedido</button></p>`}`;
-  const prod = (pl && pl.productos) || {};
-  const alertas = {sinPlan:0, sinStock:0};
-  const cuerpo = filas.map(r => {
-    const x = prod[r.sku] || {}, plan = x.plan, disp = x.disponible;
-    // Regla oficial (igual que el Excel): saldo SOP = plan − real − en entrega
-    const enZsd = conAnalisis ? (enEntZsd[r.sku] ?? 0) : null;
-    const saldoPed = plan && enZsd !== null ? plan.plan - plan.vendido - enZsd : null;
-    const puede = saldoPed !== null ? Math.max(0, Math.min(r.pendiente, saldoPed)) : null;
-    let marcas = '';
-    if (pl && pl.ok && pl.grupo_encontrado){
-      if (!plan) marcas += ' <span class="tag" title="Este código no aparece en el plan del grupo">no está en el plan</span>';
-      else if (saldoPed !== null && r.pendiente > saldoPed){ marcas += ` <span class="tag err" title="El saldo del plan no alcanza para todo lo pendiente">sin saldo · alcanza ${fmt(puede)} de ${fmt(r.pendiente)}</span>`; alertas.sinPlan++; }
-      if (disp && r.pendiente > disp.cantidad){ marcas += ' <span class="tag warn" title="Lo pendiente supera el stock disponible">sin stock</span>'; alertas.sinStock++; }
-    }
-    return `<tr><td class="code">${esc(r.sku)}${r.fuera ? ' <span class="tag err">no está en el pedido</span>' : ''}</td><td>${esc(r.desc)}${marcas}</td>
-      <td class="n">${fmt(r.pedida)}</td><td class="n">${fmt(r.enEntrega + r.externa)}</td><td class="n">${fmt(r.pendiente)}</td>
-      <td class="n">${plan ? fmt(plan.plan) : '—'}</td><td class="n">${plan ? fmt(plan.vendido) : '—'}</td>
-      <td class="n">${enZsd !== null ? fmt(enZsd) : '—'}</td>
-      <td class="n">${saldoPed !== null ? `<b${saldoPed < r.pendiente ? ' class="warn-t"' : ''}>${fmt(saldoPed)}</b>` : '—'}</td>
-      <td class="n">${disp ? fmt(disp.cantidad) : '—'}${disp && disp.fecha ? `<div class="small muted">${fmtFecha(disp.fecha)}</div>` : ''}</td></tr>`;
-  }).join('');
-  const resumen = (alertas.sinPlan || alertas.sinStock)
-    ? `<p class="small">${alertas.sinPlan ? `<span class="tag err">${alertas.sinPlan} SKU sin saldo suficiente</span> ` : ''}${alertas.sinStock ? `<span class="tag warn">${alertas.sinStock} SKU sin stock suficiente</span>` : ''}</p>` : '';
-  return `${aviso}${resumen}<div class="scroll"><table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th>
-    <th class="n">Pedido</th><th class="n" title="Unidades de este pedido que ya están en entregas registradas en la plataforma">En entrega (pedido)</th><th class="n">Pendiente</th>
-    <th class="n">Plan mes</th><th class="n">Real</th><th class="n" title="Qty en entrega de ZSD001_03 (todas las entregas del cliente de ese producto)">En entrega (SAP)</th><th class="n" title="Plan − real − en entrega">Saldo SOP</th><th class="n">Disponible</th></tr></thead>
-    <tbody>${cuerpo}</tbody>
-    <tfoot><tr><td></td><td class="muted">Total</td><td class="n">${fmt(tot.pedida)}</td><td class="n">${fmt(tot.enEntrega + tot.externa)}</td><td class="n">${fmt(tot.pendiente)}</td><td colspan="5"></td></tr></tfoot></table></div>`;
-}
-
 /* ---- Cubicaje propio (port del cubicador del Excel) ---- */
-UI.cubicaje = {}; UI.verVisorCub = true; UI.visorVivo = true; UI.predist = {}; UI.verPredist = false;
+UI.cubicaje = {}; UI.verVisorCub = true; UI.autoCub = {}; UI.predist = {}; UI.verPredist = false;
 UI.cubOpts = {modo:'', caja_master:'', piso_pallet:''};   // lo que eligió el usuario, no se pierde al redibujar
 const modoElegido = cb => UI.cubOpts.modo || (cb && cb.modo) || 'MDA';
 async function cargarPredist(pedido){
@@ -312,6 +274,7 @@ async function cubicar(pedido, opts){
     toast(`Cubicado en ${UI.cubicaje[pedido].camiones.length} camión(es)`);
   } catch(e){ UI.cubicaje[pedido] = {error:e.message}; toast(e.message); }
   render();
+  Store.refresh();                  // el indicador de flujo (cubicaje hecho) llega sin esperar la próxima consulta
 }
 /* El camión se rearma solo cada vez que cambias una cantidad */
 /* El camión de un pedido usa el mismo visor de dirección fija que el cubicador:
@@ -344,21 +307,6 @@ document.addEventListener('click', ev => {
   render();
 });
 
-/* Camión en vivo: se rearma solo cada vez que cambias una cantidad */
-function panelVisorVivo(p){
-  const cb = UI.cubicaje[p.pedido];
-  if (!cb){ setTimeout(() => cubicar(p.pedido, {}), 0); return '<div class="panel" style="margin-bottom:16px"><div class="panel-b stack"><span class="skel" style="width:35%"></span><span class="skel"></span></div></div>'; }
-  if (cb.cargando) return '<p class="small muted" style="margin-bottom:12px">Recalculando el camión…</p>';
-  if (cb.error || !cb.camiones) return `<p class="small" style="margin-bottom:12px"><span class="tag warn">Camión</span> ${esc(cb.error || 'sin cubicaje')}</p>`;
-  return `<div class="panel ${cb.recalculando ? 'busy' : ''}" style="margin-bottom:16px" aria-busy="${!!cb.recalculando}"><div class="panel-b">
-    <div class="row"><b>Camión en vivo</b> <span class="small muted">se rearma al cambiar la carga</span><span class="spacer"></span>
-      <button class="btn quiet sm" data-act="ocultarVivo">${UI.visorVivo === false ? 'Mostrar' : 'Ocultar'}</button></div>
-    ${cb.camiones.length ? fichasCamion(p, cb) : '<span class="tag">Sin unidades</span>'}
-    ${cb.visor && UI.visorVivo !== false ? `<div style="margin-top:10px">${visorPedido(p, cb, 460)}</div>` : ''}
-    ${(cb.avisos || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(cb.avisos[0])}</p>` : ''}
-  </div></div>`;
-}
-
 function vistaCubicaje(p){
   const cb = UI.cubicaje[p.pedido];
   if (!cb) { setTimeout(() => cargarCubicaje(p.pedido), 0); return '<div class="stack"><span class="skel" style="width:30%"></span><span class="skel"></span></div>'; }
@@ -374,6 +322,10 @@ function vistaCubicaje(p){
     </div>`;
   if (cb.error || !cb.camiones){
     const falta = /analizar el pedido/.test(cb.error || '');
+    if (!falta && /todavía no está cubicado/.test(cb.error || '') && flujoDe(p).an && !UI.autoCub[p.pedido]){
+      UI.autoCub[p.pedido] = true; setTimeout(() => cubicar(p.pedido, {}), 0);       // la carga sale del análisis: no hay nada que pedir
+      return '<div class="stack"><span class="skel" style="width:30%"></span><span class="skel"></span></div>';
+    }
     return `<div class="empty"><h3>${cb.error && !/todavía no está cubicado/.test(cb.error) ? 'No se pudo cubicar' : 'Este pedido todavía no está cubicado'}</h3>
       <p>${esc(cb.error && !/todavía no está cubicado/.test(cb.error) ? cb.error : 'El cubicaje usa la carga del análisis, con tus ajustes manuales.')}</p>
       ${falta ? '<button class="btn primary" data-act="abrirAnalisis">Analizar pedido</button>' : form + seccionPredist(p, modoElegido(cb))}</div>`;

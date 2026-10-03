@@ -1,33 +1,12 @@
 /* Acciones en SAP, clientes, Base de Medidas y archivos.
    Parte de la interfaz de Trazabilidad Order Desk. */
 
-/* ============ Acciones en Excel y SAP ============ */
-async function cargarAcciones(){
-  try { UI.acciones = await api('GET', '/acciones'); } catch(e){ UI.acciones = null; }
-  render();
-}
-const accion1 = id => ((UI.acciones || {}).acciones || []).find(a => a.id === id);
-function botonAccion(id, extra){
-  const a = accion1(id); if (!a) return '';
-  const corriendo = UI.job && UI.job.estado === 'en_curso';
-  return `<button class="btn ${extra || ''}" data-accion="${esc(id)}" ${corriendo ? 'disabled' : ''} title="${esc(a.ayuda)}">${esc(a.label)}</button>`;
-}
+/* ============ Acciones en SAP (todo nativo: la plataforma no abre Excel) ============ */
 function estadoJob(){
   const j = UI.job; if (!j) return '';
   if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}. ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
   if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.archivo ? 'archivo guardado en el pedido' : j.resultado || 'terminó')}</p>`;
   return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}</p>`;
-}
-async function correrAccion(id, args){
-  const a = accion1(id); if (!a) return;
-  if (a.destructiva){
-    const r = await preguntar({titulo: a.label, texto: 'Esto es <b>irreversible</b> en SAP.', campos: [{nombre: 'c', etiqueta: `Escribe ${args[0]} para confirmar`}],
-      ok: a.label, peligro: true, validar: v => v.c === String(args[0]) ? '' : 'Lo escrito no coincide.'});
-    if (!r) return toast('Cancelado');
-  }
-  try { UI.job = await api('POST', '/acciones/' + encodeURIComponent(id), {args: args || []}); render(); }
-  catch(e){ toast(e.message); return; }
-  await seguirJob();
 }
 async function seguirJob(){
   while (UI.job && UI.job.estado === 'en_curso'){
@@ -64,14 +43,17 @@ async function analizarSap(){
   if (!body.cliente) return dErr('Ingresa el cliente.');
   dlg.close();
   const cfg = clone(config()); if (cfg.puesto !== body.puesto){ cfg.puesto = body.puesto; save('config', 'app', cfg); }
+  await lanzarAnalisis(pedido, body);
+}
+async function lanzarAnalisis(pedido, body){
   try { UI.job = await api('POST', `/analisis/${encodeURIComponent(pedido)}`, body); render(); }
   catch(e){ toast(e.message); return; }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok' && UI.job.datos){
     const d = UI.job.datos;
-    UI.job.resultado = `${d.posiciones} productos analizados · ${d.alertadas} con alerta`;
+    UI.job.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta`;
     if (d.aviso_sap) toast(d.aviso_sap);
-    delete UI.analisis[d.pedido]; delete UI.plan[d.pedido];
+    delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
     UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos';
     render();
   }
@@ -85,17 +67,41 @@ async function cargarAnalisis(pedido){
   catch(e){ UI.analisis[pedido] = {error:e.message}; }
   render();
 }
-async function ajustarCarga(pedido, sku, valor){
+async function ajustarCarga(pedido, sku, valor){ return ajustarLote(pedido, {[sku]: valor === '' ? null : valor}); }
+async function ajustarLote(pedido, ajustes){
   try {
-    const r = await api('PUT', `/analisis/${encodeURIComponent(pedido)}/carga`, {sku, carga:valor});
+    const r = await api('PUT', `/analisis/${encodeURIComponent(pedido)}/carga`, {ajustes});
     UI.analisis[pedido] = r;
     if (r.cubicaje) UI.cubicaje[pedido] = r.cubicaje;      // cubicaje y visor en vivo
     render();
+    Store.refresh();
   } catch(e){ toast(e.message); render(); }
 }
 const TAG_ALERTA = {'Sin stock':'err', 'Stock parcial':'warn', 'Limitado SOP':'warn', 'Completo':'ok'};
 const PIP_ALERTA = {'Sin stock':'err', 'Stock parcial':'warn', 'Limitado SOP':'lim', 'Completo':'ok'};
 const ICONO_ALERTA = Object.fromEntries(Object.entries(PIP_ALERTA).map(([k, t]) => [k, `<span class="pip ${t}"></span>`]));
+/* Lo primero que se ve al analizar: qué productos limitó el plan SOP y si se puede exceder */
+function avisosAnalisis(p, a, r){
+  const out = [];
+  if ((a.cliente || '').toUpperCase() !== (p.cliente || '').toUpperCase())
+    out.push(`<div class="aviso warn"><div><b>Este análisis es de ${esc(a.cliente)}, pero el pedido ahora es de ${esc(p.cliente || 'sin cliente')}.</b>
+      El plan SOP, lo facturado y la Qty en entrega siguen siendo los del cliente anterior.</div>
+      <button class="btn primary sm" data-act="reanalizarCliente">Analizar con ${esc(p.cliente || 'el cliente')}</button></div>`);
+  const lim = r.filas.filter(f => f.carga_calculada < f.qty_entrega);
+  if (!lim.length){
+    out.push(`<div class="aviso ok"><div><b>El plan SOP cubre todo lo pedido.</b> Se carga lo que pide el pedido, sin recortes.</div></div>`);
+  } else {
+    const pedidas = lim.reduce((x, f) => x + f.qty_entrega, 0), limite = lim.reduce((x, f) => x + f.carga_calculada, 0);
+    const cargadas = lim.reduce((x, f) => x + f.carga, 0);
+    const recortadas = lim.filter(f => f.carga < f.qty_entrega);
+    out.push(`<div class="aviso warn"><div><b>El plan SOP limita ${lim.length} producto${lim.length === 1 ? '' : 's'}.</b>
+      Se piden <b class="num">${fmt(pedidas)}</b> un. y el saldo del plan deja <b class="num">${fmt(limite)}</b>${cargadas > limite ? `; con la autorización, la carga queda en <b class="num">${fmt(cargadas)}</b>` : ': la carga ya está recortada a ese saldo'}.
+      Si tienes autorización para exceder el plan, súbela por producto en la columna Carga o para todos a la vez.</div>
+      <div class="row tight">${recortadas.length ? '<button class="btn sm" data-act="autorizarExceso">Autorizar exceder el plan</button>' : ''}
+        ${cargadas > limite ? '<button class="btn sm" data-act="limitarAlPlan">Volver al límite del plan</button>' : ''}</div></div>`);
+  }
+  return out.join('');
+}
 function vistaAnalisis(p){
   const a = UI.analisis[p.pedido];
   if (!a) { setTimeout(() => cargarAnalisis(p.pedido), 0); return '<p class="small muted">Cargando análisis…</p>'; }
@@ -108,23 +114,27 @@ function vistaAnalisis(p){
   const filas = r.filas.map(f => {
     const corte = f.alerta !== prev; prev = f.alerta;
     const st = f.stock || {};
-    return `<tr${corte ? ' class="corte"' : ''}>
+    const aut = (a.autorizaciones || {})[f.sku], limitada = f.carga_calculada < f.qty_entrega && !aut && f.carga < f.qty_entrega;
+    return `<tr class="${corte ? 'corte' : ''} ${limitada ? 'limitada' : ''}">
       <td><span class="tag ${TAG_ALERTA[f.alerta]}">${ICONO_ALERTA[f.alerta]} ${esc(f.alerta)}</span></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
       <td class="n">${fmt(f.plan)}</td><td class="n">${fmt(f.real)}</td><td class="n">${fmt(f.en_entrega)}</td>
       <td class="n"><b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b></td>
       <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--accent);font-weight:600' : ''}">
-        ${f.ajustada ? `<button class="btn quiet sm" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" aria-label="Volver al valor calculado">${ICON.undo}</button>` : ''}</td>
+        ${f.ajustada ? `<button class="btn quiet sm" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" aria-label="Volver al valor calculado">${ICON.undo}</button>` : ''}
+        ${aut ? `<span class="tag ink" title="Superó el plan SOP (calculado ${fmt(aut.calculada)}). Autorizó ${esc(aut.por)} el ${esc(aut.at.slice(0, 16).replace('T', ' '))}">Autorizado · ${esc(aut.por)}</span>` : ''}
+        ${limitada ? `<span class="tag warn" title="El pedido pide ${fmt(f.qty_entrega)} y el saldo del plan deja ${fmt(f.carga_calculada)}">de ${fmt(f.qty_entrega)}</span>` : ''}</td>
       <td class="n">${pct(f.ocupacion)}</td><td class="n">${pct(f.acumulado)}</td>
       <td class="small">${esc(f.disponibilidad)}</td>
       <td class="n">${f.stock ? fmt(st.cd30) : ''}</td><td class="n">${f.stock ? fmt(st.reserva_cd30) : ''}</td>
       <td class="n">${f.stock ? fmt(st.ec01) : ''}</td><td class="n">${f.stock ? fmt(st.tp01) : ''}</td></tr>`;
   }).join('');
   const cuenta = k => r.filas.filter(f => f.alerta === k).length;
-  return `${panelVisorVivo(p)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · grupo SOP ${esc(a.grupo_sop)} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
-      <button class="btn" data-act="abrirAnalisis">Volver a analizar</button></div>
+  return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)} · grupo SOP ${esc(a.grupo_sop)} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
+        <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
       <div>Ocupación total<b>${pct(r.ocupacion_total)}</b></div>
       <div>Carga total<b>${fmt(r.filas.reduce((s, f) => s + f.carga, 0))}</b></div>
@@ -136,7 +146,7 @@ function vistaAnalisis(p){
       <th class="n">Carga</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
       <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
     </tr></thead><tbody>${filas}</tbody></table></div>
-    <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado.</p>`;
+    <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado. Subirla por sobre el plan SOP queda registrado a tu nombre.</p>`;
 }
 async function buscarPorOc(valor){
   if (!valor) return;
@@ -162,23 +172,19 @@ async function leerSap(){
   if (UI.job && UI.job.estado === 'ok' && UI.job.datos){
     const d = UI.job.datos;
     UI.job.resultado = `${d.posiciones} productos leídos · ${d.agregadas} nuevos · ${d.actualizadas} actualizados`;
-    UI.sel = safeId(d.pedido); UI.sub = 'productos'; UI.view = 'pedidos'; delete UI.plan[d.pedido];
+    UI.sel = safeId(d.pedido); UI.sub = 'pendientes'; UI.view = 'pedidos';
     render();
   }
 }
 
 function seccionAcciones(){
-  const m = UI.acciones;
-  const directo = `<div class="panel" style="margin-bottom:20px"><div class="panel-h"><h2>SAP directo (sin Excel)</h2></div><div class="panel-b">
-    <p style="margin-top:0;max-width:72ch"><b>Analizar pedido</b> hace en un clic lo del botón 01 del Excel (VL01N, Qty en entrega, alertas y stock MMBE), sin abrir el Excel ni aceptar mensajes. Solo lectura.</p>
-    <div class="row"><button class="btn primary" data-act="abrirAnalisis" ${UI.job && UI.job.estado === 'en_curso' ? 'disabled' : ''}>Analizar pedido</button>
-    <button class="btn" data-act="abrirLecturaSap" ${UI.job && UI.job.estado === 'en_curso' ? 'disabled' : ''}>Solo leer VL01N</button></div>
+  const ocupado = UI.job && UI.job.estado === 'en_curso' ? 'disabled' : '';
+  return `<div class="panel" style="margin-bottom:20px"><div class="panel-h"><h2>SAP y bases</h2></div><div class="panel-b">
+    <p style="margin-top:0;max-width:72ch"><b>Analizar pedido</b> lee el pedido en VL01N, trae la Qty en entrega de ZSD001_03, calcula el saldo SOP y la carga, y consulta MMBE solo para los productos con alerta. Todo desde la plataforma: no abre Excel. Solo lee.</p>
+    <div class="row"><button class="btn primary" data-act="abrirAnalisis" ${ocupado}>Analizar pedido</button>
+    <button class="btn" data-act="abrirLecturaSap" ${ocupado}>Solo leer VL01N</button>
+    <button class="btn" data-act="actualizarBases" title="Vuelve a consultar el plan de ventas y los saldos en SQL Server">Actualizar bases</button></div>
     ${estadoJob()}</div></div>`;
-  if (!m || !m.habilitado) return directo;
-  return directo + `<div class="panel" style="margin-bottom:20px"><div class="panel-h"><h2>Ejecutar en Excel y SAP</h2></div><div class="panel-b">
-    <p style="margin-top:0;max-width:72ch">Corre las acciones de <b>${esc(m.libro)}</b> con Excel abierto y tu sesión de SAP iniciada. Las que tocan SAP usan tus credenciales.</p>
-    <div class="row">${m.acciones.filter(a => !a.destructiva && !a.args.filter(x => !x.opcional).length).map(a => botonAccion(a.id)).join('')}</div>
-    </div></div>`;
 }
 
 /* ============ Clientes y sus reglas de cubicaje ============ */

@@ -383,8 +383,48 @@ function rutaHTML(g, {entrega} = {}){
   }).join('')}</div>`;
 }
 
-/* Qué falta hacer en un pedido: el siguiente paso del camión con la cita más próxima */
+/* Flujo del pedido, como en el Excel: análisis → ajuste de carga → cubicaje → entregas (una por camión) → grupos.
+   Se deduce del resumen que guarda el servidor ("flujo:<pedido>") y de las entregas del pedido. */
+const FLUJO_ACCION = {analisis: 'Analizar pedido', ajuste: 'Revisar la carga', cubicaje: 'Cubicar', entregas: 'Crear entregas', grupos: 'Crear grupos'};
+function flujoDe(p){
+  const fl = Store.get('config', 'flujo:' + p.pedido) || {};
+  const an = fl.analisis || null, cb = fl.cubicaje || null;
+  const ents = entregasDe(p.pedido).filter(e => !e.anulada);
+  const camiones = cb ? cb.camiones : 0, conGrupo = ents.filter(e => e.grupo).length;
+  const desact = !!an && (an.cliente || '').toUpperCase() !== (p.cliente || '').toUpperCase();   // se cambió el cliente después de analizar
+  const lim = an ? an.limitadas : 0;
+  const hecho = {
+    analisis: !!an && !desact,
+    ajuste: !!an && !desact && (!!cb || lim === 0),
+    cubicaje: !!cb && camiones > 0,
+    entregas: ents.length > 0 && (!camiones || ents.length >= camiones),
+    grupos: ents.length > 0 && conGrupo === ents.length,
+  };
+  // un pedido que ya tiene entregas pero nunca se analizó aquí no necesita pasar por los primeros pasos
+  const omitido = !an && ents.length > 0 ? new Set(['analisis', 'ajuste', 'cubicaje']) : new Set();
+  const det = {
+    analisis: desact ? `era de ${an.cliente}` : an ? `${an.filas} productos` : 'pendiente',
+    ajuste: !an ? '' : lim ? `${lim} limitados por el plan${an.excedidas ? ` · ${an.excedidas} autorizados` : ''}` : 'sin límites',
+    cubicaje: cb ? `${camiones} ${camiones === 1 ? 'camión' : 'camiones'}` : '',
+    entregas: camiones ? `${ents.length} de ${camiones}` : ents.length ? String(ents.length) : '',
+    grupos: ents.length ? `${conGrupo} de ${ents.length}` : '',
+  };
+  const pasos = ['analisis', 'ajuste', 'cubicaje', 'entregas', 'grupos'].map(k => ({
+    k, t: {analisis: 'Análisis', ajuste: 'Ajuste de carga', cubicaje: 'Cubicaje', entregas: 'Entregas', grupos: 'Grupos'}[k],
+    hecho: hecho[k], omit: omitido.has(k), det: det[k]}));
+  const sig = pasos.find(x => !x.hecho && !x.omit) || null;
+  if (sig) sig.sig = true;
+  const tab = {analisis: 'analisis', ajuste: 'analisis', cubicaje: 'cubicaje', entregas: ents.length ? 'entregas' : 'cubicaje', grupos: 'grupos'};
+  return {pasos, sig, an, cb, ents, enPlataforma: !!an, desact, tabSig: sig ? tab[sig.k] : (ents.length ? 'entregas' : 'analisis'), tab};
+}
+
+/* Qué falta hacer en un pedido: el siguiente paso del flujo o, si ya está encaminado, el del camión con la cita más próxima */
 function proximaAccion(p){
+  const f = flujoDe(p);
+  if (f.enPlataforma && f.sig){
+    const extra = f.sig.k === 'ajuste' ? ` (${f.an.limitadas} limitados)` : f.sig.k === 'analisis' ? ' (cambió el cliente)' : '';
+    return {txt: FLUJO_ACCION[f.sig.k] + extra, tono: 'warn'};
+  }
   const gs = gruposDe(p.pedido).filter(g => g.next);
   if (!gs.length){
     const ents = entregasDe(p.pedido).filter(e => !e.anulada);

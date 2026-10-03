@@ -142,9 +142,62 @@ def estado(s: Session) -> dict:
                                    .order_by(A.c.at.desc()))]
     return {
         "pedidos": pedidos, "entregas": entregas,
-        "config": {c.clave: json.loads(c.valor or "{}") for c in s.scalars(select(Config)).all()},
+        "config": {c.clave: json.loads(c.valor or "{}")
+                   for c in s.scalars(select(Config).where(_config_liviana())).all()},
         "archivos": archivos, "version": version(s),
     }
+
+
+# Documentos grandes por pedido (análisis y cubicaje con todas sus filas): la web los pide de a uno.
+# En /estado y en la versión solo viaja su resumen, en "flujo:<pedido>".
+PESADAS = ("analisis:%", "cubicaje:%")
+
+
+def resumen_analisis(doc: dict) -> dict:
+    filas = (doc.get("resultado") or {}).get("filas", [])
+    return {"generado": doc.get("generado", ""), "cliente": doc.get("cliente", ""),
+            "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
+            "limitadas": sum(1 for f in filas if f["carga_calculada"] < f["qty_entrega"]),
+            "excedidas": sum(1 for f in filas if f.get("ajustada") and f["carga"] > f["carga_calculada"]),
+            "pedida": sum(f["qty_entrega"] for f in filas), "carga": sum(f["carga"] for f in filas)}
+
+
+def resumen_cubicaje(doc: dict) -> dict:
+    return {"generado": doc.get("generado", ""), "camiones": len(doc.get("camiones") or []),
+            "modo": doc.get("modo", "")}
+
+
+def anotar_flujo(s: Session, pedido: str, **partes: dict) -> None:
+    """Deja al día el resumen del flujo del pedido (análisis, cubicaje) que ve la web."""
+    c = s.get(Config, f"flujo:{pedido}")
+    actual = json.loads(c.valor) if c else {}
+    actual.update(partes)
+    guardar_config(s, f"flujo:{pedido}", actual)
+
+
+def rellenar_flujo(s: Session) -> int:
+    """Crea el resumen de los pedidos que se analizaron o cubicaron antes de que existiera."""
+    existentes = set(s.scalars(select(Config.clave).where(Config.clave.like("flujo:%"))).all())
+    n = 0
+    for c in s.scalars(select(Config).where(Config.clave.like("analisis:%") | Config.clave.like("cubicaje:%"))).all():
+        tipo, _, pedido = c.clave.partition(":")
+        try:
+            doc = json.loads(c.valor)
+            parte = {"analisis": resumen_analisis(doc)} if tipo == "analisis" else {"cubicaje": resumen_cubicaje(doc)}
+        except (ValueError, KeyError, TypeError):
+            continue
+        actual = json.loads(s.get(Config, f"flujo:{pedido}").valor) if f"flujo:{pedido}" in existentes else {}
+        if tipo in actual:
+            continue
+        anotar_flujo(s, pedido, **parte)
+        existentes.add(f"flujo:{pedido}")
+        n += 1
+    return n
+
+
+def _config_liviana():
+    from sqlalchemy import and_, not_
+    return and_(*[not_(Config.clave.like(p)) for p in PESADAS])
 
 
 def version(s: Session) -> str:
@@ -155,7 +208,7 @@ def version(s: Session) -> str:
         partes.append(f"{n}:{_iso(mx)}")
     n_arch, mx_arch = s.execute(select(func.count(), func.max(Archivo.at)).select_from(Archivo)).one()
     partes.append(f"{n_arch}:{_iso(mx_arch)}")
-    cfg = s.scalars(select(Config.valor).order_by(Config.clave)).all()
+    cfg = s.scalars(select(Config.valor).where(_config_liviana()).order_by(Config.clave)).all()
     partes.append(str(zlib.crc32("\x1f".join(cfg).encode())))
     return "|".join(partes)
 

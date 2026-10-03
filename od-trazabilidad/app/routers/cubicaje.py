@@ -409,6 +409,7 @@ def _cubicar(numero: str, body: dict, s: Session):
     except Exception as e:  # noqa: BLE001 - el cubicaje vale aunque el visor falle
         doc["avisos"] = list(doc["avisos"]) + [f"No se pudo generar el visor 3D: {str(e)[:150]}"]
     domain.guardar_config(s, _clave_cubicaje(numero), doc)      # sin visor_json: va en su archivo
+    domain.anotar_flujo(s, numero, cubicaje=domain.resumen_cubicaje(doc))
     _commit(s)
     if doc.get("visor_vivo"):
         doc["visor_json"] = datos_visor

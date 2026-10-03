@@ -210,6 +210,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .bar i{display:block;height:100%}
 .s-ent{background:var(--ok-solid)}.s-age{background:var(--sched)}.s-sin{background:var(--warn-solid)}
 .legend{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:var(--t-sm);color:var(--muted)}
+.legend > div > b{margin-left:6px;color:var(--ink)}
 .legend .sw{display:inline-block;width:10px;height:10px;border-radius:1px;margin-right:6px;vertical-align:-1px}
 .sw.s-pen{background:var(--track)}
 
@@ -284,6 +285,14 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .paso:active:not(.fixed){transform:scale(.97)}
 @media (hover:hover) and (pointer:fine){.paso:not(.fixed):not(.done):hover{background:var(--paper-3);color:var(--ink)}.paso.done:not(.fixed):hover{background:var(--ink-2)}.paso.done.last:not(.fixed):hover{filter:brightness(1.1)}}
 .paso:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;z-index:1}
+.ruta.flujo{grid-template-columns:repeat(5,minmax(0,1fr));margin:0}
+.label-flujo{padding:12px 12px 0}
+.paso .d{font-size:12px;font-weight:500;line-height:1.2;overflow-wrap:anywhere}
+.aviso{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;margin:0 0 12px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper-2);font-size:var(--t-sm)}
+.aviso.warn{border-color:var(--warn-solid);background:var(--warn-soft)}
+.aviso.ok{border-color:var(--ok-solid);background:var(--ok-soft)}
+.aviso > div:first-child{flex:1 1 320px;min-width:0}
+tr.limitada td{background:var(--warn-soft)}
 .ruta-leyenda{font-size:var(--t-xs);color:var(--muted);margin:0 0 2px}
 
 /* ---------- Por hacer ---------- */
@@ -434,6 +443,8 @@ dialog.angosto{width:min(460px,96vw)}
   .lab-num{font-size:26px}
   .label-code{align-items:flex-start}
   .ruta{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .ruta.flujo{grid-template-columns:minmax(0,1fr)}
+  .ruta.flujo .paso{flex-direction:row;align-items:center;gap:8px;border-right:0}
   .paso{border-bottom:1px solid var(--hair)}
   .paso:nth-child(3n){border-right:0}
   .fgrid{grid-template-columns:minmax(0,1fr)}

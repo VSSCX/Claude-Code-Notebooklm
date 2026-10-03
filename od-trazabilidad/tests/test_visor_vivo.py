@@ -28,7 +28,7 @@ def test_las_librerias_danadas_se_restauran_aunque_sean_mas_nuevas(tmp_path):
     falsa.write_text("// falsa", encoding="utf-8")
     futuro = time.time() + 3600
     os.utime(falsa, (futuro, futuro))
-    preparar_carpeta(destino, origen)
+    preparar_carpeta(destino, origen, forzar=True)
     assert falsa.read_text(encoding="utf-8") == "// libreria real " * 50
 
 
@@ -49,3 +49,35 @@ def test_datos_del_visor_van_en_su_archivo(tmp_path):
     assert leer_datos_visor(tmp_path, "libre_datos") == ""
     guardar_datos_visor(tmp_path, "libre_datos", '{"camiones":[1]}')
     assert leer_datos_visor(tmp_path, "libre_datos") == '{"camiones":[1]}'
+
+
+def test_con_copia_local_no_se_consulta_la_red_en_cada_calculo(tmp_path, monkeypatch):
+    """Preguntar a la carpeta de red costaba varios segundos por cálculo en los PC reales."""
+    import threading
+    from app.cubicaje import visor
+    origen, destino = tmp_path / "red", tmp_path / "local"
+    origen.mkdir()
+    for lib in visor.LIBRERIAS:
+        (origen / lib).write_text("// real " * 50, encoding="utf-8")
+    visor._revision.clear()
+    llamadas = []
+    real = visor._sincronizar
+    hecha = threading.Event()
+
+    def contada(d, o):
+        llamadas.append(1)
+        r = real(d, o)
+        hecha.set()
+        return r
+
+    monkeypatch.setattr(visor, "_sincronizar", contada)
+    assert preparar_carpeta(destino, origen) == []                # primera vez: copia
+    assert len(llamadas) == 1
+    for _ in range(20):
+        assert preparar_carpeta(destino, origen) == []
+    assert len(llamadas) == 1                                     # 20 cálculos más sin tocar la red
+    visor._revision[(str(destino), str(origen))] = 0.0            # pasaron 10 minutos: se revisa en segundo plano
+    hecha.clear()
+    assert preparar_carpeta(destino, origen) == []                # y no espera la red
+    assert hecha.wait(2)
+    assert len(llamadas) == 2

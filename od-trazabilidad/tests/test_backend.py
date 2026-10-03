@@ -293,3 +293,185 @@ def test_entrega_creada_en_sap_se_informa_aunque_falle_el_registro(monkeypatch, 
     assert [x["entrega"] for x in res] == ["8800001", "8800002"]          # siguió con el segundo camión
     assert all("no se pudo registrar" in x["incidencias"][0] for x in res)
     time.sleep(0.2)
+
+
+def test_consulta_sql_fallida_no_se_repite_en_cada_peticion(monkeypatch):
+    bases.limpiar_cache()
+    intentos = []
+
+    def cae():
+        intentos.append(1)
+        raise ConnectionError("servidor sin respuesta")
+
+    for _ in range(6):
+        with pytest.raises(ConnectionError):
+            bases._cache("prueba", cae)
+    assert len(intentos) == 1                  # antes cada petición esperaba el timeout completo
+    bases.limpiar_cache()                      # cambiar la conexión o refrescar lo permite de nuevo
+    with pytest.raises(ConnectionError):
+        bases._cache("prueba", cae)
+    assert len(intentos) == 2
+    assert bases._cache("ok", lambda: 5) == 5
+    bases.limpiar_cache()
+
+
+# ---------- flujo del pedido: análisis → ajuste → cubicaje ----------
+def _analisis_de_prueba(numero="4005100000"):
+    from app.analisis import calcular
+    pos = [{"sku": "9000", "qty_entrega": 100, "qty_pendiente": 100},       # el plan deja 40: limitado
+           {"sku": "9001", "qty_entrega": 20, "qty_pendiente": 20}]         # el plan alcanza: completo
+    plan = {"9000": {"plan": 100, "vendido": 60}, "9001": {"plan": 500, "vendido": 0}}
+    med = {"9000": {"desc": "9000 PRODUCTO A", "max_camion": 200}, "9001": {"desc": "9001 PRODUCTO B", "max_camion": 100}}
+    res = calcular(pos, plan, {}, med, {})
+    return {"pedido": numero, "cliente": "PARIS", "grupo_sop": "PARIS", "puesto": "PN01", "fecha": "2026-10-01",
+            "posiciones": pos, "en_entrega": {}, "plan": plan, "medidas": med, "disponibilidad": {},
+            "stock": {}, "ajustes": {}, "resultado": res, "generado": "2026-10-01"}
+
+
+def test_el_analisis_limita_la_carga_al_saldo_del_plan():
+    filas = {f["sku"]: f for f in _analisis_de_prueba()["resultado"]["filas"]}
+    assert filas["9000"]["saldo"] == 40 and filas["9000"]["carga"] == 40       # 100 pedidas, el plan deja 40
+    assert filas["9000"]["alerta"] == "Limitado SOP"
+    assert filas["9001"]["carga"] == 20 and filas["9001"]["alerta"] == "Completo"
+
+
+def test_ajuste_por_lote_registra_quien_autoriza_exceder_el_plan(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        doc = _analisis_de_prueba()
+        domain.guardar_config(s, "analisis:4005100000", doc)
+        domain.anotar_flujo(s, "4005100000", analisis=domain.resumen_analisis(doc))
+        s.commit()
+    r = c.put("/api/analisis/4005100000/carga", json={"ajustes": {"9000": 100}}, headers={"x-usuario": "Ana"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["ajustes"] == {"9000": 100.0}
+    assert d["autorizaciones"]["9000"]["por"] == "Ana" and d["autorizaciones"]["9000"]["calculada"] == 40
+    fila = next(f for f in d["resultado"]["filas"] if f["sku"] == "9000")
+    assert fila["carga"] == 100 and fila["ajustada"]
+    # bajar por debajo de lo calculado no es exceder: no hay autorización
+    d = c.put("/api/analisis/4005100000/carga", json={"ajustes": {"9000": 30}}).json()
+    assert "9000" not in d["autorizaciones"]
+    # volver al valor calculado
+    d = c.put("/api/analisis/4005100000/carga", json={"ajustes": {"9000": None}}).json()
+    assert d["ajustes"] == {} and d["autorizaciones"] == {}
+    # un SKU que no es del pedido se rechaza
+    assert c.put("/api/analisis/4005100000/carga", json={"ajustes": {"7777": 5}}).status_code == 422
+    # la forma de un solo SKU sigue funcionando
+    assert c.put("/api/analisis/4005100000/carga", json={"sku": "9001", "carga": 15}).status_code == 200
+
+
+def test_estado_lleva_el_resumen_del_flujo_y_no_los_documentos_pesados(datos):
+    with SessionLocal() as s:
+        doc = _analisis_de_prueba()
+        domain.guardar_config(s, "analisis:4005100000", doc)
+        domain.guardar_config(s, "cubicaje:4005100000", {"camiones": [{}, {}], "modo": "MDA", "generado": "x", "filas": []})
+        domain.anotar_flujo(s, "4005100000", analisis=domain.resumen_analisis(doc))
+        s.commit()
+        antes = domain.version(s)
+        e = domain.estado(s)
+    assert "analisis:4005100000" not in e["config"] and "cubicaje:4005100000" not in e["config"]
+    fl = e["config"]["flujo:4005100000"]["analisis"]
+    assert fl["limitadas"] == 1 and fl["filas"] == 2 and fl["pedida"] == 120 and fl["carga"] == 60
+    with SessionLocal() as s:                          # cambiar un documento pesado sin resumen no mueve la versión
+        domain.guardar_config(s, "analisis:4005100000", {**doc, "generado": "otro"})
+        s.commit()
+        assert domain.version(s) == antes
+
+
+def test_los_pedidos_analizados_antes_reciben_su_resumen(datos):
+    with SessionLocal() as s:
+        domain.guardar_config(s, "analisis:4005100000", _analisis_de_prueba())
+        domain.guardar_config(s, "cubicaje:4005100000", {"camiones": [{}], "modo": "SDA STOCK", "generado": "g"})
+        s.commit()
+        assert domain.rellenar_flujo(s) == 2
+        s.commit()
+        assert domain.rellenar_flujo(s) == 0           # una segunda vez no repite
+        fl = domain.estado(s)["config"]["flujo:4005100000"]
+    assert fl["analisis"]["limitadas"] == 1 and fl["cubicaje"] == {"generado": "g", "camiones": 1, "modo": "SDA STOCK"}
+
+
+def test_el_cliente_editado_en_configuracion_manda_sobre_el_de_fabrica(datos):
+    from app.routers.comun import _sop_de
+    with SessionLocal() as s:
+        assert _sop_de("FALABELLA", s)[1] == "237141"                      # de fábrica
+        from app.integrations import clientes as cli
+        cli.guardar(s, {"nombre": "FALABELLA", "codigo": "999111"})
+        cli.guardar(s, {"nombre": "CLIENTE NUEVO", "grupo_sop": "REGION 2", "codigo": "555", "pallet": [120, 100, 150]})
+        s.commit()
+        assert _sop_de("FALABELLA", s) == ("FALABELLA", "999111")
+        assert _sop_de("CLIENTE NUEVO", s) == ("REGION 2", "555")
+        assert _sop_de("LA POLAR", s)[0] == "ABC"                          # las reglas del Excel se mantienen
+
+
+def _esperar(c, jid):
+    for _ in range(200):
+        t = c.get(f"/api/acciones/trabajos/{jid}").json()
+        if t["estado"] != "en_curso":
+            return t
+        time.sleep(0.05)
+    raise AssertionError("el trabajo no terminó")
+
+
+def test_reanalizar_con_otro_cliente_trae_su_plan_su_codigo_y_rehace_el_cubicaje(monkeypatch, datos):
+    """Cambiar el cliente de un pedido: el análisis usa el grupo SOP y el código del cliente NUEVO,
+    el pedido queda con ese cliente y el cubicaje se rehace con la carga nueva."""
+    from fastapi.testclient import TestClient
+    from app.integrations import base_medidas, sap
+    from app.main import app
+    from app.models import Medida
+    c = TestClient(app)
+    with SessionLocal() as s:
+        for sku in ("9000", "9001"):
+            s.add(Medida(sku=sku, descripcion=f"{sku} PRODUCTO {sku}", piezas=1, largo=60, ancho=50, alto=40,
+                         peso=10, apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
+        p = s.scalar(select(Pedido).where(Pedido.pedido == "4005100000"))
+        p.cliente = "FALABELLA"                                        # lo que quedó tras "Editar pedido"
+        domain.guardar_config(s, "analisis:4005100000", _analisis_de_prueba())            # análisis viejo, de PARIS
+        domain.guardar_config(s, "cubicaje:4005100000", {"modo": "MDA", "camiones": [], "generado": "x", "filas": []})
+        s.commit()
+    llamadas = {}
+    pos = [SimpleNamespace(sku="9000", qty_entrega=100, qty_pendiente=100),
+           SimpleNamespace(sku="9001", qty_entrega=20, qty_pendiente=20)]
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(posiciones=pos, aviso=""))
+
+    def zsd(codigo, skus, carpeta, nombre):
+        llamadas["codigo"] = codigo
+        return [{"Nombre Codigo de Material": "PRODUCTO 9000", "Qty. En Entrega": 10}]
+    monkeypatch.setattr(sap, "zsd001_03", zsd)
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda grupo: llamadas.setdefault("grupo", grupo) and
+                        {"9000": {"plan": 300, "vendido": 100, "pdte_mes": 0, "tipo": "CONSENSO"},
+                         "9001": {"plan": 500, "vendido": 0, "pdte_mes": 0, "tipo": "CONSENSO"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {})
+    r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "FALABELLA", "fecha": "2026-10-01"})
+    assert r.status_code == 202, r.text
+    t = _esperar(c, r.json()["id"])
+    assert t["estado"] == "ok", t
+    assert llamadas["codigo"] == "237141"                              # el código de FALABELLA, no el de PARIS
+    assert llamadas["grupo"] == "FALABELLA"
+    assert t["datos"]["limitadas"] == 0 and t["datos"]["recubicado"] is True
+    doc = c.get("/api/analisis/4005100000").json()
+    assert doc["cliente"] == "FALABELLA" and doc["grupo_sop"] == "FALABELLA"
+    nueva = {f["sku"]: f for f in doc["resultado"]["filas"]}
+    assert nueva["9000"]["saldo"] == 190 and nueva["9000"]["carga"] == 100       # 300 − 100 − 10 en entrega
+    est = c.get("/api/estado").json()
+    assert next(x for x in est["pedidos"] if x["pedido"] == "4005100000")["cliente"] == "FALABELLA"
+    assert est["config"]["flujo:4005100000"]["analisis"]["cliente"] == "FALABELLA"
+    assert est["config"]["flujo:4005100000"]["cubicaje"]["camiones"] >= 1        # el cubicaje se rehizo
+    time.sleep(0.2)
+
+
+def test_cliente_sin_codigo_no_llama_a_sap_con_uno_inventado(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import sap
+    from app.main import app
+    c = TestClient(app)
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(
+        posiciones=[SimpleNamespace(sku="9000", qty_entrega=1, qty_pendiente=1)], aviso=""))
+    r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "CLIENTE DESCONOCIDO"})
+    t = _esperar(c, r.json()["id"])
+    assert t["estado"] == "error" and "código de solicitante" in t["error"]
