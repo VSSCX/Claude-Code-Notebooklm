@@ -1117,3 +1117,52 @@ def test_sda_predistribuido_a_piso_va_por_sucursal_y_destino_manda(datos):
     # Destino = Por sucursal sobre MDA usa el reparto
     p = _libre(c, modo="MDA", lineas=lineas, predistribuido=reparto, destino="SUCURSAL")
     assert {f["sucursal"] for f in p["filas"]} == {"NORTE", "SUR"}
+
+
+# --- Grupos de carga: el 1 al fondo, cada grupo empieza donde terminó el anterior -----------------
+
+def test_lector_lee_grupos_e_ignora_un_grupo_unico():
+    from app import cargas
+    arch = _archivo_cliente([("a", 1, "X", "9000", "9000", "A", 5, 1), ("b", 1, "X", "9001", "9001", "B", 3, 2),
+                             ("c", 1, "X", "9002", "9002", "C", 2, "")],
+                            ["ID", "Código Local", "Local", "SKU", "Cód. Prov.", "Descripción", "Cantidad", "Grupo de carga"],
+                            titulo=False)
+    lec = cargas.leer_carga(arch, "g.xlsx", {"9000", "9001", "9002"})
+    assert [(f.sku, f.grupo) for f in lec.filas] == [("9000", 1), ("9001", 2), ("9002", 0)]
+    # la columna Grupo de un cliente que numera su pedido (todas iguales) no ordena nada
+    igual = _archivo_cliente([("a", 1, "X", "9000", "9000", "A", 5, "1390888"), ("b", 1, "X", "9001", "9001", "B", 3, "1390888")],
+                             titulo=False)
+    lec = cargas.leer_carga(igual, "g.xlsx", {"9000", "9001"})
+    assert all(f.grupo == 0 for f in lec.filas) and "grupo" not in lec.columnas
+
+
+def test_grupos_se_cargan_en_bloques_en_orden(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        for sku in ("9000", "9001", "9002"):
+            _medida(s, sku, f"{sku} P")
+        s.commit()
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("g.xlsx", _excel_carga([("9000", 20, ""), ("9001", 20, ""), ("9002", 10, "")]))})
+    assert r.status_code == 200
+    # con la columna Grupo (4.ª de la plantilla)
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active; ws.title = "Carga"
+    ws.append(["SKU", "Unidades", "Sucursal (opcional)", "Grupo (opcional)"])
+    ws.append(["9002", 10, "", 2]); ws.append(["9000", 20, "", 1]); ws.append(["9001", 20, "", 1])
+    b = BytesIO(); wb.save(b)
+    d = c.post("/api/cubicaje-libre/importar", files={"file": ("g.xlsx", b.getvalue())}).json()
+    assert d["modo"] == "MDA" and len(d["grupos"]) == 3                       # el modo elegido no cambia
+    assert d["unidades"] == 50
+    assert any("2 grupos" in a for a in d["avisos"])
+    # el grupo 1 queda en el fondo (X menor) y el 2 después
+    x = {}
+    for p in d["visor_json"]["placed"] if "placed" in d.get("visor_json", {}) else []:
+        x.setdefault(p.get("suc"), []).append(p)
+    # Destino = Stock ignora los grupos: toda la carga junta
+    from app.routers.cubicaje import _reparto_por_grupos
+    assert [f.sucursal for f in _reparto_por_grupos(d["grupos"])] == ["GRUPO 1".replace("GRUPO 1", "GRUPO 01")] * 2 + ["GRUPO 02"]
+    juntos = c.post("/api/cubicaje-libre", json={"cliente": "", "modo": "MDA", "lineas": d["lineas"], "grupos": d["grupos"], "destino": "STOCK"}).json()
+    assert juntos["unidades"] == 50 and not any("grupos" in a for a in juntos["avisos"])

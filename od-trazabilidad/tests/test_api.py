@@ -1059,7 +1059,7 @@ def test_plantilla_y_carga_masiva(c, tmp_path):
     assert r.status_code == 200 and "plantilla_cubicaje.xlsx" in r.headers["content-disposition"]
     wb = load_workbook(BytesIO(r.content))
     assert wb.sheetnames == ["Carga", "Cómo se usa"]
-    assert [x.value for x in wb["Carga"][1]] == ["SKU", "Unidades", "Sucursal (opcional)"]
+    assert [x.value for x in wb["Carga"][1]] == ["SKU", "Unidades", "Sucursal (opcional)", "Grupo (opcional)"]
 
     # armar un archivo como lo haría el usuario
     libro = Workbook(); ws = libro.active; ws.title = "Carga"

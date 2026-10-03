@@ -582,6 +582,18 @@ def _merge_resultados(partes: list, pallet: list) -> dict:
             "unidades": sum(f["unidades"] for f in (filas04 or filas))}
 
 
+def _reparto_por_grupos(grupos: list) -> list:
+    """Cada grupo es un bloque, en orden numérico; lo que no trae grupo va al final."""
+    from ..cubicaje.mda_predist import FilaPredist
+    numeros = sorted({int(x.get("grupo") or 0) for x in grupos if int(x.get("grupo") or 0) > 0})
+    ancho = len(str(numeros[-1])) if numeros else 1       # con ceros a la izquierda "GRUPO 02" ordena antes que "GRUPO 10"
+    def etiqueta(g):
+        return f"GRUPO {g:0{max(ancho, 2)}d}" if g else "SIN GRUPO"
+    orden = sorted(grupos, key=lambda x: (int(x.get("grupo") or 0) or 10 ** 9))
+    return [FilaPredist(sucursal=etiqueta(int(x.get("grupo") or 0)), sku=domain.norm_sku(x.get("sku")),
+                        unidades=float(x.get("qty") or 0)) for x in orden]
+
+
 def _avisos_reparto(lineas: list, pre: list) -> list[str]:
     """Reglas del predistribuido: la carga de cada SKU es el tope del reparto, y lo que no tiene sucursal no se carga."""
     carga: dict[str, float] = {}
@@ -668,6 +680,15 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
            for x in (body.get("predistribuido") or [])
            if cache.get(domain.norm_sku(x.get("sku")).lower()) is not None]      # sin medidas no se reparte
 
+    # Grupos de carga: el 1 va al fondo y cada grupo empieza donde terminó el anterior. Es el mismo mecanismo
+    # de bloques de un predistribuido, con el grupo en lugar de la sucursal.
+    grupos = [x for x in (body.get("grupos") or []) if cache.get(domain.norm_sku(x.get("sku")).lower()) is not None]
+    por_grupos = bool(grupos) and not pre and str(body.get("destino") or "").upper() != "STOCK"
+    if por_grupos:
+        pre = _reparto_por_grupos(grupos)
+        if "PREDISTRIBUIDO" not in modo:
+            modo = "SDA PREDISTRIBUIDO" if "SDA" in modo else "MDA PREDISTRIBUIDO"
+
     partes = []
     if posiciones:
         entrada = Entrada(cliente=cliente or "SIN CLIENTE", modo=modo, posiciones=posiciones,
@@ -725,6 +746,12 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
 
     if "PREDISTRIBUIDO" in modo and pre:
         doc["avisos"] = list(doc.get("avisos") or []) + _avisos_reparto(lineas, pre)
+    if por_grupos:
+        n_grupos = len({x.sucursal for x in pre})
+        doc["avisos"] = [f"Cubicado en {n_grupos} grupos: el primero va al fondo y cada grupo empieza donde terminó el anterior."
+                         + (" En pallets, cada grupo arma sus pallets." if "SDA" in modo and not piso_elegido == "PISO" else ""),
+                         *(doc.get("avisos") or [])]
+    doc["grupos"] = body.get("grupos") or []
 
     try:
         from pathlib import Path as _Path
@@ -805,7 +832,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     return doc
 
 
-PLANTILLA_COLS = ["SKU", "Unidades", "Sucursal (opcional)"]
+PLANTILLA_COLS = ["SKU", "Unidades", "Sucursal (opcional)", "Grupo (opcional)"]
 
 
 @router.get("/cubicaje-libre/plantilla")
@@ -823,14 +850,14 @@ def plantilla_carga(s: Session = Depends(get_session)):
     ws.append(PLANTILLA_COLS)
     ejemplos = med_mod.filas_para_cubicaje(s)[:3]
     for fila in ejemplos:
-        ws.append([fila[0], 10, ""])
+        ws.append([fila[0], 10, "", ""])
     if not ejemplos:
         ws.append(["900081624", 10, ""])
     for celda in ws[1]:
         celda.font = Font(bold=True, color="FFFFFF")
         celda.fill = PatternFill("solid", fgColor="1A2B4A")
         celda.alignment = Alignment(horizontal="center")
-    for col, ancho in zip("ABC", (18, 12, 22)):
+    for col, ancho in zip("ABCD", (18, 12, 22, 18)):
         ws.column_dimensions[col].width = ancho
     ws.freeze_panes = "A2"
 
@@ -843,6 +870,9 @@ def plantilla_carga(s: Session = Depends(get_session)):
         ["2. SKU: el código del producto. Si tiene caja master, usa C delante (C900081624)."],
         ["3. Sucursal: solo si el cliente es predistribuido. Repite el producto en una fila por sucursal."],
         ["   Con sucursales, el cubicador pasa solo a MDA o SDA predistribuido."],
+        ["4. Grupo: 1, 2, 3… para cargar por tandas. El grupo 1 va al fondo del camión y cada grupo"],
+        ["   empieza donde terminó el anterior. Lo que no tenga grupo se carga al final."],
+        ["   Si usas sucursal, el grupo no se aplica (manda la sucursal)."],
         [""],
         ["Con el archivo del cliente, sin tocarlo"],
         ["Puedes subir directo el predistribuido que manda el cliente (.xlsx, .xls o .csv)."],
@@ -884,22 +914,27 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     lineas, sin_medidas, reparto = [], [], []
     errores = list(lec.errores)
     conocidos = _conocidos(s)
-    leidas = []                                      # (fila, sku, qty, sucursal)
+    leidas = []                                      # (fila, sku, qty, sucursal, grupo)
     for f in lec.filas:
         if f.sku.lower() not in conocidos:
             sin_medidas.append(f.sku)              # se queda en la carga: se avisa con sus unidades y se cubica cuando tenga medidas
-        leidas.append((f.n, f.sku, f.qty, f.sucursal))
+        leidas.append((f.n, f.sku, f.qty, f.sucursal, f.grupo))
 
     # Con sucursales, el archivo es un reparto: una fila por sucursal y SKU. Las unidades
     # por SKU se suman (es el tope de carga) y el detalle va al motor como predistribuido.
     con_reparto = any(x[3] for x in leidas)
     por_sku: dict = {}
-    for i, sku, qty, suc in leidas:
+    grupos: list = []
+    if con_reparto and any(x[4] for x in leidas):
+        lec.notas.append("El archivo trae sucursal y grupo: se usó la sucursal y se ignoró el grupo.")
+    for i, sku, qty, suc, grupo in leidas:
         if con_reparto and not suc:
             errores.append(f"fila {i}: falta la sucursal (el archivo trae reparto por sucursal)")
             continue
         if con_reparto:
             reparto.append({"sucursal": suc, "sku": sku, "qty": qty})
+        elif grupo or any(x[4] for x in leidas):
+            grupos.append({"grupo": grupo, "sku": sku, "qty": qty})
         l = por_sku.setdefault(sku, {"sku": sku, "qty": 0})
         l["qty"] += qty
     lineas = list(por_sku.values())
@@ -915,6 +950,7 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     if str(reemplazar).lower() not in ("si", "sí", "true", "1"):
         previas = anterior.get("lineas") or []
         reparto = (anterior.get("predistribuido") or []) + reparto
+        grupos = (anterior.get("grupos") or []) + grupos
     juntas = {l["sku"]: dict(l) for l in previas}
     for l in lineas:
         if l["sku"] in juntas:
@@ -934,7 +970,7 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
         aviso_modo = (f"El archivo trae reparto por sucursal: se cubicó en {modo}"
                       + (f", {caja_master.lower()}" if "SDA" in modo else "")
                       + ". Los modos de stock no separan por sucursal.")
-    doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto,
+    doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto, "grupos": grupos,
                           "cliente": anterior.get("cliente") or "", "modo": modo,
                           "caja_master": caja_master, "vista": anterior.get("vista") or "rampla",
                           "piso_pallet": piso_pallet or anterior.get("piso_pallet") or "",
@@ -942,9 +978,9 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     if aviso_modo:
         doc["avisos"] = [aviso_modo, *(doc.get("avisos") or [])]
     doc["importadas"] = len(lineas)
+    doc["lectura"] = lec.resumen()
     doc["sin_medidas_archivo"] = sin_medidas
     doc["errores_archivo"] = errores
-    doc["lectura"] = lec.resumen()
     return doc
 
 

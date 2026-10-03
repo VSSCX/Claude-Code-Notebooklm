@@ -32,6 +32,8 @@ ALIAS = {
     "unidades": ["unidades", "cantidad", "qty", "unid", "cant", "unidades pedidas", "cantidad pedida",
                  "cantidad a despachar", "unidades a despachar", "un"],
     "bulto": ["unidades por bulto", "por bulto", "bulto", "un por bulto"],
+    # grupos de carga: el 1 va al fondo del camión y cada grupo empieza donde terminó el anterior
+    "grupo": ["grupo", "grupo de carga", "n grupo", "numero de grupo", "orden de carga", "bloque"],
     "descripcion": ["descripcion", "desc", "producto", "nombre producto", "descripcion producto"],
 }
 NOMBRE_CAMPO = {"sucursal": "Sucursal", "sku": "SKU", "unidades": "Unidades"}
@@ -45,6 +47,7 @@ class Fila:
     qty: float
     sucursal: str = ""
     bulto: int = 0
+    grupo: int = 0                    # 0 = sin grupo
 
 
 @dataclass
@@ -218,6 +221,7 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
     j_suc_cod = (cols.get("sucursal_cod") or [None])[0]
     j_qty = cols["unidades"][0] if "unidades" in cols else 1
     j_bulto = (cols.get("bulto") or [None])[0]
+    j_grupo = (cols.get("grupo") or [None])[0]
 
     lec.columnas = {"sku": etiqueta(j_sku), "unidades": etiqueta(j_qty)}
     if j_suc is not None:
@@ -226,10 +230,14 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
         lec.columnas["sucursal"] = etiqueta(j_suc_cod)
         lec.notas.append("El archivo trae el código de la sucursal pero no su nombre.")
 
+    if j_grupo is not None:
+        lec.columnas["grupo"] = etiqueta(j_grupo)
+
     def celda(f, j):
         return f[j] if j is not None and j < len(f) else None
 
     suma: dict[tuple, Fila] = {}
+    grupo_invalido = False
     for n, f in datos:
         sku_v, qty_v = celda(f, j_sku), celda(f, j_qty)
         suc = celda(f, j_suc)
@@ -261,12 +269,28 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
                 lec.errores.append(f"fila {n}: '{celda(f, j_bulto)}' no es una cantidad por bulto")
                 continue
             bulto = max(0, int(b))
-        clave = (suc, sku.lower())
+        grupo = 0
+        if j_grupo is not None and not _vacio(celda(f, j_grupo)):
+            g = _cantidad(celda(f, j_grupo))
+            if g is None or g < 0 or g != int(g):
+                grupo_invalido = True                 # no es una columna de grupos de carga (p. ej. un lote en texto)
+            else:
+                grupo = int(g)
+        clave = (suc, sku.lower(), grupo)
         if clave in suma:
             suma[clave].qty += qty
         else:
-            suma[clave] = Fila(n=n, sku=sku, qty=qty, sucursal=suc, bulto=bulto)
+            suma[clave] = Fila(n=n, sku=sku, qty=qty, sucursal=suc, bulto=bulto, grupo=grupo)
     lec.filas = list(suma.values())
+    # un solo grupo (o la columna "Grupo" de un cliente que numera su pedido) no ordena nada: se ignora
+    if grupo_invalido:
+        lec.notas.append(f"La columna «{lec.columnas.get('grupo')}» no trae números de grupo: se ignoró.")
+    if grupo_invalido or len({f.grupo for f in lec.filas}) <= 1:
+        for f in lec.filas:
+            f.grupo = 0
+        lec.columnas.pop("grupo", None)
+    elif j_grupo is not None:
+        lec.notas.append(f"Grupos de carga: {len({f.grupo for f in lec.filas})}. El grupo 1 va al fondo y cada grupo empieza donde terminó el anterior.")
     if lec.leidas > len(lec.filas) and lec.filas and not lec.errores:
         lec.notas.append(f"{lec.leidas} filas del archivo se sumaron en {len(lec.filas)} (misma sucursal y producto).")
     return lec

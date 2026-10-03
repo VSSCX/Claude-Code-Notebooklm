@@ -60,7 +60,7 @@ const pctCub = x => (100 * (x || 0)).toFixed(1).replace('.', ',') + '%';
 function entradaDe(doc){
   return {cliente: doc.cliente || '', modo: doc.modo || 'MDA', vista: doc.vista || 'rampla',
           caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '',
-          predistribuido: doc.predistribuido || [], pedido: doc.pedido || '',
+          predistribuido: doc.predistribuido || [], grupos: doc.grupos || [], pedido: doc.pedido || '',
           lineas: (doc.lineas || []).map(l => ({sku: String(l.sku), qty: +l.qty || 0})),
           pallet_n: doc.pallet_visto || 0};
 }
@@ -98,7 +98,7 @@ async function correrCalculos(){
     while (UI.cubSucio){
       UI.cubSucio = false;
       // sin reparto, un modo predistribuido calcula una carga vacía: el panel pide el archivo
-      UI.cubFalta = efectivoCub(UI.cubIn).pred && !(UI.cubIn.predistribuido || []).length;
+      UI.cubFalta = efectivoCub(UI.cubIn).pred && !(UI.cubIn.predistribuido || []).length && !(UI.cubIn.grupos || []).length;
       const gen = UI.cubGen;
       try {
         const r = await api('POST', '/cubicaje-libre', clone(UI.cubIn));
@@ -190,11 +190,12 @@ function quitarLinea(i){
    MDA + "en pallets" se cubica en pallets, y SDA + "a piso" va directo al camión sin armar pallets. */
 function efectivoCub(inp){
   const base = inp.modo || 'MDA', sda = /SDA/.test(base);
-  const pred = inp.destino === 'SUCURSAL' || (inp.destino !== 'STOCK' && /PREDISTRIBUIDO/.test(base));
+  const grupos = (inp.grupos || []).length > 0 && !(inp.predistribuido || []).length && inp.destino !== 'STOCK';
+  const pred = inp.destino === 'SUCURSAL' || (inp.destino !== 'STOCK' && /PREDISTRIBUIDO/.test(base)) || grupos;
   const pallets = inp.piso_pallet === 'PALLET' || (inp.piso_pallet !== 'PISO' && sda);
   const modo = (pallets ? 'SDA ' : 'MDA') + (pallets ? (pred ? 'PREDISTRIBUIDO' : 'STOCK') : (pred ? ' PREDISTRIBUIDO' : ''));
   return {modo, pallets, pred, pideCaja: base !== 'MDA' || inp.piso_pallet === 'PALLET' || inp.destino === 'SUCURSAL',
-          texto: `${pallets ? 'En pallets' : 'A piso'} · ${pred ? 'por sucursal' : 'stock'}`};
+          grupos, texto: `${pallets ? 'En pallets' : 'A piso'} · ${grupos ? 'por grupos' : pred ? 'por sucursal' : 'stock'}`};
 }
 function cambiarOpcionCub(campo, valor){
   const c = UI.cubIn;
@@ -215,12 +216,12 @@ function cambiarOpcionCub(campo, valor){
   pedirCalculo();
 }
 function quitarRepartoCub(){
-  UI.cubIn.predistribuido = []; UI.cubIn.destino = ''; UI.cubIn.modo = /SDA/.test(UI.cubIn.modo) ? 'SDA STOCK' : 'MDA';
+  UI.cubIn.predistribuido = []; UI.cubIn.grupos = []; UI.cubIn.destino = ''; UI.cubIn.modo = /SDA/.test(UI.cubIn.modo) ? 'SDA STOCK' : 'MDA';
   pedirCalculo();
 }
 function vaciarCub(){
-  const previo = {lineas: clone(UI.cubIn.lineas), pedido: UI.cubIn.pedido, predistribuido: UI.cubIn.predistribuido};
-  Object.assign(UI.cubIn, {lineas: [], pedido: '', predistribuido: []});
+  const previo = {lineas: clone(UI.cubIn.lineas), pedido: UI.cubIn.pedido, predistribuido: UI.cubIn.predistribuido, grupos: UI.cubIn.grupos};
+  Object.assign(UI.cubIn, {lineas: [], pedido: '', predistribuido: [], grupos: []});
   UI.cubCam = 0; pedirCalculo();
   if (previo.lineas.length) toast('Carga vaciada', {texto: 'Deshacer', fn: () => { Object.assign(UI.cubIn, previo); pedirCalculo(); render(); }});
 }
@@ -240,7 +241,7 @@ async function importarCarga(input){
     adoptarDoc(d);
     const avisos = [];
     const lec = d.lectura || {}, col = lec.columnas || {};
-    const mapa = [['sucursal', 'Sucursal'], ['sku', 'SKU'], ['unidades', 'Unidades']].filter(([k]) => col[k]).map(([k, n]) => `${col[k]} → ${n}`);
+    const mapa = [['sucursal', 'Sucursal'], ['sku', 'SKU'], ['unidades', 'Unidades'], ['grupo', 'Grupo']].filter(([k]) => col[k]).map(([k, n]) => `${col[k]} → ${n}`);
     if (mapa.length) avisos.push('Leído: ' + mapa.join(' · '));
     avisos.push(...(lec.notas || []));
     if ((d.errores_archivo || []).length) avisos.push(d.errores_archivo.slice(0, 3).join(' · '));
@@ -358,16 +359,25 @@ function vistaCubicador(){
   /* --- reparto por sucursal cargado (predistribuido) --- */
   const reparto = inp.predistribuido || [];
   const sucs = [...new Set(reparto.map(x => x.sucursal))];
+  const grp = inp.grupos || [];
   const detalleReparto = `<details><summary class="small muted">Ver detalle</summary><table class="tbl">
         ${reparto.slice(0, 300).map(x => `<tr><td>${esc(x.sucursal)}</td><td class="code">${esc(x.sku)}</td><td class="n">${fmt(x.qty)}</td></tr>`).join('')}
       </table>${reparto.length > 300 ? `<p class="small muted">…y ${reparto.length - 300} líneas más</p>` : ''}</details>`;
+  const nGrp = [...new Set(grp.map(x => +x.grupo || 0))].sort((a, b) => (a || 1e9) - (b || 1e9));
+  const bloqueGrupos = grp.length && !reparto.length ? `<div class="reparto ${ef.grupos ? '' : 'inactivo'}">
+      <div class="row"><span><b>Grupos de carga</b> · ${nGrp.length} · ${fmt(grp.reduce((a, x) => a + (+x.qty || 0), 0))} un.</span>
+        <span class="spacer"></span><button class="btn quiet sm" data-cub="quitar-reparto" title="Quitar los grupos">Quitar</button></div>
+      <p class="small muted">${ef.grupos ? 'El grupo 1 va al fondo del camión y cada grupo empieza donde terminó el anterior.' : 'El destino elegido junta toda la carga: los grupos quedan guardados.'}</p>
+      <details><summary class="small muted">Ver detalle</summary><table class="tbl">
+        ${nGrp.map(g => `<tr><td>${g ? 'Grupo ' + g : 'Sin grupo'}</td><td class="code">${esc(grp.filter(x => (+x.grupo || 0) === g).map(x => x.sku).join(' · '))}</td><td class="n">${fmt(grp.filter(x => (+x.grupo || 0) === g).reduce((a, x) => a + (+x.qty || 0), 0))}</td></tr>`).join('')}
+      </table></details></div>` : '';
   const botonImportar = (txt) => `<label class="btn sm" title="Excel (.xlsx, .xls) o .csv del cliente, o la plantilla">${ICON.file} ${txt}<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>`;
   const bloqueReparto = reparto.length ? `<div class="reparto ${porSucursal ? '' : 'inactivo'}">
       <div class="row"><span><b>Reparto por sucursal</b> · ${sucs.length} sucursales · ${fmt(reparto.reduce((a, x) => a + (+x.qty || 0), 0))} un.</span>
         <span class="spacer"></span><button class="btn quiet sm" data-cub="quitar-reparto" title="Quitar el reparto y volver a Stock">Quitar</button></div>
       ${porSucursal ? '' : '<p class="small muted">El modo elegido no separa por sucursal: el reparto queda guardado y se usa al cambiar a un modo predistribuido.</p>'}
       ${detalleReparto}</div>`
-    : porSucursal ? `<div class="reparto pendiente">
+    : porSucursal && !grp.length ? `<div class="reparto pendiente">
       <b>Falta el reparto por sucursal</b>
       <p class="small muted">Este modo arma la carga sucursal por sucursal. Sube el predistribuido del cliente tal como lo envía: se leen la sucursal, el producto y las unidades.</p>
       <div class="row tight">${botonImportar('Subir predistribuido')}<a class="btn quiet sm" href="/api/cubicaje-libre/plantilla">Plantilla</a></div></div>` : '';
@@ -440,7 +450,7 @@ function vistaCubicador(){
         ${lineas.length && !UI.cubSug.length && !UI.cubQ ? '<p class="small muted ayuda">Enter agrega y salta a las unidades; otro Enter vuelve aquí. También puedes pegar una lista desde Excel (SKU y unidades).</p>' : ''}
       </div>
       <ol class="items">${filas || `<li class="vacio"><b>Empieza por el primer producto</b><span>Escribe un SKU arriba, pega una lista desde Excel, o trae un pedido analizado.</span></li>`}</ol>
-      ${bloqueReparto}
+      ${bloqueReparto}${bloqueGrupos}
       <div class="mc-pie">
         <div class="row tight"><input type="text" data-cubped placeholder="Traer un pedido analizado (N°)" inputmode="numeric" style="flex:1;min-width:0"><button class="btn sm" data-cub="traer">Traer</button></div>
         ${seccionAjustes()}
