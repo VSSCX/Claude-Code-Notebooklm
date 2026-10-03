@@ -57,7 +57,9 @@ def filas() -> list[list]:
     ruta = Path(settings.base_medidas) if settings.base_medidas else None
     if ruta is None:
         return []
-    with _lock:
+    if not _lock.acquire(blocking=False):                  # otra petición ya la lee: se usa lo último
+        return _estado.get("filas") or []
+    try:
         if _estado.get("filas") is not None and time.time() - _estado["revisado_filas"] < 60:
             return _estado["filas"]
         _estado["revisado_filas"] = time.time()
@@ -68,6 +70,8 @@ def filas() -> list[list]:
             log.warning("No se pudieron leer las filas de la Base de Medidas: %s", e)
             _estado["filas"] = _estado.get("filas") or []
         return _estado["filas"]
+    finally:
+        _lock.release()
 
 
 def _leer(ruta: Path) -> dict:
@@ -101,8 +105,10 @@ def medidas() -> dict:
     ruta = Path(settings.base_medidas) if settings.base_medidas else None
     if ruta is None:
         return {}
-    with _lock:
-        if time.time() - _estado["revisado"] < 60 and _estado["mtime"] is not None:
+    if not _lock.acquire(blocking=False):
+        return _estado["datos"]
+    try:
+        if time.time() - _estado["revisado"] < 60:          # también tras un fallo: no se reintenta a cada petición
             return _estado["datos"]
         _estado["revisado"] = time.time()
         try:
@@ -113,6 +119,8 @@ def medidas() -> dict:
             _estado["error"] = str(e)[:200]
             log.warning("No se pudo leer la Base de Medidas: %s", e)
         return _estado["datos"]
+    finally:
+        _lock.release()
 
 
 def estado() -> dict:

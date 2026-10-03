@@ -1,4 +1,5 @@
 """SAP: leer, analizar, crear y borrar."""
+import math
 import shutil
 import uuid
 from pathlib import Path
@@ -184,8 +185,8 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
             carga = float(body["carga"])
         except (TypeError, ValueError) as e:
             raise HTTPException(422, "Cantidad inválida.") from e
-        if carga < 0:
-            raise HTTPException(422, "La cantidad no puede ser negativa.")
+        if not math.isfinite(carga) or carga < 0:
+            raise HTTPException(422, "La cantidad no puede ser negativa ni infinita.")
         doc["ajustes"][sku] = carga
     # Recalcula con los mismos datos guardados (no vuelve a consultar SAP)
     doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
@@ -253,13 +254,19 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
                             "pasos": r.pasos, "borradas": r.borradas, "ajustadas": r.ajustadas,
                             "incidencias": r.incidencias})
             if r.ok and r.entrega and not ensayo:
-                from ..db import SessionLocal
-                with SessionLocal() as ses:
-                    from ..schemas import EntregaIn
-                    domain.guardar_entrega(ses, EntregaIn(
-                        entrega=r.entrega, pedido=numero, grupo="",
-                        lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
-                    ses.commit()
+                # La entrega ya existe en SAP y no se puede deshacer: si no se alcanza a registrar aquí,
+                # se avisa con su número para cargarla a mano y se sigue con los demás camiones.
+                try:
+                    from ..db import SessionLocal
+                    with SessionLocal() as ses:
+                        from ..schemas import EntregaIn
+                        domain.guardar_entrega(ses, EntregaIn(
+                            entrega=r.entrega, pedido=numero, grupo="",
+                            lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
+                        ses.commit()
+                except Exception as err:  # noqa: BLE001
+                    salidas[-1]["incidencias"] = list(r.incidencias or []) + [
+                        f"Creada en SAP, pero no se pudo registrar en la plataforma: {str(err)[:150]}"]
             if not r.ok:
                 break                      # ante el primer problema se detiene
         errores = [x for x in salidas if not x["ok"]]
@@ -267,9 +274,12 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
             raise RuntimeError(errores[0]["mensaje"])
         return {"pedido": numero, "ensayo": ensayo, "resultados": salidas}
 
-    return acciones.lanzar_python("crear_entregas",
-                                  f"{'Ensayo de entregas' if ensayo else 'Crear entregas'} {numero}",
-                                  [numero], correr)
+    try:
+        return acciones.lanzar_python("crear_entregas",
+                                      f"{'Ensayo de entregas' if ensayo else 'Crear entregas'} {numero}",
+                                      [numero], correr)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.post("/sap/crear_grupo", status_code=202)
@@ -306,7 +316,10 @@ def sap_crear_grupo(body: dict, s: Session = Depends(get_session)):
         return {"grupo": r.grupo, "ensayo": ensayo, "mensaje": r.mensaje, "pasos": r.pasos,
                 "incidencias": r.incidencias}
 
-    return acciones.lanzar_python("crear_grupo", f"Grupo del camión {camion}", entregas, correr)
+    try:
+        return acciones.lanzar_python("crear_grupo", f"Grupo del camión {camion}", entregas, correr)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.post("/sap/fecha_grupo", status_code=202)
@@ -349,7 +362,10 @@ def sap_fecha_grupo(body: dict, s: Session = Depends(get_session)):
         return {"grupo": grupo, "ensayo": ensayo, "mensaje": r.mensaje, "pasos": r.pasos,
                 "incidencias": r.incidencias}
 
-    return acciones.lanzar_python("fecha_grupo", f"Cita del grupo {grupo}", [grupo], correr)
+    try:
+        return acciones.lanzar_python("fecha_grupo", f"Cita del grupo {grupo}", [grupo], correr)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.post("/sap/borrar_entrega", status_code=202)

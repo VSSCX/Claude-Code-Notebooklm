@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,8 @@ router = APIRouter()
 
 @router.get("/estado")
 def estado(s: Session = Depends(get_session)):
-    return domain.estado(s)
+    # ya son tipos simples: se serializa directo, sin pasar por jsonable_encoder (con miles de filas pesa más que la consulta)
+    return JSONResponse(domain.estado(s))
 
 
 @router.put("/pedidos/{numero}")

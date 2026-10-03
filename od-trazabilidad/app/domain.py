@@ -7,7 +7,7 @@ import zlib
 from datetime import datetime
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from .models import Archivo, Config, Entrega, Evento, LineaEntrega, LineaPedido, PasoEntrega, Pedido, ahora
 from .schemas import EntregaIn, PaqueteIn, PedidoIn
@@ -88,20 +88,62 @@ def archivo_doc(a: Archivo, pedido: str) -> dict:
 
 
 def estado(s: Session) -> dict:
-    peds = s.scalars(select(Pedido).options(selectinload(Pedido.lineas))).all()
-    ents = s.scalars(select(Entrega).options(
-        selectinload(Entrega.lineas), selectinload(Entrega.pasos),
-        selectinload(Entrega.eventos), selectinload(Entrega.pedido_ref))).all()
+    """Todo lo que muestra la web, en pocas consultas de columnas y sin armar objetos del ORM:
+    con miles de pedidos y su historial, crear los objetos era casi todo el tiempo de la respuesta.
+    Debe dar lo mismo que pedido_doc / entrega_doc (hay una prueba que lo compara)."""
+    from collections import defaultdict
     from .integrations import maestra
     desc = maestra.descripciones()
+    P, LP, E, LE, PA, EV, A = (m.__table__ for m in (Pedido, LineaPedido, Entrega, LineaEntrega,
+                                                    PasoEntrega, Evento, Archivo))
+
+    lineas_p: dict[int, list] = defaultdict(list)
+    for r in s.execute(select(LP.c.pedido_id, LP.c.sku, LP.c.descripcion, LP.c.qty, LP.c.externa)
+                       .order_by(LP.c.id)):
+        lineas_p[r.pedido_id].append({"sku": r.sku, "desc": r.descripcion or desc.get(r.sku, ""),
+                                      "qty": r.qty, "externa": r.externa})
+    numero_de: dict[int, str] = {}
+    pedidos = []
+    for r in s.execute(select(P)):
+        numero_de[r.id] = r.pedido
+        pedidos.append({"pedido": r.pedido, "oc": r.oc, "cliente": r.cliente, "canal": r.canal,
+                        "fechaOC": r.fecha_oc.isoformat() if r.fecha_oc else "", "obs": r.obs,
+                        "lineas": lineas_p.get(r.id, []),
+                        "creado": _iso(r.creado), "actualizado": _iso(r.actualizado)})
+
+    lineas_e: dict[int, list] = defaultdict(list)
+    for r in s.execute(select(LE.c.entrega_id, LE.c.sku, LE.c.qty).order_by(LE.c.id)):
+        lineas_e[r.entrega_id].append({"sku": r.sku, "qty": r.qty})
+    pasos: dict[int, dict] = defaultdict(dict)
+    for r in s.execute(select(PA.c.entrega_id, PA.c.paso, PA.c.ok, PA.c.at)):
+        pasos[r.entrega_id][r.paso] = {"ok": r.ok, "at": _iso(r.at)}
+    # solo las últimas LOG_MAX entradas de cada entrega, ya recortadas en la base
+    orden = func.row_number().over(partition_by=EV.c.entrega_id,
+                                   order_by=(EV.c.at.desc(), EV.c.id.desc())).label("n")
+    ev = select(EV.c.entrega_id, EV.c.at, EV.c.texto, EV.c.origen, orden).subquery()
+    log_e: dict[int, list] = defaultdict(list)
+    for r in s.execute(select(ev).where(ev.c.n <= LOG_MAX).order_by(ev.c.entrega_id, ev.c.n)):
+        log_e[r.entrega_id].append({"at": _iso(r.at), "txt": r.texto, "origen": r.origen})
+
+    entregas = [{
+        "entrega": r.entrega, "pedido": numero_de[r.pedido_id], "grupo": r.grupo, "tipo": r.tipo,
+        "cita": {"numero": r.cita_numero, "fecha": r.cita_fecha.isoformat() if r.cita_fecha else "",
+                 "hora": r.cita_hora},
+        "vehiculo": r.vehiculo, "carga": r.carga, "un": r.un, "region": r.region,
+        "factura": r.factura, "obs": r.obs, "anulada": r.anulada, "reprog": r.reprogramaciones,
+        "lineas": lineas_e.get(r.id, []), "pasos": pasos.get(r.id, {}), "log": log_e.get(r.id, []),
+        "creado": _iso(r.creado), "actualizado": _iso(r.actualizado),
+    } for r in s.execute(select(E))]
+
+    archivos = [{"id": r.id, "pedido": r.pedido or "", "grupo": r.grupo, "tipo": r.tipo,
+                 "nombre": r.nombre, "url": f"/archivos/{r.id}", "at": _iso(r.at)}
+                for r in s.execute(select(A.c.id, A.c.grupo, A.c.tipo, A.c.nombre, A.c.at, P.c.pedido)
+                                   .select_from(A.outerjoin(P, A.c.pedido_id == P.c.id))
+                                   .order_by(A.c.at.desc()))]
     return {
-        "pedidos": [pedido_doc(p, desc) for p in peds],
-        "entregas": [entrega_doc(e) for e in ents],
+        "pedidos": pedidos, "entregas": entregas,
         "config": {c.clave: json.loads(c.valor or "{}") for c in s.scalars(select(Config)).all()},
-        "archivos": [archivo_doc(a, p.pedido if p else "")
-                     for a, p in s.execute(select(Archivo, Pedido).join(Pedido, isouter=True)
-                                           .order_by(Archivo.at.desc())).all()],
-        "version": version(s),
+        "archivos": archivos, "version": version(s),
     }
 
 

@@ -1,5 +1,6 @@
 import logging
 import mimetypes
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -17,7 +18,17 @@ WEB = BASE_DIR / "web"
 
 log = logging.getLogger("plataforma")
 
-app = FastAPI(title="Trazabilidad Order Desk", version="0.1.0")
+
+
+@asynccontextmanager
+async def _vida(_app):
+    """Lo que se hace al abrir la plataforma."""
+    _cargar_conexion_bases()
+    _respaldo_al_iniciar()
+    yield
+
+
+app = FastAPI(title="Trazabilidad Order Desk", version="0.1.0", lifespan=_vida)
 app.include_router(router)
 @app.middleware("http")
 async def _sesion_y_usuario(request, call_next):
@@ -26,14 +37,14 @@ async def _sesion_y_usuario(request, call_next):
     from .usuarios import limpio, sesion_valida, requiere_clave
     domain.usar_usuario(limpio(request.headers.get("x-usuario", "")))
     ruta = request.url.path
-    protegida = ruta.startswith("/api/") and not ruta.startswith("/api/sesion")
+    protegida = (ruta.startswith(("/archivos/", "/visor/"))
+                 or (ruta.startswith("/api/") and not ruta.startswith("/api/sesion")))
     if protegida and requiere_clave() and not sesion_valida(request.cookies.get("sesion", "")):
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "Sesión no iniciada."}, status_code=401)
     return await call_next(request)
 
 
-@app.on_event("startup")
 def _cargar_conexion_bases():
     """Toma los datos de SQL Server guardados en Configuración, si los hay."""
     import json as _json
@@ -49,7 +60,6 @@ def _cargar_conexion_bases():
         log.warning("No se pudo leer la conexión guardada: %s", e)
 
 
-@app.on_event("startup")
 def _respaldo_al_iniciar():
     """Copia de seguridad diaria: se hace sola al abrir la plataforma."""
     from .respaldo import copiar

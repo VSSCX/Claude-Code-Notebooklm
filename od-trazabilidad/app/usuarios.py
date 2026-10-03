@@ -31,7 +31,7 @@ def requiere_clave() -> bool:
 def entrar(clave: str, usuario: str) -> str:
     if not limpio(usuario):
         raise HTTPException(422, "Escribe tu nombre para entrar.")
-    if requiere_clave() and clave != settings.clave_acceso:
+    if requiere_clave() and not secrets.compare_digest(str(clave).encode(), settings.clave_acceso.encode()):
         raise HTTPException(401, "Clave incorrecta.")
     token = secrets.token_hex(16)
     _sesiones.add(token)

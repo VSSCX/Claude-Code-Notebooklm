@@ -56,9 +56,12 @@ def descripciones() -> dict[str, str]:
     ruta = Path(settings.maestra_homologacion) if settings.maestra_homologacion else None
     if ruta is None:
         return {}
-    with _lock:
+    # si otra petición ya está leyendo la red, se usa lo último que hay en vez de esperarla
+    if not _lock.acquire(blocking=False):
+        return _estado["datos"]
+    try:
         ahora = time.time()
-        if ahora - _estado["revisado"] < REVISAR_CADA and _estado["mtime"] is not None:
+        if ahora - _estado["revisado"] < REVISAR_CADA:        # también tras un fallo: no se reintenta a cada petición
             return _estado["datos"]
         _estado["revisado"] = ahora
         try:
@@ -71,6 +74,8 @@ def descripciones() -> dict[str, str]:
             _estado["error"] = str(e)[:200]
             log.warning("No se pudo leer la maestra de homologación: %s", e)
         return _estado["datos"]
+    finally:
+        _lock.release()
 
 
 def estado() -> dict:

@@ -16,6 +16,8 @@ if _es_sqlite:
     def _fk_on(conn, _):
         cur = conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
+        cur.execute("PRAGMA journal_mode=WAL")      # leer (la web consulta seguido) no bloquea a quien escribe
+        cur.execute("PRAGMA synchronous=NORMAL")
         cur.close()
 
 SessionLocal = sessionmaker(engine, expire_on_commit=False)

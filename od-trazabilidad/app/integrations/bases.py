@@ -5,6 +5,8 @@ guarda en la base local de cada persona. Si ahí no hay nada, se usa lo del arch
 .env, como antes. Sin usuario propio de SQL Server se entra con la cuenta de Windows.
 La clave va aparte para no tener que escapar caracteres especiales en la URL.
 """
+import threading
+
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 
@@ -18,6 +20,7 @@ def usar_conexion(datos: dict) -> None:
     """Fija los datos de conexión de esta instalación (los carga la API al arrancar)."""
     global _guardada
     _guardada = dict(datos or {})
+    _soltar_motor()
     limpiar_cache()
 
 
@@ -51,8 +54,33 @@ def probar() -> dict:
         return {"ok": False, "mensaje": str(e)[:300]}
 
 
+_motor: tuple[str, Engine] | None = None
+_candado_motor = threading.Lock()
+ESPERA_CONEXION = 10     # segundos para entrar al servidor
+ESPERA_CONSULTA = 60     # segundos máximos por consulta
+
+
+def _soltar_motor() -> None:
+    global _motor
+    with _candado_motor:
+        if _motor is not None:
+            _motor[1].dispose()
+        _motor = None
+
+
 def motor_bases() -> Engine:
-    return create_engine(url_bases(), pool_pre_ping=True)
+    """Un único motor para todas las consultas: antes se creaba uno nuevo (y sus conexiones)
+    en cada consulta y quedaban abiertos. Se rehace solo si cambian los datos de conexión."""
+    global _motor
+    url = url_bases()
+    huella = url.render_as_string(hide_password=False)
+    with _candado_motor:
+        if _motor is None or _motor[0] != huella:
+            if _motor is not None:
+                _motor[1].dispose()
+            args = {"timeout": ESPERA_CONEXION} if url.drivername.startswith("mssql") else {}
+            _motor = (huella, create_engine(url, pool_pre_ping=True, connect_args=args))
+        return _motor[1]
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +186,9 @@ def _filas(sql: str, params: tuple = ()) -> list[tuple]:
     """Ejecuta un lote con varias instrucciones y devuelve el último resultado."""
     cx = motor_bases().raw_connection()
     try:
+        directa = getattr(cx, "driver_connection", None)
+        if directa is not None and hasattr(directa, "timeout"):
+            directa.timeout = ESPERA_CONSULTA          # un servidor colgado no deja la plataforma esperando para siempre
         cur = cx.cursor()
         cur.execute(sql, params)
         while cur.description is None:

@@ -46,6 +46,29 @@ POR_ID = {a["id"]: a for a in CATALOGO}
 
 _trabajos: dict[str, dict] = {}
 _lock = threading.Lock()   # una macro a la vez: SAP GUI no tolera dos en paralelo
+_reserva = threading.Lock()
+_ocupado = [False]
+MAX_TRABAJOS = 50          # los más viejos se olvidan: la lista no crece sin fin
+
+
+def _reservar() -> None:
+    """Deja pasar a una sola acción. Revisar y marcar va junto: dos clics casi a la vez
+    ya no pueden colarse los dos (antes se miraba el candado y el hilo lo tomaba después)."""
+    with _reserva:
+        if _ocupado[0]:
+            raise RuntimeError("Ya hay una acción en ejecución. Espera a que termine.")
+        _ocupado[0] = True
+
+
+def _liberar() -> None:
+    with _reserva:
+        _ocupado[0] = False
+
+
+def _registrar(job: dict) -> None:
+    _trabajos[job["id"]] = job
+    while len(_trabajos) > MAX_TRABAJOS:
+        _trabajos.pop(next(iter(_trabajos)))
 
 
 def habilitadas() -> list[dict]:
@@ -83,51 +106,60 @@ def validar(accion_id: str, args: list[str]) -> tuple[dict, list[str]]:
 
 def lanzar(accion_id: str, args: list[str]) -> dict:
     a, limpios = validar(accion_id, args)
-    if _lock.locked():
-        raise RuntimeError("Ya hay una acción en ejecución. Espera a que termine.")
+    _reservar()
     tid = uuid.uuid4().hex[:12]
-    _trabajos[tid] = {"id": tid, "accion": a["id"], "label": a["label"], "args": limpios,
-                      "estado": "en_curso", "inicio": datetime.now().isoformat(timespec="seconds"),
-                      "fin": "", "resultado": "", "error": "", "archivo": ""}
-    threading.Thread(target=_correr, args=(tid, a, limpios), daemon=True).start()
+    _registrar({"id": tid, "accion": a["id"], "label": a["label"], "args": limpios,
+                "estado": "en_curso", "inicio": datetime.now().isoformat(timespec="seconds"),
+                "fin": "", "resultado": "", "error": "", "archivo": ""})
+    try:
+        threading.Thread(target=_correr, args=(tid, a, limpios), daemon=True).start()
+    except BaseException:
+        _liberar()
+        raise
     return _trabajos[tid]
 
 
 def lanzar_python(accion_id: str, label: str, args: list[str], fn) -> dict:
     """Corre una función Python (por ejemplo, leer SAP directo) en la misma cola
     que las macros, para que nunca haya dos cosas usando SAP al mismo tiempo."""
-    if _lock.locked():
-        raise RuntimeError("Ya hay una acción en ejecución. Espera a que termine.")
+    _reservar()
     tid = uuid.uuid4().hex[:12]
-    _trabajos[tid] = {"id": tid, "accion": accion_id, "label": label, "args": args,
-                      "estado": "en_curso", "inicio": datetime.now().isoformat(timespec="seconds"),
-                      "fin": "", "resultado": "", "error": "", "archivo": "", "datos": None,
-                      "progreso": ""}
+    _registrar({"id": tid, "accion": accion_id, "label": label, "args": args,
+                "estado": "en_curso", "inicio": datetime.now().isoformat(timespec="seconds"),
+                "fin": "", "resultado": "", "error": "", "archivo": "", "datos": None,
+                "progreso": ""})
 
     def avance(texto: str):
         _trabajos[tid]["progreso"] = texto
 
     def correr():
         job = _trabajos[tid]
-        with _lock:
-            com = None
-            try:
-                import pythoncom
-                pythoncom.CoInitialize()
-                com = pythoncom
-            except ImportError:
-                pass
-            try:
-                job["datos"] = fn(avance)
-                job.update(estado="ok")
-            except Exception as e:  # noqa: BLE001
-                job.update(estado="error", error=str(e)[:500])
-            finally:
-                job["fin"] = datetime.now().isoformat(timespec="seconds")
-                if com:
-                    com.CoUninitialize()
+        try:
+            with _lock:
+                com = None
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                    com = pythoncom
+                except ImportError:
+                    pass
+                try:
+                    job["datos"] = fn(avance)
+                    job.update(estado="ok")
+                except Exception as e:  # noqa: BLE001
+                    job.update(estado="error", error=str(e)[:500])
+                finally:
+                    job["fin"] = datetime.now().isoformat(timespec="seconds")
+                    if com:
+                        com.CoUninitialize()
+        finally:
+            _liberar()
 
-    threading.Thread(target=correr, daemon=True).start()
+    try:
+        threading.Thread(target=correr, daemon=True).start()
+    except BaseException:
+        _liberar()
+        raise
     return _trabajos[tid]
 
 
@@ -136,6 +168,13 @@ def trabajo(tid: str) -> dict | None:
 
 
 def _correr(tid: str, a: dict, args: list[str]):
+    try:
+        _ejecutar_macro(tid, a, args)
+    finally:
+        _liberar()
+
+
+def _ejecutar_macro(tid: str, a: dict, args: list[str]):
     job = _trabajos[tid]
     with _lock:
         try:
