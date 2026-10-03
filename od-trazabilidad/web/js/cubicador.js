@@ -244,7 +244,7 @@ function seccionAjustes(){
 function vistaCubicador(){
   if (!UI.cubIn){
     if (!UI.cubIniciado) setTimeout(cargarCubLibre, 0);
-    return `<div class="mesa"><div class="panel mesa-carga"><div class="panel-b stack"><span class="skel" style="width:40%"></span><span class="skel"></span><span class="skel" style="width:80%"></span></div></div><div class="mesa-vista"><div class="visor-caja calculando"></div></div></div>`;
+    return `<div class="mesa"><div class="panel mesa-carga"><div class="panel-b stack"><span class="skel" style="width:40%"></span><span class="skel"></span><span class="skel" style="width:80%"></span></div></div><div class="mesa-vista"><div class="visor-caja"><i class="calc-bar"></i></div></div></div>`;
   }
   const inp = UI.cubIn, c = UI.cub || {};
   const lineas = inp.lineas;
@@ -377,7 +377,7 @@ function vistaCubicador(){
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="visor-caja ${UI.cubCalculando ? 'calculando' : ''}" aria-busy="${UI.cubCalculando}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>
-        ${UI.cubCalculando ? '<span class="calc-tag">Calculando…</span>' : ''}
+        ${UI.cubCalculando ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
       </div>
     </div>
   </div>`;

@@ -502,11 +502,16 @@ def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
         for z in alturas:
             apoya = hm >= z - EPS                 # z es el máximo de la ventana
             bien = (_suma_ventana(apoya, cx, cy) / cnt) >= 0.7
+            # Cada restriccion solo descarta posiciones si existe alguna celda de apoyo que la
+            # viole; si no hay ninguna, la suma por ventana es cero en toda la grilla y se omite.
             if restric.usaApilable:
-                bien &= _suma_ventana(apoya & ~sop, cx, cy) == 0
+                no_apilable = apoya & ~sop
+                if no_apilable.any():
+                    bien &= _suma_ventana(no_apilable, cx, cy) == 0
             if restric.usaPeso:
                 liviano = apoya & (peso < it.peso - 1e-6)
-                bien &= _suma_ventana(liviano, cx, cy) == 0
+                if liviano.any():
+                    bien &= _suma_ventana(liviano, cx, cy) == 0
             valido |= ok & (sub == z) & bien
     if not valido.any():
         return None
