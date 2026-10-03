@@ -188,6 +188,14 @@ function quitarLinea(i){
 /* ---- Opciones: el modo del motor decide cómo se arma la carga ---- */
 /* Lo que de verdad se cubica: el modo elegido, con Destino y Carga mandando sobre él (como H2 en el Excel):
    MDA + "en pallets" se cubica en pallets, y SDA + "a piso" va directo al camión sin armar pallets. */
+/* Bultos: una caja master (C + SKU) es un bulto con varias unidades (50 cajas de 2 = 50 bultos y 100 unidades);
+   con "con caja master" en SDA, las unidades de un SKU se agrupan en cajas de a `caja` y las sueltas cuentan una a una. */
+function bultosDe(l, d, conCaja){
+  const q = +l.qty || 0;
+  if (/^C\d/i.test(l.sku) && d && d.piezas > 1) return {bultos: q, un: q * d.piezas, caja: d.piezas};
+  if (conCaja && d && d.caja > 1) return {bultos: Math.floor(q / d.caja) + q % d.caja, un: q, caja: d.caja};
+  return {bultos: q, un: q, caja: 0};
+}
 function efectivoCub(inp){
   const base = inp.modo || 'MDA', sda = /SDA/.test(base);
   const grupos = (inp.grupos || []).length > 0 && !(inp.predistribuido || []).length && inp.destino !== 'STOCK';
@@ -315,6 +323,9 @@ function vistaCubicador(){
   const det = c.detalle_lineas || {};
   const camiones = c.camiones || [];
   const unidades = lineas.reduce((a, l) => a + (+l.qty || 0), 0);
+  const conCaja = inp.caja_master === 'CON CAJA MASTER' && /SDA/.test(efectivoCub(inp).modo);
+  const resB = lineas.map(l => bultosDe(l, det[l.sku], conCaja));
+  const totBultos = resB.reduce((a, x) => a + x.bultos, 0), totUnidades = resB.reduce((a, x) => a + x.un, 0);
   const unidPorCam = {}, ocupPorCam = {};
   for (const f of (c.filas || [])){
     unidPorCam[f.camion] = (unidPorCam[f.camion] || 0) + f.unidades;
@@ -338,7 +349,7 @@ function vistaCubicador(){
       <div class="cuerpo">
         <div class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err" title="No se cubica hasta que tenga medidas">no se carga · sin medidas</span>' : ''}</div>
         <div class="l2" title="${esc(d.descripcion || info.descripcion || '')}">${esc(d.descripcion || info.descripcion || '')}</div>
-        ${(d.medidas || info.medidas) ? `<div class="l3 num">${esc(d.medidas || info.medidas)}</div>` : ''}
+        ${(d.medidas || info.medidas) ? `<div class="l3 num">${esc(d.medidas || info.medidas)}${resB[i].caja ? ` · ${fmt(resB[i].bultos)} bultos de ${resB[i].caja} un.` : ''}</div>` : ''}
       </div>
       <div class="step">
         <button class="btn quiet icon sm" data-cub-menos="${i}" aria-label="Una unidad menos">${ICON.minus}</button>
@@ -439,7 +450,7 @@ function vistaCubicador(){
   return `<div class="mesa">
     <aside class="panel mesa-carga" aria-label="Carga">
       <div class="mc-h">
-        <h2>Carga</h2><span class="muted num small">${fmt(unidades)} un. · ${lineas.length} SKU</span>
+        <h2>Carga</h2><span class="muted num small" title="Una caja master es un bulto con varias unidades">${fmt(totUnidades)} un. · ${fmt(totBultos)} bultos · ${lineas.length} SKU</span>
         <div class="mc-acc"><a class="btn quiet sm" href="/api/cubicaje-libre/plantilla" title="Excel para armar la carga fuera de la plataforma">Plantilla</a>
         <label class="btn quiet sm" title="Cargar productos desde un Excel o CSV: la plantilla o el archivo del cliente">Importar<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>
         ${lineas.length ? `<a class="btn quiet sm" href="/api/cubicaje-libre/excel">Exportar</a><span class="spacer"></span><button class="btn quiet sm" data-cub="vaciar">Vaciar</button>` : ''}</div>

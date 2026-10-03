@@ -1166,3 +1166,17 @@ def test_grupos_se_cargan_en_bloques_en_orden(datos):
     assert [f.sucursal for f in _reparto_por_grupos(d["grupos"])] == ["GRUPO 1".replace("GRUPO 1", "GRUPO 01")] * 2 + ["GRUPO 02"]
     juntos = c.post("/api/cubicaje-libre", json={"cliente": "", "modo": "MDA", "lineas": d["lineas"], "grupos": d["grupos"], "destino": "STOCK"}).json()
     assert juntos["unidades"] == 50 and not any("grupos" in a for a in juntos["avisos"])
+
+
+def test_detalle_trae_piezas_de_la_caja_master_para_contar_bultos(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import Medida
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "9000", "9000 LICUADORA")
+        s.add(Medida(sku="C9000", descripcion="CAJA MASTER", piezas=2, largo=60, ancho=50, alto=40, peso=20,
+                     apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
+        s.commit()
+    d = c.post("/api/cubicaje-libre", json={"cliente": "", "modo": "MDA", "lineas": [{"sku": "C9000", "qty": 50}, {"sku": "9000", "qty": 4}]}).json()
+    assert d["detalle_lineas"]["C9000"]["piezas"] == 2 and d["detalle_lineas"]["9000"]["caja"] == 2

@@ -731,7 +731,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
             siguiente += 1
         letra, color = orden[sku]
         if d is not None:
-            detalle[sku] = {"descripcion": d.desc or sku,
+            dc = cache.get(("c" + sku).lower())
+            detalle[sku] = {"piezas": int(d.piezas or 1), "caja": int(dc.piezas or 1) if dc is not None else 0,
+                            "descripcion": d.desc or sku,
                             "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
                             "apilable": d.apilable, "peso": d.peso,
                             "letra": letra, "color": color}
