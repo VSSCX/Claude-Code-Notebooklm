@@ -86,23 +86,83 @@ function rbox(grp,x,y,z,dx,dy,dz,rad,mat){ // caja con bordes redondeados (cabin
   const m=new THREE.Mesh(g,mat);m.castShadow=true;m.receiveShadow=true;
   m.position.set(x+dx/2,z+dz/2,y);grp.add(m);return m;
 }
-const GROUND=-95, R_WHEEL=50;
-function addWheel(grp,x,yLat,r){
-  const w=22;
-  const tire=new THREE.Mesh(new THREE.CylinderGeometry(r,r,w,28),pbr(0x12151a,0.25,0.8));
-  tire.rotation.x=Math.PI/2;tire.position.set(x,GROUND+r,yLat);tire.castShadow=true;grp.add(tire);
-  // flanco
-  const sw=new THREE.Mesh(new THREE.TorusGeometry(r*0.78,r*0.16,8,24),pbr(0x1a1d22,0.2,0.75));
-  sw.position.set(x,GROUND+r,yLat+(yLat>0?w/2-2:-w/2+2));grp.add(sw);
-  // llanta aluminio
-  const rim=new THREE.Mesh(new THREE.CylinderGeometry(r*0.6,r*0.6,w+1.5,20),pbr(0xb9c0c9,0.92,0.22));
-  rim.rotation.x=Math.PI/2;rim.position.set(x,GROUND+r,yLat);grp.add(rim);
-  const hub=new THREE.Mesh(new THREE.CylinderGeometry(r*0.16,r*0.16,w+3,12),pbr(0x8a9099,0.9,0.3));
-  hub.rotation.x=Math.PI/2;hub.position.set(x,GROUND+r,yLat);grp.add(hub);
-  // pernos
-  for(let i=0;i<6;i++){const a=i/6*Math.PI*2;const b=new THREE.Mesh(new THREE.CylinderGeometry(r*0.05,r*0.05,w+3.5,6),pbr(0x70757d,0.9,0.3));b.rotation.x=Math.PI/2;b.position.set(x+Math.cos(a)*r*0.36,GROUND+r+Math.sin(a)*r*0.36,yLat);grp.add(b);}
+const GROUND=-95, R_WHEEL=46, W_WHEEL=26;
+/* Piezas del camion (marcos, ruedas, defensa...) se juntan por material en una sola malla cada una:
+   el camion se arma una vez y asi no suma llamadas de dibujo por cuadro. */
+let FUS=null;
+const _o3=new THREE.Object3D();
+function fusAdd(mat,geo,x,y,z,rx,ry,rz){            // x largo, y ancho, z alto (como addBox); rotaciones en ejes de three
+  _o3.position.set(x,z,y);_o3.rotation.set(rx||0,ry||0,rz||0);_o3.updateMatrix();geo.applyMatrix4(_o3.matrix);
+  let a=FUS.get(mat);if(!a){a=[];FUS.set(mat,a);}a.push(geo);
 }
-function axle(grp,x,W){ addWheel(grp,x,W*0.02,R_WHEEL); addWheel(grp,x,W*0.98,R_WHEEL); }
+function fBox(mat,x,y,z,dx,dy,dz){fusAdd(mat,new THREE.BoxGeometry(dx,dz,dy),x+dx/2,y+dy/2,z+dz/2);}
+function fCil(mat,r,largo,x,y,z,eje,seg){            // cilindro con su eje a lo largo de 'x', 'y' (ancho) o 'z' (alto)
+  const g=new THREE.CylinderGeometry(r,r,largo,seg||14);
+  if(eje==='y')fusAdd(mat,g,x,y,z,Math.PI/2,0,0);     // el eje de three pasa a z (ancho)
+  else if(eje==='x')fusAdd(mat,g,x,y,z,0,0,Math.PI/2);
+  else fusAdd(mat,g,x,y,z);
+}
+function volcarFusion(grp){
+  FUS.forEach(function(lista,mat){
+    const gs=lista.map(function(g){return g.index?g.toNonIndexed():g;});
+    let n=0;gs.forEach(function(g){n+=g.attributes.position.count;});
+    const pos=new Float32Array(n*3),nor=new Float32Array(n*3);let o=0;
+    gs.forEach(function(g){pos.set(g.attributes.position.array,o*3);nor.set(g.attributes.normal.array,o*3);o+=g.attributes.position.count;g.dispose();});
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('normal',new THREE.BufferAttribute(nor,3));
+    const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;grp.add(m);
+  });
+  FUS=null;
+}
+const _M={};
+function mat(clave,c,m,r,dos){if(!_M[clave]){_M[clave]=pbr(c,m,r);if(dos)_M[clave].side=THREE.DoubleSide;}return _M[clave];}
+function _perfilRueda(r,w){      // neumatico: flancos redondeados y tres franjas de dibujo
+  const P=[[.62,-.46],[.80,-.52],[.93,-.46],[.985,-.34],[1,-.30],[1,-.18],[-1.6,-.16],[-1.6,-.06],[1,-.04],
+           [1,.04],[-1.6,.06],[-1.6,.16],[1,.18],[1,.30],[.985,.34],[.93,.46],[.80,.52],[.62,.46]];
+  return P.map(function(q){return new THREE.Vector2(q[0]<0?r+q[0]:q[0]*r,q[1]*w);});
+}
+function _perfilLlanta(r,w,s){   // llanta de aluminio: borde, plato y centro hundido
+  return [[0,.50],[.20,.50],[.27,.43],[.50,.455],[.58,.50],[.60,.40]].map(function(q){return new THREE.Vector2(q[0]*r,q[1]*w*s);});
+}
+function addWheel(x,yLat,r,afuera){            // afuera = +1 si el exterior de la rueda mira a +ancho, -1 si a -ancho
+  const w=W_WHEEL, cz=GROUND+r;
+  const goma=mat('goma',0x14171b,0.05,0.92,true), alu=mat('llanta',0xc9cfd6,0.9,0.28,true), tuerca=mat('tuerca',0x7d838b,0.9,0.3);
+  fusAdd(goma,new THREE.LatheGeometry(_perfilRueda(r,w),40),x,yLat,cz,Math.PI/2,0,0);
+  const s=afuera>0?1:-1;
+  fusAdd(alu,new THREE.LatheGeometry(_perfilLlanta(r,w,s),32),x,yLat,cz,Math.PI/2,0,0);
+  fCil(tuerca,r*0.17,w*0.62,x,yLat+s*w*0.05,cz,'y',16);                                  // tapa del cubo
+  for(let i=0;i<10;i++){const a=i/10*Math.PI*2;
+    fCil(tuerca,1.7,3,x+Math.cos(a)*r*0.34,yLat+s*(w*0.5+0.6),cz+Math.sin(a)*r*0.34,'y',6);}  // tuercas
+}
+// eje con ruedas gemelas a cada lado, brazo del eje y fuelles de la suspension
+function axle(grp,x,W){
+  const yL=15, d=W_WHEEL+3, cz=GROUND+R_WHEEL;
+  addWheel(x,yL,R_WHEEL,-1);addWheel(x,yL+d,R_WHEEL,1);
+  addWheel(x,W-yL,R_WHEEL,1);addWheel(x,W-yL-d,R_WHEEL,-1);
+  const acero=mat('eje',0x2b3038,0.6,0.5);
+  fCil(acero,6.5,W-2*yL+6,x,W/2,cz,'y',12);
+  [W*0.25,W*0.73].forEach(function(y){fCil(mat('fuelle',0x1b1e23,0.1,0.8),9,26,x,y,cz+22,'z',14);fBox(acero,x-14,y-3,cz+8,28,6,5);});
+}
+// guardabarros sobre un grupo de ejes, a cada lado
+function guardabarros(x1,x2,W){
+  const g=mat('guardabarro',0x343a42,0.5,0.55), top=GROUND+2*R_WHEEL+3, ancho=2*W_WHEEL+8;
+  [[0,1],[W-ancho,1]].forEach(function(q){fBox(g,x1,q[0]+6,top,x2-x1,ancho,2.5);fBox(g,x1,q[0]+6,top-12,2.5,ancho,14);fBox(g,x2-2.5,q[0]+6,top-12,2.5,ancho,14);});
+}
+// defensa trasera (anti-empotramiento), barras de seguridad, luces y faldones con cinta reflectante
+function trasera(x,W){
+  const ac=mat('defensa',0x2f353d,0.6,0.5), rojo=mat('cintaR',0xc62828,0.1,0.5), blanco=mat('cintaB',0xf1f3f5,0.1,0.5);
+  fBox(ac,x+4,W*0.03,-42,8,W*0.94,11);
+  [W*0.1,W*0.9-6].forEach(function(y){fBox(ac,x+4,y,-42,8,6,28);});
+  for(let i=0;i<20;i++)fBox(i%2?rojo:blanco,x+8.2,W*0.03+i*(W*0.94/20),-41,0.8,W*0.94/20,9);
+  const luz=new THREE.MeshStandardMaterial({color:0xb71c1c,emissive:0x7f0d0d,roughness:0.4});
+  const amb=new THREE.MeshStandardMaterial({color:0xe6a100,emissive:0x8a5d00,roughness:0.4});
+  [0.02,0.96].forEach(function(f){fBox(luz,x+2,W*f,-4,3,W*0.02+1,22);fBox(amb,x+2,W*f,-18,3,W*0.02+1,10);});
+  fBox(mat('placa',0xf2f4f6,0.1,0.6),x+9,W/2-22,-36,1,44,16);
+}
+function cintaLateral(L,W,x0){                      // franja roja/blanca bajo el contenedor
+  const rojo=mat('cintaR',0xc62828,0.1,0.5), blanco=mat('cintaB',0xf1f3f5,0.1,0.5);
+  for(let x=x0+30,i=0;x<x0+L-40;x+=30,i++){const m=i%2?rojo:blanco;fBox(m,x,-4.4,-14,30,0.8,6);fBox(m,x,W+3.6,-14,30,0.8,6);}
+}
 
 // ===== Cabina Scania (compartida) =====
 function cabinaScania(grp,xFrenteCab,W,azul){
@@ -145,50 +205,69 @@ function cabinaScania(grp,xFrenteCab,W,azul){
 
 // ===== Contenedor / caja corrugada (compartida) =====
 function contenedor(grp,x0,L,W,H,opaco){
-  const frMat=new THREE.MeshStandardMaterial({map:corrugTex(1),color:0xeef1f4,metalness:0.2,roughness:0.5,transparent:true,opacity:0.05,depthWrite:false});
-  const op = opaco?0.5:0.04;   // paredes/techo casi transparentes (se ven las cajas)
-  function panel(rep){return new THREE.MeshStandardMaterial({map:corrugTex(rep),color:0xf3f5f7,metalness:0.15,roughness:0.5,transparent:true,opacity:op,depthWrite:false});}
+  const op = opaco?0.5:0.06;   // paredes y techo casi transparentes: se ven las cajas
+  function panel(rep){return new THREE.MeshStandardMaterial({map:corrugTex(rep),color:0xdfe8f1,metalness:0.15,roughness:0.45,transparent:true,opacity:op,depthWrite:false});}
+  const frente=new THREE.MeshStandardMaterial({map:corrugTex(L/85),color:0xeef1f4,metalness:0.2,roughness:0.5,transparent:true,opacity:0.3,depthWrite:false});
   addBox(grp,x0,0,0,L,W,3,pbr(0x565e68,0.5,0.6));            // piso
-  addBox(grp,x0-4,0,0,7,W,H,frMat,false);                    // frente opaco
-  addBox(grp,x0,-2,0,L,4,H,panel(L/85),false);               // lateral
+  addBox(grp,x0-4,0,0,7,W,H,frente,false);                   // frente (mamparo)
+  addBox(grp,x0,-2,0,L,4,H,panel(L/85),false);               // laterales
   addBox(grp,x0,W-2,0,L,4,H,panel(L/85),false);
   addBox(grp,x0,0,H-3,L,W,3,panel(L/85),false);              // techo
-  // esquineros ISO (8)
-  const cn=pbr(0x3f454d,0.6,0.5);
-  [[x0,0],[x0,W-14],[x0+L-14,0],[x0+L-14,W-14]].forEach(p=>{addBox(grp,p[0],p[1],0,14,14,14,cn,false);addBox(grp,p[0],p[1],H-14,14,14,14,cn,false);});
-  // marco aristas
-  const ed=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L,H,W)),new THREE.LineBasicMaterial({color:0x5b6672}));
-  ed.position.set(x0+L/2,H/2,W/2);grp.add(ed);
-  // puertas traseras translucidas con 4 barras + manijas
-  const dr=new THREE.MeshStandardMaterial({color:0xe2e8ef,metalness:0.25,roughness:0.4,transparent:true,opacity:0.26,depthWrite:false});
-  addBox(grp,x0+L-2,3,4,4,W*0.48,H-8,dr,false);addBox(grp,x0+L-2,W*0.52,4,4,W*0.45,H-8,dr,false);
-  const bar=pbr(0x8b929b,0.85,0.3);
-  [0.2,0.38,0.62,0.8].forEach(f=>addBox(grp,x0+L,W*f,10,5,W*0.015,H-20,bar,false));
+  const alu=mat('marco',0xaeb7c1,0.85,0.32), oscuro=mat('esquinero',0x353b43,0.6,0.5);
+  // largueros inferior y superior, postes cada metro y arcos del techo
+  [-4,W-3].forEach(function(y){fBox(alu,x0,y,0,L,7,13);fBox(alu,x0,y,H-10,L,7,10);});
+  const nP=Math.max(2,Math.round(L/130));
+  for(let i=0;i<=nP;i++){const x=x0+8+i*(L-22)/nP;
+    [-3,W-3].forEach(function(y){fBox(alu,x,y,13,5,6,H-23);});
+    fBox(alu,x,0,H-6,4,W,6);}
+  // esquineros ISO
+  [[x0-2,-5],[x0-2,W-11],[x0+L-14,-5],[x0+L-14,W-11]].forEach(function(p){
+    fBox(oscuro,p[0],p[1],-3,16,16,19);fBox(oscuro,p[0],p[1],H-14,16,16,17);});
+  // puertas traseras: marco, dos hojas, barras de cierre, manijas y bisagras
+  const dr=new THREE.MeshStandardMaterial({map:corrugTex(3),color:0xe2e8ef,metalness:0.25,roughness:0.4,transparent:true,opacity:0.2,depthWrite:false});
+  addBox(grp,x0+L-2,3,4,4,W*0.485,H-8,dr,false);addBox(grp,x0+L-2,W*0.515,4,4,W*0.485-3,H-8,dr,false);
+  fBox(alu,x0+L-3,0,0,8,W,10);fBox(alu,x0+L-3,0,H-12,8,W,12);                        // umbral y dintel
+  [0,W-8].forEach(function(y){fBox(alu,x0+L-3,y,10,8,8,H-22);});
+  fBox(alu,x0+L-3,W/2-3,10,8,6,H-22);                                                 // poste central
+  const cromo=mat('cromo',0xd7dce2,0.95,0.18);
+  [0.2,0.38,0.62,0.8].forEach(function(f){
+    fCil(cromo,1.7,H-26,x0+L+3,W*f,H/2,'z',10);
+    fBox(cromo,x0+L+2,W*f-5,H*0.46,2.5,10,5);                                        // palanca
+    fBox(cromo,x0+L+2,W*f-3,12,3,6,6);fBox(cromo,x0+L+2,W*f-3,H-24,3,6,6);});        // guias
+  [0.2,0.5,0.8].forEach(function(f){[3,W-8].forEach(function(y){fBox(oscuro,x0+L-1,y,H*f,6,5,14);});});   // bisagras
 }
 
 // ===== Chasis =====
 function chasisLargo(grp,x0,L,W){
-  const ch=pbr(0x2f353d,0.5,0.6);
-  addBox(grp,x0,W*0.2,-16,L,4,16,ch,false);addBox(grp,x0,W*0.76,-16,L,4,16,ch,false);
-  [0.15,0.4,0.65,0.9].forEach(f=>addBox(grp,x0+L*f,W*0.2,-16,8,W*0.6,8,ch,false));
+  const ch=mat('chasis',0x2f353d,0.5,0.6);
+  fBox(ch,x0,W*0.25,-18,L,5,18);fBox(ch,x0,W*0.73,-18,L,5,18);                         // largueros
+  [0.12,0.3,0.48,0.66,0.84,0.95].forEach(function(f){fBox(ch,x0+L*f,W*0.25,-14,8,W*0.48+5,9);});   // travesaños
 }
 
 // ===== RAMPLA (semitrailer) =====
 function buildSemi(grp,L,W,H){
   chasisLargo(grp,0,L,W);
-  addBox(grp,L*0.15,W*0.24,-72,10,10,56,pbr(0x7c828c,0.85,0.3),false);
-  addBox(grp,L*0.15,W*0.72,-72,10,10,56,pbr(0x7c828c,0.85,0.3),false);
+  const pata=mat('pata',0x7c828c,0.85,0.3);
+  [W*0.27,W*0.71].forEach(function(y){fBox(pata,L*0.15,y,-72,10,10,56);});
+  fBox(pata,L*0.15-6,W*0.27,-76,22,W*0.44+10,6);
   contenedor(grp,0,L,W,H,false);
-  axle(grp,L-95,W); axle(grp,L-215,W); axle(grp,L-335,W);
+  const xs=[L-95,L-215,L-335];
+  xs.forEach(function(x){axle(grp,x,W);});
+  guardabarros(xs[2]-R_WHEEL-8,xs[0]+R_WHEEL+8,W);
+  trasera(L,W);cintaLateral(L,W,0);
+  // faldones laterales entre el tren delantero y los ejes
+  [-3,W+0.5].forEach(function(y){fBox(mat('faldon',0x2b3037,0.4,0.6),L*0.34,y,-52,xs[2]-R_WHEEL-20-L*0.34,2.5,34);});
 }
 
 // ===== CAMION 50 (rigido) =====
 function buildRigido(grp,L,W,H){
-  const ch=pbr(0x2f353d,0.5,0.6);
-  addBox(grp,0,W*0.2,-16,L,4,16,ch,false);addBox(grp,0,W*0.76,-16,L,4,16,ch,false);
-  [0.35,0.7].forEach(f=>addBox(grp,L*f,W*0.2,-16,8,W*0.6,8,ch,false));
+  const ch=mat('chasis',0x2f353d,0.5,0.6);
+  fBox(ch,0,W*0.25,-18,L,5,18);fBox(ch,0,W*0.73,-18,L,5,18);
+  [0.35,0.7].forEach(function(f){fBox(ch,L*f,W*0.25,-14,8,W*0.48+5,9);});
   contenedor(grp,0,L,W,H,false);
   axle(grp,L*0.78,W);
+  guardabarros(L*0.78-R_WHEEL-8,L*0.78+R_WHEEL+8,W);
+  trasera(L,W);cintaLateral(L,W,0);
 }
 
 // dispatcher por tipo
@@ -212,7 +291,9 @@ function buildTruck(grp,L,W,H,tipo){
   var rigido=false;
   if(tipo){var t=(''+tipo).toLowerCase();rigido=/50|rigid/.test(t);}
   if(!tipo && L<900) rigido=true;
+  FUS=new Map();
   if(rigido) buildRigido(grp,L,W,H); else buildSemi(grp,L,W,H);
+  volcarFusion(grp);
 }
 
 function placeScaniaCab(cab,L,W,H,tipo){
