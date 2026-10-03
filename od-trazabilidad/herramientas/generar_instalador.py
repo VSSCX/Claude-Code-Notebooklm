@@ -52,17 +52,20 @@ def literal(obj) -> str:
 
 def generar(plantilla: str, texto: dict, binarios: dict) -> str:
     s = plantilla
-    if "import base64" not in s:
-        s = s.replace("import json\n", "import base64\nimport json\n", 1)
+    # las comprobaciones van sobre la plantilla: el contenido insertado incluye este mismo script
+    necesita_base64 = "import base64" not in plantilla
+    necesita_binarios = "BINARIOS.items()" not in plantilla
     nuevo = "ARCHIVOS = json.loads(" + literal(texto) + ")\nBINARIOS = json.loads(" + literal(binarios) + ")\n"
+    viejo = '    print(f"{len(ARCHIVOS)} archivos creados en {DESTINO}")'
+    if necesita_binarios and viejo not in plantilla:
+        raise SystemExit("No encontré dónde agregar la escritura de archivos binarios.")
     s, n = re.subn(r"^ARCHIVOS = json\.loads\(.*\)\n(BINARIOS = json\.loads\(.*\)\n)?", lambda _m: nuevo, s,
                    count=1, flags=re.M)
     if n != 1:
         raise SystemExit("La plantilla no tiene la línea ARCHIVOS = json.loads(...).")
-    if "BINARIOS.items()" not in s:
-        viejo = '    print(f"{len(ARCHIVOS)} archivos creados en {DESTINO}")'
-        if viejo not in s:
-            raise SystemExit("No encontré dónde agregar la escritura de archivos binarios.")
+    if necesita_base64:
+        s = s.replace("import json\n", "import base64\nimport json\n", 1)
+    if necesita_binarios:
         s = s.replace(viejo, ESCRIBIR_BINARIOS, 1)
     return s
 
