@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T00:00:00Z",
+  "title": "Design System: Dashboard D2C · Cruce VTEX vs SAP",
+  "extensions": {
+    "colorMeta": {
+      "desk": { "role": "neutral", "displayName": "Desk Grey", "canonical": "#E4E8EC", "tonalRamp": ["#0E1216", "#222B33", "#39424B", "#7A838D", "#CBD1D7", "#DCE1E6", "#E4E8EC", "#F2F4F5"] },
+      "paper": { "role": "neutral", "displayName": "Label Paper", "canonical": "#FDFDFC", "tonalRamp": ["#161C22", "#1B2229", "#39424B", "#7A838D", "#CBD1D7", "#E9EDEF", "#F2F4F5", "#FDFDFC"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#12171C", "tonalRamp": ["#12171C", "#2A323A", "#39424B", "#586069", "#7A838D", "#98A3AE", "#C5CCD3", "#E8ECF0"] },
+      "accent": { "role": "primary", "displayName": "Dispatch Cobalt", "canonical": "#2442D6", "tonalRamp": ["#101E6B", "#182E9A", "#2442D6", "#5A72E6", "#8FA3FF", "#B7C3FA", "#E6EBFB", "#F4F6FE"] },
+      "ok-solid": { "role": "secondary", "displayName": "Integrated Green", "canonical": "#1B7F50", "tonalRamp": ["#0F3F28", "#17724A", "#1B7F50", "#2F9468", "#5CC592", "#9ADBBC", "#DDF0E5", "#EEF8F2"] },
+      "warn-solid": { "role": "secondary", "displayName": "Amber Hold", "canonical": "#D98A00", "tonalRamp": ["#3A2D15", "#8F5200", "#B87100", "#D98A00", "#E39A16", "#F0B04A", "#FBEBCD", "#FDF5E6"] },
+      "err": { "role": "secondary", "displayName": "Fault Red", "canonical": "#B3261E", "tonalRamp": ["#3C1F1B", "#7A1812", "#B3261E", "#D1584F", "#F28074", "#F6AAA2", "#FADDD9", "#FDEEEC"] },
+      "sched": { "role": "secondary", "displayName": "Scheduled Blue", "canonical": "#3F6A99", "tonalRamp": ["#1F2F43", "#2B4A6B", "#3F6A99", "#5C85B3", "#7BA4D1", "#A9C5E2", "#DDE8F3", "#EEF3F9"] }
+    },
+    "typographyMeta": {
+      "kpi-value": { "displayName": "KPI value", "purpose": "The six KPI fields; sized by container width." },
+      "panel-title": { "displayName": "Panel title", "purpose": "Panel headings, two-line clamp." },
+      "body": { "displayName": "Body", "purpose": "Default text and controls." },
+      "table": { "displayName": "Table", "purpose": "Dense rows with tabular figures." },
+      "field-legend": { "displayName": "Field legend", "purpose": "Names a filter field, KPI field or column head; never placed above headings." },
+      "code": { "displayName": "Code", "purpose": "Order numbers and counts." }
+    },
+    "shadows": [
+      { "name": "toast", "value": "0 1px 2px rgba(18,23,28,.12), 0 6px 14px rgba(18,23,28,.16)", "purpose": "The only shadow: the new-order toast floating over the board (dark theme uses rgba(0,0,0,.5))." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(.23,1,.32,1)", "purpose": "All state feedback, 100-160ms." },
+      { "name": "calculo", "value": "1.1s linear infinite", "purpose": "Loading calc bar sweeping the stage top." },
+      { "name": "destello", "value": "1.4s ease-out", "purpose": "Flash on a changed order-tile count." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "max-width 899px" },
+      { "name": "flow", "value": "scale under 0.9 (class html.flow)" },
+      { "name": "tv-canvas", "value": "1152x648 reference (desktop 1440x800)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Printed docket: paper, hairline, 2px ink top rule.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-h\"><h2>Pedidos por estado</h2><span>128 filas</span></div><div class=\"ds-card-b\">Contenido</div></div>",
+      "css": ".ds-card{background:var(--paper,#FDFDFC);border:1px solid var(--hair,#CBD1D7);border-top:2px solid var(--ink,#12171C);border-radius:0 0 2px 2px;color:var(--ink,#12171C);font:400 13px/1.4 'Hanken Grotesk',system-ui,sans-serif;width:260px}.ds-card-h{display:flex;align-items:baseline;gap:10px;padding:8px 12px 6px}.ds-card-h h2{margin:0;font-size:15px;font-weight:650}.ds-card-h span{margin-left:auto;font-size:12px;color:var(--muted,#586069)}.ds-card-b{padding:0 12px 10px}"
+    },
+    {
+      "name": "KPI row",
+      "kind": "custom",
+      "refersTo": "kpi-row",
+      "description": "One label with fields separated by hairlines.",
+      "html": "<div class=\"ds-kpis\"><div class=\"ds-kpi\"><span class=\"ds-cap\">Pedidos</span><b>1.284</b></div><div class=\"ds-kpi\"><span class=\"ds-cap\">Monto en riesgo</span><b class=\"ds-risk\">$ 42,1 M</b></div></div>",
+      "css": ".ds-kpis{display:grid;grid-template-columns:1fr 1fr;width:320px;background:var(--paper,#FDFDFC);border:1px solid var(--hair,#CBD1D7);border-top:2px solid var(--ink,#12171C);border-radius:0 0 2px 2px;font-family:'Hanken Grotesk',system-ui,sans-serif}.ds-kpi{display:flex;flex-direction:column;gap:3px;padding:9px 12px 8px}.ds-kpi+.ds-kpi{border-left:1px solid var(--hair,#CBD1D7)}.ds-cap{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#586069)}.ds-kpi b{font-size:28px;line-height:1.05;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--ink,#12171C)}.ds-kpi b.ds-risk{color:var(--err,#B3261E)}"
+    },
+    {
+      "name": "Alert marker",
+      "kind": "button",
+      "refersTo": "alert-marker",
+      "description": "Bookmark button with dot and mono count; pressed inverts to ink.",
+      "html": "<button class=\"ds-mbtn crit\"><i></i>Atención BWS<b>12</b></button>",
+      "css": ".ds-mbtn{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 10px 0 12px;border-radius:2px;background:var(--paper,#FDFDFC);border:1px solid var(--edge,#7A838D);color:var(--ink,#12171C);font:600 13px 'Hanken Grotesk',system-ui,sans-serif;cursor:pointer;transition:border-color 100ms cubic-bezier(.23,1,.32,1)}.ds-mbtn i{width:8px;height:8px;border-radius:50%;background:var(--err,#B3261E)}.ds-mbtn b{font:700 13px 'JetBrains Mono',monospace;background:var(--err-soft,#FADDD9);color:var(--err,#B3261E);border-radius:2px;padding:0 7px;min-width:28px;text-align:center;line-height:22px}.ds-mbtn:hover{border-color:var(--ink,#12171C)}.ds-mbtn:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:2px}"
+    },
+    {
+      "name": "Order-state tile",
+      "kind": "custom",
+      "refersTo": "order-tile",
+      "description": "Row with state dot, label and count; pressed shows cobalt inset outline.",
+      "html": "<button class=\"ds-trow\"><i></i><span>Integrado · Facturado</span><b>842</b></button>",
+      "css": ".ds-trow{display:flex;align-items:center;gap:8px;width:260px;padding:7px 12px;border:0;border-top:1px solid var(--hair,#CBD1D7);background:var(--paper,#FDFDFC);color:var(--ink,#12171C);font:550 13px 'Hanken Grotesk',system-ui,sans-serif;text-align:left;cursor:pointer}.ds-trow i{width:8px;height:8px;border-radius:50%;background:var(--st-if,#1B7F50)}.ds-trow span{flex:1}.ds-trow b{font:700 17px/1 'Hanken Grotesk',system-ui,sans-serif;font-variant-numeric:tabular-nums}.ds-trow:hover{background:var(--paper-2,#F2F4F5)}.ds-trow:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:2px}"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Soft-tint status chip; NUEVO variant is ink-filled.",
+      "html": "<span class=\"ds-tag\">Pendiente</span> <span class=\"ds-tag ds-new\">NUEVO</span>",
+      "css": ".ds-tag{display:inline-block;font:600 12px/1.45 'Hanken Grotesk',system-ui,sans-serif;padding:0 7px;border-radius:2px;background:var(--warn-soft,#FBEBCD);color:var(--warn,#8F5200)}.ds-new{background:var(--ink,#12171C);color:var(--paper,#FDFDFC);font-weight:700;letter-spacing:.06em}"
+    },
+    {
+      "name": "Filter field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Legend above a 30px select or input with cobalt focus.",
+      "html": "<label class=\"ds-sl\"><span>Canal</span><select><option>Todos</option></select></label>",
+      "css": ".ds-sl{display:flex;flex-direction:column;gap:3px;width:160px;font-family:'Hanken Grotesk',system-ui,sans-serif}.ds-sl span{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#586069)}.ds-sl select{height:30px;background:var(--paper,#FDFDFC);color:var(--ink,#12171C);border:1px solid var(--edge,#7A838D);border-radius:2px;padding:0 8px;font:400 13px 'Hanken Grotesk',system-ui,sans-serif}.ds-sl select:hover{border-color:var(--ink-2,#39424B)}.ds-sl select:focus-visible{outline:2px solid var(--accent,#2442D6);border-color:var(--accent,#2442D6)}"
+    },
+    {
+      "name": "Rail navigation",
+      "kind": "nav",
+      "refersTo": "rail-nav-current",
+      "description": "Ink rail; current screen inverts to paper.",
+      "html": "<nav class=\"ds-rail\"><button aria-current=\"page\">Pedidos VTEX</button><button>Resumen ejecutivo</button><button>Diagnóstico</button></nav>",
+      "css": ".ds-rail{display:flex;flex-direction:column;gap:2px;width:184px;padding:12px;background:var(--rail,#12171C)}.ds-rail button{padding:8px 10px;border:0;border-radius:2px;background:none;color:var(--rail-ink,#C5CCD3);font:550 13px 'Hanken Grotesk',system-ui,sans-serif;text-align:left;cursor:pointer}.ds-rail button[aria-current=page]{background:var(--paper,#FDFDFC);color:var(--ink,#12171C)}.ds-rail button:not([aria-current=page]):hover{background:var(--rail-hair,#2A323A);color:#fff}.ds-rail button:focus-visible{outline:2px solid #fff;outline-offset:1px}"
+    },
+    {
+      "name": "Heat matrix cell",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Matrix cells tinted with color-mix on a state token, scaled per column.",
+      "html": "<table class=\"ds-mx\"><tr><td style=\"background:color-mix(in srgb,var(--st-nf,#B3261E) 55%,transparent)\">24</td><td style=\"background:color-mix(in srgb,var(--st-np,#D98A00) 25%,transparent)\">9</td><td class=\"z\">0</td></tr></table>",
+      "css": ".ds-mx{border-collapse:separate;border-spacing:0;font:600 12.5px 'Hanken Grotesk',system-ui,sans-serif;color:var(--ink,#12171C)}.ds-mx td{padding:4px 12px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--paper,#FDFDFC)}.ds-mx td.z{color:var(--muted,#586069);font-weight:400;opacity:.6}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Logistics Docket",
+    "overview": "Every panel is a printed label or docket lying on a cool grey desk. Paper is near-white, edged by a hairline, and headed by a 2px ink rule. A near-black ink rail carries the brand, the three screens and the controls. Fields, buttons and tags are tools on the desk: 2px corners, 1px borders, no decoration. Density is high and exact; state is carried by five fixed colors and one cobalt accent. The board fits the window and never scrolls on desktop.",
+    "keyCharacteristics": [
+      "Ink rail plus paper panels with a 2px ink top rule on a grey desk.",
+      "Flat at rest; the only shadow belongs to the floating toast.",
+      "One accent (blue); five fixed order-state colors; everything else is neutral.",
+      "Hanken Grotesk for text, JetBrains Mono for order numbers and counts, both served locally.",
+      "Light and dark themes through the same token names; auto by OS, overridable by the rail toggle."
+    ],
+    "rules": [
+      { "name": "The Five States Rule", "body": "An order's state is always one of the five --st-* tokens, in the same hue in chips, tiles, chart series and matrix columns. Never introduce a sixth state color or reuse a state hue for decoration.", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Cobalt means selected, actionable or focused. It is never a fill for data series or status.", "section": "colors" },
+      { "name": "The Heat Tint Rule", "body": "Matrix cells are tinted with color-mix on the state token at 14-60%, scaled per column by its maximum; zero cells stay unfilled and muted.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Every number uses tabular figures; identifiers and counts in markers use the mono face.", "section": "typography" },
+      { "name": "The Scale Rule", "body": "Sizes are rem against --u; never set px type except chart canvas text, which reads --u via fz().", "section": "typography" },
+      { "name": "The Flat Desk Rule", "body": "Panels, tiles, markers and buttons carry no shadow at rest or on hover; hover changes border to ink or fills paper-2.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do head every panel with the 2px ink rule over a paper body with a 1px hairline.",
+      "Do read order-state colors only from --st-if/ip/nf/np/ca.",
+      "Do keep motion to 100-160ms ease-out state feedback and respect prefers-reduced-motion.",
+      "Do write figures with tabular numerals and identifiers in JetBrains Mono.",
+      "Do define new colors as light/dark token pairs and use --u for all sizes."
+    ],
+    "donts": [
+      "Don't wrap metrics in separate soft-shadowed cards or enlarge a single hero number; KPIs stay one label with fields.",
+      "Don't add shadows to panels or controls; the toast alone floats.",
+      "Don't use the cobalt accent for status or data series.",
+      "Don't put an uppercase caption above panel titles or headings; uppercase legends belong to fields, KPI names and column heads only.",
+      "Don't load fonts, scripts or images from the internet; everything is served locally."
+    ],
+    "knownGaps": [
+      "TV legibility is the desktop board enlarged on a smaller reference canvas, not a recomposition for a room screen.",
+      "The closing combo chart's second series (muted) is unverified: demo data has one closed month."
+    ],
+    "provenance": "Only raster: public/img/logo.png, the user's pre-existing corporate logo (Electrolux wordmark), extracted unchanged from the v2.6 page data URI, shown on a fixed #fff plate. No generated assets."
+  }
+}
