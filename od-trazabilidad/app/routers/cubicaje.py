@@ -766,12 +766,17 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         preparar_carpeta(carpeta, _st.visor_assets)
         pallets_visor = doc["pallets_detalle"]
         if vista == "pallet":
-            # Se aísla el pallet elegido: sus cajas se mueven al origen y se dibuja su tarima
             todos = sorted({p.pallet for p in placed if p.pallet})
             n_pal = int(body.get("pallet_n") or (todos[0] if todos else 0))
             if n_pal not in todos:
                 n_pal = todos[0] if todos else 0
             geo = next((x for x in doc["pallets_detalle"] if x["numero"] == n_pal), None)
+            doc["pallet_visto"] = n_pal
+            doc["pallets_disponibles"] = todos
+            doc["pallet_camion"] = bool(body.get("pallet_camion"))
+            doc["pallet_vehiculo"] = (geo or {}).get("vehiculo", 0)       # camión donde va el pallet elegido
+        if vista == "pallet" and not body.get("pallet_camion"):
+            # Se aísla el pallet elegido: sus cajas se mueven al origen y se dibuja su tarima
             dx = geo["x"] if geo else 0.0
             dy = geo["y"] if geo else 0.0
             # Se mueven al origen en X e Y, pero la altura se conserva: las cajas van
@@ -783,16 +788,6 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                               "dl": pallet[1], "dw": pallet[0],
                               "tipo": (geo or {}).get("tipo", ""),
                               "sucursal": (geo or {}).get("sucursal", "")}]
-            doc["pallet_visto"] = n_pal
-            doc["pallets_disponibles"] = todos
-            # Mapa del camión: dónde queda este pallet entre los demás de su camión (el visor solo muestra uno)
-            cam_de = next((c for c in doc["camiones"] if geo and c["numero"] == geo.get("vehiculo")), None)
-            if cam_de:
-                doc["mapa_pallet"] = {
-                    "camion": {"numero": cam_de["numero"], "tipo": cam_de["tipo"], "L": cam_de["L"], "w": cam_de["w"]},
-                    "pallets": [{"n": x["numero"], "x": x["x"], "y": x["y"], "dl": x["dl"], "dw": x["dw"]}
-                                for x in doc["pallets_detalle"] if x.get("vehiculo") == cam_de["numero"]],
-                    "actual": n_pal}
             if n_pal:
                 doc["camiones"] = [{"numero": n_pal, "tipo": "Pallet", "L": pallet[1],
                                     "w": pallet[0], "h": pallet[2],

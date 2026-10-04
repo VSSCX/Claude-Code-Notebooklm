@@ -318,6 +318,8 @@ let CAM=ESC[escCur].camiones||[];
 let colorBySuc=false; const SUC_COLOR={}, SUC_LETRA={}; let HAS_SUC=false; const DESC_BY_COD={};
 // ===== Filtro de vista: aislar una sucursal o un producto en el camion =====
 let filtroTipo=null, filtroVal=null;
+let palSel=null;            // pallet resaltado dentro del camion (vista "pallets en el camion")
+let resalte=null;
 function esc(s){return String(s).replace(/"/g,'&quot;');}
 function pasaFiltro(b){ if(!filtroTipo)return true; if(filtroTipo==='suc')return (b.suc||'')===filtroVal; if(filtroTipo==='cod')return (b.cod||'')===filtroVal||(b.cod||'')==='C'+filtroVal; return true; }
 function pasaFiltroPal(p){ if(filtroTipo!=='suc')return true; return (p.suc||'')===filtroVal; }
@@ -549,6 +551,27 @@ function _truckDe(c){
   return t;
 }
 function _liberar(obj){obj.traverse(function(o){if(o.geometry)o.geometry.dispose();});}
+/* Resalta un pallet dentro del camion: placa de color bajo la tarima, volumen translucido y aristas sobre su carga.
+   El cubicador lo pide con "od-visor-pallet"; no mueve la camara ni toca las cajas. */
+function dibujarResalte(){
+  if(resalte){group.remove(resalte);_liberar(resalte);resalte=null;}
+  const c=CAM[cur];if(!c||palSel==null)return;
+  const p=(c.pallets||[]).find(function(q){return q.idx===palSel;});if(!p)return;
+  let alto=p.tar||14.5;
+  (c.cajas||[]).forEach(function(b){
+    const cx=b.x+b.dx/2,cy=b.y+b.dy/2;
+    if(cx>=p.x&&cx<=p.x+p.dl&&cy>=p.y&&cy<=p.y+p.dw)alto=Math.max(alto,b.z+b.dz);});
+  const col=0x0F3BFF, g=new THREE.Group();
+  const vol=new THREE.Mesh(new THREE.BoxGeometry(p.dl+3,alto+3,p.dw+3),
+    new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.38,depthWrite:false}));
+  vol.position.set(p.x+p.dl/2,alto/2,p.y+p.dw/2);g.add(vol);
+  const placa=new THREE.Mesh(new THREE.BoxGeometry(p.dl+20,2,p.dw+20),new THREE.MeshBasicMaterial({color:col}));
+  placa.position.set(p.x+p.dl/2,3.6,p.y+p.dw/2);g.add(placa);                 // marco sobre el piso, asoma alrededor de la tarima
+  [0,2.2,4.4].forEach(function(e){                                               // aristas con grosor (las lineas son de 1 px)
+    const ar=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(p.dl+3+e,alto+3+e,p.dw+3+e)),new THREE.LineBasicMaterial({color:col}));
+    ar.position.copy(vol.position);g.add(ar);});
+  resalte=g;group.add(g);pedirRender();
+}
 function buildScene(ci){
   cur=ci;
   while(group.children.length)group.remove(group.children[0]);
@@ -561,6 +584,7 @@ function buildScene(ci){
   // etiquetas FRENTE / PUERTAS quitadas a pedido (no en pantalla ni en PDF)
   const visibles=(c.cajas||[]).filter(b=>pasaFiltro(b));
   _cajasFusionadas(capaCajas,visibles);
+  dibujarResalte();
 
   if(visibles.length){
     let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
@@ -856,6 +880,7 @@ async function exportPDF(soloActual){
   var busy=document.getElementById('busy');busy.classList.add('on');busy.textContent='Generando PDF...';
   await pdfPausa(60);
   var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;}), cur0=cur;
+  var pS=palSel; palSel=null;                                           // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
   var VISTAS=[['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
   for(var k=0;k<idxs.length;k++){
@@ -872,7 +897,7 @@ async function exportPDF(soloActual){
     doc.save(pdfNombre(c,i,CAM.length));                                   // un archivo por camion, con su numero en el nombre
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
   }
-  filtroTipo=fT;filtroVal=fV;buildScene(cur0);
+  palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
   busy.classList.remove('on');
 }
 // Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja
@@ -1001,6 +1026,7 @@ window.addEventListener('message',function(ev){
   if(!m)return;
   if(m.tipo==='od-visor-datos')cargarDatos(typeof m.datos==='string'?JSON.parse(m.datos):m.datos);
   else if(m.tipo==='od-visor-camion'&&CAM[m.idx]){filtroTipo=null;filtroVal=null;buildScene(m.idx);renderTabs();renderStats();renderLegend();}
+  else if(m.tipo==='od-visor-pallet'){palSel=(m.idx==null)?null:+m.idx;dibujarResalte();}
   else if(m.tipo==='od-visor-filtro'){filtroTipo=m.cod?'cod':null;filtroVal=m.cod||null;buildScene(cur);renderLegend();}
   else if(m.tipo==='od-visor-etiqueta'){var l=!!m.letra;if(l!==etiquetaLetra){etiquetaLetra=l;buildScene(cur);renderEtiquetaToggle();}}
   else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);

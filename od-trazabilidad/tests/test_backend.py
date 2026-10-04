@@ -944,8 +944,8 @@ def test_el_endpoint_de_busqueda_responde_con_los_resultados_o_el_error(monkeypa
     assert r["ok"] is False and "conexión" in r["error"]
 
 
-# ---------- vista de un pallet: mapa del camión ----------
-def test_la_vista_de_un_pallet_trae_el_mapa_del_camion_con_todos_sus_pallets(datos):
+# ---------- vista de un pallet: solo el pallet o todos los pallets dentro del camión ----------
+def test_la_vista_de_un_pallet_puede_mostrar_los_pallets_dentro_del_camion(datos):
     from fastapi.testclient import TestClient
     from app.main import app
     c = TestClient(app)
@@ -954,21 +954,19 @@ def test_la_vista_de_un_pallet_trae_el_mapa_del_camion_con_todos_sus_pallets(dat
         s.commit()
     cuerpo = {"lineas": [{"sku": "9000", "qty": 400}], "modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER",
               "vista": "pallet", "cliente": "PARIS"}
-    d = c.post("/api/cubicaje-libre", json=cuerpo).json()
-    assert len(d["pallets_disponibles"]) >= 2
-    m = d["mapa_pallet"]
-    assert m["actual"] == d["pallet_visto"] == d["pallets_disponibles"][0]
-    assert m["camion"]["L"] > 0 and m["camion"]["w"] > 0
-    assert len(m["pallets"]) >= 2 and all(p["dl"] > 0 and p["dw"] > 0 for p in m["pallets"])
-    assert m["actual"] in [p["n"] for p in m["pallets"]]
-    for p in m["pallets"]:                                            # todos caben dentro del camión
-        assert 0 <= p["x"] and p["x"] + p["dl"] <= m["camion"]["L"] + 1 and 0 <= p["y"] and p["y"] + p["dw"] <= m["camion"]["w"] + 1
-    # elegir otro pallet mueve el resaltado, no el mapa
-    otro = d["pallets_disponibles"][1]
-    d2 = c.post("/api/cubicaje-libre", json={**cuerpo, "pallet_n": otro}).json()
-    assert d2["mapa_pallet"]["actual"] == otro and len(d2["mapa_pallet"]["pallets"]) == len(m["pallets"])
-    # fuera de la vista de pallet no se manda
-    assert "mapa_pallet" not in c.post("/api/cubicaje-libre", json={**cuerpo, "vista": "rampla"}).json()
+    solo = c.post("/api/cubicaje-libre", json=cuerpo).json()
+    assert len(solo["pallets_disponibles"]) >= 2 and solo["pallet_camion"] is False
+    assert [x["tipo"] for x in solo["camiones"]] == ["Pallet"]                 # un pallet aislado, sin camión
+
+    # "En el camión": el camión completo con todos sus pallets y el elegido marcado
+    otro = solo["pallets_disponibles"][1]
+    d = c.post("/api/cubicaje-libre", json={**cuerpo, "pallet_camion": True, "pallet_n": otro}).json()
+    assert d["pallet_camion"] is True and d["pallet_visto"] == otro and d["pallets_disponibles"] == solo["pallets_disponibles"]
+    assert all(x["tipo"] != "Pallet" for x in d["camiones"])
+    assert d["pallet_vehiculo"] in [x["numero"] for x in d["camiones"]]
+    assert d["unidades"] == 400 and len(d["pallets_detalle"]) == len(solo["pallets_disponibles"])
+    # fuera de la vista de pallet no hay pallet elegido
+    assert "pallet_visto" not in c.post("/api/cubicaje-libre", json={**cuerpo, "vista": "rampla"}).json()
 
 
 # --- Cargas masivas con el formato de cada cliente --------------------------------------------

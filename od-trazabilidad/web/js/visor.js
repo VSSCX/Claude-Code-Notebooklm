@@ -14,6 +14,7 @@ const Visor = {
   },
   listos: new WeakSet(),       // iframes que ya avisaron "listo"
   enviado: new WeakMap(),      // último dato enviado a cada iframe
+  palEnv: new WeakMap(),       // último pallet resaltado enviado a cada iframe
   frames(){ return [...document.querySelectorAll('iframe[data-visor]')]; },
   datos(f){
     const k = f.dataset.visor;
@@ -26,6 +27,7 @@ const Visor = {
     for (const f of this.frames()){
       if (!this.listos.has(f) || !f.contentWindow) continue;
       const json = this.datos(f);
+      this.resaltarPallet(f);
       if (!json || this.enviado.get(f) === json) continue;
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
@@ -35,6 +37,15 @@ const Visor = {
       if (libre) this.mandar({tipo: 'od-visor-filtro', cod: UI.cubFiltro || null}, f);       // el visor limpia su filtro al recibir datos
     }
   },
+  /* "Pallets en el camión": el visor resalta el pallet elegido. Solo se manda cuando cambia. */
+  resaltarPallet(f){
+    if (f.dataset.visor !== 'libre') return;
+    const inp = UI.cubIn || {}, c = UI.cub || {};
+    const idx = inp.vista === 'pallet' && inp.pallet_camion ? (c.pallet_visto || null) : null;
+    if (this.palEnv.get(f) === idx) return;
+    this.palEnv.set(f, idx);
+    this.mandar({tipo: 'od-visor-pallet', idx}, f);
+  },
   mandar(msg, f){ (f ? [f] : this.frames()).forEach(x => this.listos.has(x) && x.contentWindow && x.contentWindow.postMessage(msg, location.origin)); },
   camion(idx, f){ this.mandar({tipo: 'od-visor-camion', idx: idx || 0}, f); },
   filtro(cod){ this.mandar({tipo: 'od-visor-filtro', cod: cod || null}); },
@@ -43,7 +54,7 @@ const Visor = {
 window.addEventListener('message', ev => {
   const m = ev.data;
   if (ev.origin !== location.origin || !m || m.tipo !== 'od-visor-listo') return;
-  for (const f of Visor.frames()) if (f.contentWindow === ev.source){ Visor.listos.add(f); Visor.enviado.delete(f); }
+  for (const f of Visor.frames()) if (f.contentWindow === ev.source){ Visor.listos.add(f); Visor.enviado.delete(f); Visor.palEnv.delete(f); }
   Visor.sincronizar();
 });
 

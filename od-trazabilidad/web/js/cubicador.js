@@ -62,7 +62,7 @@ function entradaDe(doc){
           caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '',
           predistribuido: doc.predistribuido || [], grupos: doc.grupos || [], pedido: doc.pedido || '',
           lineas: (doc.lineas || []).map(l => ({sku: String(l.sku), qty: +l.qty || 0})),
-          pallet_n: doc.pallet_visto || 0};
+          pallet_n: doc.pallet_visto || 0, pallet_camion: !!doc.pallet_camion};
 }
 async function cargarCubLibre(){
   UI.cubIniciado = true;
@@ -103,11 +103,18 @@ async function correrCalculos(){
       try {
         const r = await api('POST', '/cubicaje-libre', clone(UI.cubIn));
         // si hay una edición más nueva, o se importó otra carga mientras tanto, este resultado ya no vale
-        if (!UI.cubSucio && gen === UI.cubGen){ UI.cub = r; UI.cubError = ''; }
+        if (!UI.cubSucio && gen === UI.cubGen){ UI.cub = r; UI.cubError = ''; camionDelPallet(); }
       } catch(e){ if (!UI.cubSucio && gen === UI.cubGen) UI.cubError = e.message; }
       renderSoon();
     }
   } finally { UI.cubCalculando = false; renderSoon(); }
+}
+/* Con "pallets en el camión", el 3D arranca en el camión donde va el pallet elegido */
+function camionDelPallet(){
+  const c = UI.cub, inp = UI.cubIn;
+  if (!c || !inp || inp.vista !== 'pallet' || !inp.pallet_camion || !c.pallet_vehiculo) return;
+  const i = (c.camiones || []).findIndex(v => v.numero === c.pallet_vehiculo);
+  if (i >= 0 && i !== UI.cubCam){ UI.cubCam = i; Visor.camion(i); }
 }
 /* Importar y "traer pedido" reemplazan toda la carga: el servidor devuelve el documento completo */
 function adoptarDoc(doc){ UI.cubGen++; UI.cubSucio = false; UI.cubIn = entradaDe(doc); UI.cub = doc; UI.cubError = ''; UI.cubCam = 0; UI.cubFiltro = null; }
@@ -214,6 +221,8 @@ function cambiarOpcionCub(campo, valor){
   } else if (campo === 'modo') c.modo = valor;
   else if (campo === 'carga') c.piso_pallet = valor;
   else if (campo === 'destino') c.destino = valor;
+  else if (campo === 'pallet_modo') c.pallet_camion = valor === 'camion';
+  if (campo === 'pallet_modo'){ UI.cubCam = 0; pedirCalculo(); return; }
   if (campo === 'modo' || campo === 'carga' || campo === 'destino'){
     // fuera de MDA el motor exige indicar caja master: se parte en "sin" en vez de fallar
     if (efectivoCub(c).pideCaja && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
@@ -336,6 +345,7 @@ function vistaCubicador(){
   const aPiso = (c.filas04 || []).filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0);
   const faltaMedidas = /Base de Medidas/.test(UI.cubError || c.error || '');
   const enPallet = inp.vista === 'pallet';
+  const soloPallet = enPallet && !inp.pallet_camion;       // un pallet aislado; si no, los pallets dentro del camión
   const ef = efectivoCub(inp), porSucursal = ef.pred;
   if (UI.cubCam >= camiones.length) UI.cubCam = 0;
 
@@ -403,6 +413,7 @@ function vistaCubicador(){
       <div class="opt"><span>Destino</span>${seg('destino', inp.destino || '', [['', 'Según modo', 'Lo que diga el modo'], ['STOCK', 'Stock', 'Toda la carga junta'], ['SUCURSAL', 'Por sucursal', 'Se separa por sucursal según el reparto del cliente']])}</div>
       ${ef.pideCaja ? `<div class="opt"><span>Caja master</span>${seg('caja_master', inp.caja_master || '', [['CON CAJA MASTER', 'Con'], ['SIN CAJA MASTER', 'Sin']])}</div>` : ''}
       <div class="opt"><span>Ver</span>${seg('vista', inp.vista || 'rampla', VISTAS)}</div>
+      ${enPallet ? `<div class="opt"><span>Mostrar</span>${seg('pallet_modo', inp.pallet_camion ? 'camion' : 'solo', [['solo', 'Solo el pallet', 'Aísla el pallet elegido sobre su tarima'], ['camion', 'En el camión', 'Todos los pallets dentro del camión, con el elegido resaltado']])}</div>` : ''}
       ${enPallet && (c.pallets_disponibles || []).length > 1 ? `<label class="opt"><span>Pallet</span>
         <select data-cub-pallet>${c.pallets_disponibles.map(n => `<option value="${n}" ${n === c.pallet_visto ? 'selected' : ''}>Pallet ${n} de ${c.pallets_disponibles.length}</option>`).join('')}</select></label>` : ''}
       <span class="spacer"></span>
@@ -417,22 +428,21 @@ function vistaCubicador(){
     const o = ocupPorCam[v.numero] || 0;
     const tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
     return `<button class="chip-cam" data-cub-cam="${i}" aria-pressed="${i === UI.cubCam}" title="Ver este camión en el 3D">
-      <span class="l1"><b>${enPallet ? 'Pallet' : esc(v.tipo) + ' ·'} n.º ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.</span></span>
+      <span class="l1"><b>${soloPallet ? 'Pallet' : esc(v.tipo) + ' ·'} n.º ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.</span></span>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
       <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${m3(v.vol_m3)} m³</span></span></button>`;
   }).join('');
-  const mp = enPallet ? c.mapa_pallet : null;
-  const resumen = mp ? `<div class="resumen">
-      <div class="res-linea">Pallet <b class="num">${mp.actual}</b> de <b class="num">${(c.pallets_disponibles || []).length}</b>
-        <span class="sep"></span>camión <b class="num">${mp.camion.numero}</b> · ${esc(mp.camion.tipo)}
+  const cam = soloPallet ? null : camiones.find(v => v.numero === c.pallet_vehiculo);
+  const resumen = soloPallet && c.pallet_visto ? `<div class="resumen">
+      <div class="res-linea">Pallet <b class="num">${c.pallet_visto}</b> de <b class="num">${(c.pallets_disponibles || []).length}</b>
         <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>
-        <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div>
-      ${mapaCamion(mp)}</div>`
+        <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div></div>`
     : camiones.length ? `<div class="resumen">
-      <div class="res-linea"><b class="num">${camiones.length}</b> ${enPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
+      <div class="res-linea"><b class="num">${camiones.length}</b> ${soloPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
         ${(c.unidades || 0) !== unidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(unidades)} unidades` : ''}
         <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}
-        ${!enPallet && pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
+        ${pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
+        ${enPallet && c.pallet_visto ? `<span class="sep"></span>pallet <b class="num">${c.pallet_visto}</b> resaltado${cam ? ` · va en el camión <b class="num">${cam.numero}</b>` : ''}` : ''}
         ${aPiso ? `<span class="sep"></span><b class="num">${fmt(aPiso)}</b> a piso` : ''}
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span>
         ${inp.pedido ? `<span class="sep"></span>pedido <span class="code">${esc(inp.pedido)}</span>` : ''}</div>
@@ -484,24 +494,6 @@ function vistaCubicador(){
   </div>`;
 }
 
-/* Mapa del camión visto desde arriba, con todos sus pallets numerados: el que se está viendo va destacado y cualquiera
-   se elige con un clic. La cabina queda a la izquierda (el X = 0 del cubicaje es el frente). Medidas en cm. */
-function mapaCamion(m){
-  const cam = m.camion, L = cam.L, W = cam.w, CAB = 230, M = 16;
-  const ruedas = [0.62, 0.76, 0.90].map(f => [f * L - 45, -16]).concat([0.62, 0.76, 0.90].map(f => [f * L - 45, W - 14]));
-  return `<figure class="mapa-camion">
-    <svg viewBox="${-CAB - M} ${-26} ${L + CAB + 2 * M} ${W + 52}" role="group" aria-label="Pallets del camión ${cam.numero}, vistos desde arriba. Cabina a la izquierda.">
-      ${ruedas.map(([x, y]) => `<rect class="mc-rueda" x="${x}" y="${y}" width="90" height="30" rx="6"/>`).join('')}
-      <rect class="mc-cab" x="${-CAB}" y="14" width="${CAB - 10}" height="${W - 28}" rx="26"/>
-      <rect class="mc-vidrio" x="${-CAB + 14}" y="${W / 2 - 62}" width="46" height="124" rx="8"/>
-      <rect class="mc-caja" x="0" y="0" width="${L}" height="${W}"/>
-      ${m.pallets.map(p => `<g class="mc-pal ${p.n === m.actual ? 'sel' : ''}" role="button" tabindex="0" data-cub-pal="${p.n}" aria-pressed="${p.n === m.actual}" aria-label="Pallet ${p.n}">
-        <rect x="${p.x + 3}" y="${p.y + 3}" width="${p.dl - 6}" height="${p.dw - 6}" rx="4"/>
-        <text x="${p.x + p.dl / 2}" y="${p.y + p.dw / 2}">${p.n}</text></g>`).join('')}
-    </svg>
-    <figcaption>Camión ${cam.numero} · ${esc(cam.tipo)} · visto desde arriba. Haz clic en un pallet para verlo.</figcaption></figure>`;
-}
-
 /* Productos que no están en la Base de Medidas: no se cubican (no se inventan medidas) y se dice cuáles son,
    cuántas unidades quedaron fuera y cómo resolverlo. `total` = unidades de toda la carga, con y sin medidas. */
 function alertaFaltantes(f, url, total){
@@ -544,12 +536,6 @@ document.addEventListener('click', ev => {
     Visor.pdf(false);
   }
   else if (d.cub === 'pdf-actual'){ Visor.pdf(true); }
-});
-function elegirPalletMapa(g){ if (UI.cubIn && g){ UI.cubIn.pallet_n = +g.dataset.cubPal; pedirCalculo(); } }
-document.addEventListener('click', ev => elegirPalletMapa(ev.target.closest && ev.target.closest('[data-cub-pal]')));
-document.addEventListener('keydown', ev => {
-  const g = ev.target.closest && ev.target.closest('[data-cub-pal]');
-  if (g && (ev.key === 'Enter' || ev.key === ' ')){ ev.preventDefault(); elegirPalletMapa(g); }
 });
 document.addEventListener('input', ev => {
   const el = ev.target; if (!el.matches) return;

@@ -299,20 +299,6 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 tr.limitada td{background:var(--warn-soft)}
 .vis-tools{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;align-items:center;gap:8px;padding:3px 3px 3px 10px;background:var(--paper);border:1px solid var(--ink);border-radius:var(--r);font-size:12px;font-weight:650;color:var(--muted)}
 .seg.sm button{min-height:26px;padding:0 9px;font-size:12px}
-.mapa-camion{margin:12px 0 0}
-.mapa-camion svg{display:block;width:100%;max-height:150px}
-.mapa-camion .mc-caja{fill:var(--paper-2);stroke:var(--ink);stroke-width:5}
-.mapa-camion .mc-cab{fill:var(--ink)}
-.mapa-camion .mc-vidrio{fill:var(--paper-3)}
-.mapa-camion .mc-rueda{fill:var(--ink-2)}
-.mc-pal{cursor:pointer;outline:none}
-.mc-pal rect{fill:var(--paper);stroke:var(--edge);stroke-width:3;transition:fill 100ms var(--ease-out),stroke 100ms var(--ease-out)}
-.mc-pal text{font-size:46px;font-weight:700;fill:var(--muted);text-anchor:middle;dominant-baseline:central;pointer-events:none;font-variant-numeric:tabular-nums}
-.mc-pal.sel rect{fill:var(--accent);stroke:var(--ink)}
-.mc-pal.sel text{fill:var(--accent-ink,#fff)}
-@media (hover:hover) and (pointer:fine){.mc-pal:not(.sel):hover rect{fill:var(--accent-soft);stroke:var(--accent)}}
-.mc-pal:focus-visible rect{stroke:var(--accent);stroke-width:9}
-.mapa-camion figcaption{margin-top:6px;font-size:var(--t-xs);color:var(--muted)}
 .faltantes{flex:none;margin:0 0 12px;border:1px solid var(--err);border-radius:var(--r);background:var(--paper);overflow:hidden;animation:fl-in 200ms var(--ease-out)}
 .fl-cab{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--err-soft)}
 .fl-cab svg{width:22px;height:22px;flex:none;color:var(--err);margin-top:1px}
