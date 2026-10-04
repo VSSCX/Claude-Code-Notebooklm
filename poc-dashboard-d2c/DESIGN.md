@@ -1,305 +1,348 @@
 ---
 name: Dashboard D2C · Cruce VTEX vs SAP
-description: Order-desk board where every panel is a printed logistics label on a grey desk, beside an ink rail.
+description: Ant-style enterprise seller-center board: white header over a grey canvas, white 8px cards with 1px hairlines, one blue accent, dense tables that fit the window.
 colors:
-  desk: "#E4E8EC"
-  paper: "#FDFDFC"
-  paper-2: "#F2F4F5"
-  paper-3: "#E9EDEF"
-  ink: "#12171C"
-  ink-2: "#39424B"
-  muted: "#586069"
-  hair: "#CBD1D7"
-  edge: "#7A838D"
-  track: "#DCE1E6"
-  rail: "#12171C"
-  rail-ink: "#C5CCD3"
-  rail-hair: "#2A323A"
-  logo-plate: "#FFFFFF"
-  accent: "#2442D6"
-  accent-ink: "#FFFFFF"
-  accent-soft: "#E6EBFB"
-  ok: "#17724A"
-  ok-solid: "#1B7F50"
-  ok-soft: "#DDF0E5"
-  warn: "#8F5200"
-  warn-solid: "#D98A00"
-  warn-soft: "#FBEBCD"
-  err: "#B3261E"
-  err-soft: "#FADDD9"
-  sched: "#3F6A99"
-  sched-soft: "#DDE8F3"
-  on-err: "#FFFFFF"
+  primary: "#1677FF"
+  primary-strong: "#0958D9"
+  primary-soft: "#E6F4FF"
+  primary-line: "#91CAFF"
+  on-primary: "#FFFFFF"
+  on-strong: "#FFFFFF"
+  canvas: "#F5F5F5"
+  surface: "#FFFFFF"
+  surface-2: "#FAFAFA"
+  surface-3: "#F3F4F6"
+  line: "#EBEBEB"
+  line-control: "#D1D5DB"
+  text: "#111827"
+  text-2: "#4B5563"
+  text-3: "#5F6673"
+  ok: "#15803D"
+  ok-solid: "#16A34A"
+  ok-soft: "#DCFCE7"
+  warn: "#B45309"
+  warn-solid: "#D97706"
+  warn-soft: "#FEF3C7"
   on-warn: "#1F1400"
-  desk-dark: "#0E1216"
-  paper-dark: "#161C22"
-  ink-dark: "#E8ECF0"
-  accent-dark: "#8FA3FF"
+  err: "#DC2626"
+  err-strong: "#B91C1C"
+  err-soft: "#FEE2E2"
+  on-err: "#FFFFFF"
+  neutral-solid: "#9CA3AF"
+  logo-plate: "#FFFFFF"
+  canvas-dark: "#141414"
+  surface-dark: "#1F1F1F"
+  surface-2-dark: "#262626"
+  line-dark: "#303030"
+  text-dark: "#ECEDEF"
+  primary-dark: "#3C89FF"
+  primary-strong-dark: "#69B1FF"
+  primary-soft-dark: "#111D2C"
 typography:
-  brand:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
+  text-base:
+    fontFamily: "Plus Jakarta Sans, Segoe UI, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: 1.45
+  card-title:
+    fontFamily: "Plus Jakarta Sans, Segoe UI, system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 700
-    lineHeight: 1.1
-    letterSpacing: "-0.015em"
-  kpi-value:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
-    fontSize: "min(1.75rem, 2.3cqw)"
-    fontWeight: 700
-    lineHeight: 1.05
-    letterSpacing: "-0.025em"
-    fontFeature: "tnum"
-  panel-title:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
-    fontSize: "0.9375rem"
-    fontWeight: 650
-    lineHeight: 1.2
+    lineHeight: 1.25
     letterSpacing: "-0.005em"
-  body:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
+  kpi-value:
+    fontFamily: "Plus Jakarta Sans, Segoe UI, system-ui, sans-serif"
+    fontSize: "min(1.5rem, 2cqw)"
+    fontWeight: 700
+    lineHeight: 1.15
+    letterSpacing: "-0.02em"
+    fontFeature: "tabular-nums"
+  table-cell:
+    fontFamily: "Plus Jakarta Sans, Segoe UI, system-ui, sans-serif"
     fontSize: "0.8125rem"
     fontWeight: 400
-    lineHeight: 1.4
-  table:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
-    fontSize: "0.78125rem"
-    fontWeight: 400
-    fontFeature: "tnum"
-  field-legend:
-    fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
+    lineHeight: 1.45
+  label:
+    fontFamily: "Plus Jakarta Sans, Segoe UI, system-ui, sans-serif"
     fontSize: "0.75rem"
-    fontWeight: 700
-    lineHeight: 1.2
-    letterSpacing: "0.07em"
+    fontWeight: 500
+    lineHeight: 1.3
   code:
     fontFamily: "JetBrains Mono, ui-monospace, Cascadia Mono, Consolas, monospace"
     fontSize: "0.93em"
     fontWeight: 700
     letterSpacing: "-0.01em"
-    fontFeature: "tnum"
+    fontFeature: "tabular-nums"
 rounded:
-  r: "2px"
-  dot: "50%"
+  sm: "4px"
+  md: "8px"
+  full: "50%"
 spacing:
-  xs: "0.25rem"
-  sm: "0.5rem"
-  md: "0.75rem"
-  lg: "1.125rem"
-  rail-width: "11.5rem"
+  xs: "4px"
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "24px"
 components:
-  panel:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "0 0 2px 2px"
-    padding: "0.5rem 0.75rem 0.375rem"
-  kpi-row:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    padding: "0.5625rem 0.75rem 0.5rem"
+  button-default:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.md}"
+    padding: "0 14px"
+    height: "32px"
+  button-default-hover:
+    textColor: "{colors.primary-strong}"
+  button-pressed:
+    backgroundColor: "{colors.primary-soft}"
+    textColor: "{colors.primary-strong}"
+  button-primary:
+    backgroundColor: "{colors.primary-strong}"
+    textColor: "{colors.on-strong}"
+    rounded: "{rounded.md}"
+    padding: "0 14px"
+    height: "32px"
+  button-primary-hover:
+    backgroundColor: "{colors.primary}"
   alert-marker:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.r}"
-    height: "2rem"
-    padding: "0 0.625rem 0 0.75rem"
-  alert-marker-pressed:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-  order-tile:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    padding: "0.4375rem 0.75rem"
-  order-tile-pressed:
-    backgroundColor: "{colors.accent-soft}"
-  button:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.r}"
-    height: "1.875rem"
-    padding: "0 0.75rem"
-  field:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.r}"
-    height: "1.875rem"
-    padding: "0 0.5rem"
-  rail:
-    backgroundColor: "{colors.rail}"
-    textColor: "{colors.rail-ink}"
-    width: "11.5rem"
-    padding: "1rem 0.75rem 0.75rem"
-  rail-nav-current:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.r}"
-    padding: "0.5rem 0.625rem"
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.md}"
+    padding: "0 8px 0 14px"
+    height: "36px"
+  alert-marker-active:
+    backgroundColor: "{colors.primary-strong}"
+    textColor: "{colors.on-strong}"
+  card:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.md}"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.md}"
+    padding: "0 10px"
+    height: "32px"
   tag:
-    backgroundColor: "{colors.paper-3}"
-    textColor: "{colors.ink-2}"
-    rounded: "{rounded.r}"
-    padding: "0 0.4375rem"
-  logo-plate:
-    backgroundColor: "{colors.logo-plate}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.r}"
-    padding: "0.5rem 0.625rem"
-  toast:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.r}"
-    padding: "0.5625rem 1rem"
+    backgroundColor: "{colors.surface-3}"
+    textColor: "{colors.text-2}"
+    rounded: "{rounded.sm}"
+    padding: "0 8px"
+    height: "24px"
+  tag-blue:
+    backgroundColor: "{colors.primary-soft}"
+    textColor: "{colors.primary-strong}"
+  table-header:
+    backgroundColor: "{colors.surface-2}"
+    textColor: "{colors.text-2}"
+    padding: "8px 10px"
+  nav-item:
+    textColor: "{colors.text-2}"
+    padding: "0 14px"
+    height: "56px"
+  nav-item-active:
+    textColor: "{colors.primary-strong}"
+  seg-control-active:
+    backgroundColor: "{colors.primary-soft}"
+    textColor: "{colors.primary-strong}"
+    rounded: "{rounded.md}"
+    width: "28px"
+    height: "24px"
+  notification-bell:
+    textColor: "{colors.text-2}"
+    rounded: "{rounded.md}"
+    size: "36px"
+  notification-badge:
+    backgroundColor: "{colors.err}"
+    textColor: "{colors.on-err}"
+    rounded: "9px"
+    height: "17px"
 ---
 
 # Design System: Dashboard D2C · Cruce VTEX vs SAP
 
 ## Overview
 
-**Creative North Star: "The Logistics Docket"**
+**Creative North Star: "The Seller Center"**
 
-Every panel is a printed label or docket lying on a cool grey desk. Paper is near-white, edged by a hairline, and headed by a 2px ink rule like the bar on a shipping label. A near-black ink rail on the left carries the brand, the three screens and the controls. Fields, buttons and tags are tools on the desk: 2px corners, 1px borders, no decoration. The system is inherited from the sibling Order Desk (Trazabilidad) and is the same world here, applied to a VTEX-versus-SAP cross-check.
+This is a replacement world. The board is an enterprise seller-center console in the Ant Design idiom: a white header strip sits on a light grey canvas, content lives in white cards with a 1px hairline and an 8px radius, and a single blue carries every interactive and selected state. It is an operations dashboard, not a marketing page, so there is no hero, the board fits the window without scrolling, tables are dense, and color is spent on order state rather than decoration.
 
-Density is high and exact. Figures are tabular, state is carried by five fixed colors, and one blue accent is reserved for selection, focus and the sorted column. The board fits the window like Power BI "fit to page" and never scrolls on desktop; the rem is scaled by `--u`, set from the window size.
-
-The build rejects the SaaS card grid with soft shadows and hero metrics. KPIs are one label with six fields, not six floating cards.
+The taste rules behind it: one accent, one radius scale (4 and 8), a real icon library (Tabler outline), skeleton loaders instead of spinners, no em dash, a rationed middle dot, and dials VARIANCE 3 / MOTION 3 / DENSITY 6. Motion is short (120 to 220 ms, ease-out) and reserved for feedback: hover, press, popover open, toast entry, bell ring, new-row flash.
 
 **Key Characteristics:**
-- Ink rail plus paper panels with a 2px ink top rule on a grey desk.
-- Flat at rest; the only shadow belongs to the floating toast.
-- One accent (blue); five fixed order-state colors; everything else is neutral.
-- Hanken Grotesk for text, JetBrains Mono for order numbers and counts, both served locally.
-- Light and dark themes through the same token names; auto by OS, overridable by the rail toggle.
+- White surfaces on a grey canvas, separated by 1px hairlines rather than shadows.
+- One blue (#1677FF family); text and filled buttons use the stronger #0958D9 so white text keeps contrast.
+- Five order-state colors (--st-*) drive charts, heat matrices, tags and legends from the same tokens.
+- Sentence-case labels above controls, tabular numerals everywhere, monospace for codes and counts.
+- The whole board scales with window size through one variable, 1rem = 16px x scale.
+
+## Reference and extraction
+
+Source: the Ant design skill from awesome-design-skills (its DESIGN.md, SKILL.md and the preview image registry-examples/ant-marketing.png), interpreted through the taste-skill rules and the image-to-code extraction rules (typography, spacing, color, component extraction).
+
+Honest note on method: no image generation was available, so the image-to-code step worked from the reference preview image and the reference DESIGN.md directly, not from a generated mock of this dashboard.
+
+**Taken from the reference image:**
+- Top navigation with icon + label items and a blue active state (blue text with a 2px blue underline).
+- White header over a grey canvas (#F5F5F5).
+- Light-blue tag (#E6F4FF fill, #91CAFF line, #0958D9 text).
+- Primary filled button and outlined (default) button, 32px high.
+- 8px radius on cards, buttons and inputs, 4px on tags and small chips.
+- 1px hairlines (#EBEBEB) as the main separator; light-blue soft fills for selected and hover-selected states.
+- Type and spacing scale: 12/14/16/20/24 type steps, 4/8/12/16/24 spacing.
+
+**Adapted for an operations dashboard:**
+- No hero or marketing band: the first viewport is the live board.
+- Board fits the window (no page scroll on desktop); the scale variable replaces responsive reflow.
+- Dense tables (13px cells, 5px vertical padding) with a grey sticky header, hover rows and sort chevrons.
+- State colors (green, amber, red, grey, plus the blue for "in progress") added beside the single brand accent, as soft fills and solid heat cells.
+- Notification center, TV mode and flow mode have no counterpart in the reference.
 
 ## Colors
 
-Cool-grey neutrals with a single cobalt accent and a closed set of state colors. Values below are the light theme; dark values are listed in the dark paragraph.
+A neutral grey and white field with one saturated blue; green, amber and red appear only as order or alert state.
 
 ### Primary
-- **Dispatch Cobalt** (#2442D6): selection, the sorted column, focus rings, the loading calc bar, selected text. Its soft tint (#E6EBFB) fills a pressed order tile. Text on it is white (#FFFFFF).
-
-### Secondary (state colors, fixed meaning)
-- **Integrated Green** (#17724A text, #1B7F50 solid, #DDF0E5 soft): Integrado Facturado, positive deltas, OK tags.
-- **Amber Hold** (#8F5200 text, #D98A00 solid, #FBEBCD soft): Integrado/No integrado Pendiente, pending cause bars, warnings.
-- **Fault Red** (#B3261E, soft #FADDD9): No integrado Facturado, critical markers, risk figures, overdue dates, error banner.
-- **Scheduled Blue** (#3F6A99, soft #DDE8F3): Integrado Pendiente.
-- Order-state tokens (read by charts, matrices and pills): `--st-if` Integrado Facturado = ok-solid; `--st-ip` Integrado Pendiente = sched; `--st-nf` No integrado Facturado = err; `--st-np` No integrado Pendiente = warn-solid; `--st-ca` Cancelado = edge.
+- **Ant Blue** (#1677FF, `primary`): brand fill, focus ring, hover borders, the "in progress" order state, chart series, unread dot, loading bar.
+- **Deep Ant Blue** (#0958D9, `primary-strong`): text on white, active nav, pressed segments, and the background of filled buttons and active alert markers (white on it is contrast-checked). Hover on a filled button lightens it to Ant Blue.
+- **Sky Wash** (#E6F4FF, `primary-soft`) and **Sky Line** (#91CAFF, `primary-line`): selected rows, pressed buttons, blue tags, unread notifications, focus halo, new-row flash.
 
 ### Neutral
-- **Desk Grey** (#E4E8EC): page background behind everything.
-- **Label Paper** (#FDFDFC), **Paper 2** (#F2F4F5), **Paper 3** (#E9EDEF): panel surface, subtotal/hover rows, count chips and tags.
-- **Ink** (#12171C), **Ink 2** (#39424B), **Muted** (#586069): text tiers; Ink also draws panel top rules and the header underline of tables.
-- **Hairline** (#CBD1D7), **Edge** (#7A838D), **Track** (#DCE1E6): row dividers, control borders and Cancelado, progress tracks.
-- **Rail Ink** (#12171C bg, #C5CCD3 text, #2A323A hairline): the left rail.
+- **Canvas Grey** (#F5F5F5): page background behind all cards.
+- **Surface White** (#FFFFFF): header, filter bar, cards, popovers, toasts. `surface-2` (#FAFAFA) is table headers, hover rows and totals; `surface-3` (#F3F4F6) is chip fills and bar tracks.
+- **Hairline** (#EBEBEB, `line`): card borders and dividers. **Control Line** (#D1D5DB, `line-control`): borders of inputs, selects and buttons (3:1 against white).
+- **Ink** (#111827), **Ink 2** (#4B5563), **Ink 3** (#5F6673): primary, secondary and muted text.
 - **Logo Plate** (#FFFFFF): fixed white plate behind the corporate logo in both themes.
 
-Dark theme (same token names): desk #0E1216, paper #161C22, ink #E8ECF0, accent #8FA3FF with ink-on-accent #0B1020; state colors lighten (ok #5CC592, warn #F0B04A, err #F28074) and their soft tints become deep tints. The rail darkens to #0A0D10.
+### State
+- **Green** `ok` (#15803D text), `ok-solid` (#16A34A fill), `ok-soft` (#DCFCE7): invoiced / on time.
+- **Amber** `warn` (#B45309 text), `warn-solid` (#D97706 fill), `warn-soft` (#FEF3C7): pending, at risk; `on-warn` (#1F1400) is the ink on amber heat cells.
+- **Red** `err` (#DC2626), `err-strong` (#B91C1C text on soft), `err-soft` (#FEE2E2): overdue, critical, error banner, unread badge; `on-err` is white.
+- **Neutral solid** (#9CA3AF): canceled and idle.
+- Order states map: invoiced = green solid, in progress = Ant Blue, not invoiced = red, pending = amber solid, canceled = neutral solid.
+
+### Dark theme
+Same roles, remapped: canvas #141414, surface #1F1F1F, surface-2 #262626, line #303030, control line #5C5C5C, text #ECEDEF, primary #3C89FF, strong (text and fills) #69B1FF with dark ink (#0B1220) on it, soft fills #111D2C. Cards drop their shadow in dark. Theme follows the system by default and the header segmented control (sun, moon, auto) overrides it.
 
 ### Named Rules
-**The Five States Rule.** An order's state is always one of the five `--st-*` tokens, in the same hue in chips, tiles, chart series and matrix columns. Never introduce a sixth state color or reuse a state hue for decoration.
-
-**The One Accent Rule.** Cobalt means "you selected / you can act / focus". It is never a fill for data series or status.
-
-**The Heat Tint Rule.** Matrix cells are tinted with `color-mix(in srgb, <state token> 14-60%, transparent)`, scaled per column by its maximum; zero cells stay unfilled and muted. The tint never changes hue between columns.
+**The One Blue Rule.** Interactive and selected state is Ant Blue and nothing else. Green, amber and red mean order state only, never decoration or hover.
+**The Strong-Blue-For-Text Rule.** Blue text and filled-button backgrounds use `primary-strong`; the brighter `primary` is for fills, rings and chart marks. In dark the roles invert in lightness, but the same split holds.
+**The Token-Read Rule.** Charts, matrices and tags read the same `--st-*` and surface tokens (Chart.js reads them through computed style), so a theme switch repaints everything with no second palette.
 
 ## Typography
 
-**Text Font:** Hanken Grotesk (Segoe UI, system-ui fallback), variable 100-900, local woff2.
-**Code Font:** JetBrains Mono (ui-monospace, Cascadia Mono, Consolas fallback), local woff2.
+**Text Font:** Plus Jakarta Sans (with Segoe UI, system-ui, sans-serif), variable 200 to 800, self-hosted woff2 (OFL, from Google Fonts).
+**Code Font:** JetBrains Mono (with ui-monospace, Cascadia Mono, Consolas), self-hosted woff2, for order codes, sequence numbers and count chips.
 
-**Character:** a plain humanist grotesk for reading and a mono for identifiers, both with tabular figures. No display face; hierarchy comes from weight and size.
+**Character:** A friendly geometric sans for labels and headings, with a mono for identifiers so codes align in columns. Hierarchy comes from weight and size, never from uppercase tracking.
 
 ### Hierarchy
-- **KPI value** (700, min(1.75rem, 2.3cqw), 1.05, -0.025em): the six KPI fields; sized by container width so six fit in one row.
-- **Brand** (700, 1rem, 1.1): product name on the logo plate.
-- **Panel title** (650, 0.9375rem, 1.2): panel headings, clamped to two lines.
-- **Body** (400, 0.8125rem, 1.4): default text, controls, rail items (550 weight on buttons/nav).
-- **Table** (0.78125rem): rows; order numbers use JetBrains Mono 700 at 0.9em.
-- **Field legend** (700, 0.75rem, +0.07em, uppercase): the caption above each filter control, KPI field names and table column heads. It names a field; it is not placed above headings.
-- **Order tile count** (700, 1.0625rem): number in an order-state tile.
+- **KPI value** (700, min(1.5rem, 2cqw), 1.15, -0.02em, tabular): the six indicator cells; shrinks with the card via container query.
+- **Card title / header title** (700, 1rem, 1.25): card headings and the h1 in the header; clamped to two lines.
+- **Body** (400, 0.875rem, 1.45): default text, inputs, selects.
+- **Table cell** (400 to 600, 0.8125rem): dense table and matrix text; numeric cells right-aligned with tabular numerals; code cells in mono 700 at 0.9em.
+- **Label** (500 to 600, 0.75rem, 1.3): filter labels (sentence case, above the control), table headers (600), sublines, tag text, status line.
+- **Count chip** (mono 700, 0.8125rem): counts on alert markers.
+- **Row value** (700, 1.25rem, 1): the large count on each order-state row in the left rail.
 
 ### Named Rules
-**The Tabular Rule.** Every number uses tabular figures; identifiers and counts in markers use the mono face.
-
-**The Scale Rule.** Sizes are rem against `--u`; never set px type except chart canvas text, which reads `--u` via `fz()`.
+**The Sentence-Case Rule.** Labels, headers and buttons are sentence case in Spanish; no uppercase micro-labels with letter-spacing.
+**The Tabular Rule.** Every number uses tabular numerals; identifiers and counts that must align use the mono.
 
 ## Layout
 
-The board is a CSS grid inside `.app`: an 11.5rem ink rail and a stage (filters strip, optional error banner, main). `main` is a non-scrolling absolute grid inset 0.75rem top/bottom and 1.125rem left/right, with 0.75rem gaps. Each screen names its own areas: Pedidos (alert markers / order tiles and cause beside detail table / three charts / delivery matrix), Resumen (KPI row / composition / critical + channel / closing), Diagnóstico (two charts over matrix and detail). Spacing steps in use: 0.25, 0.375, 0.5, 0.625, 0.75, 1.125rem.
+A column app: header (56px), filter bar, optional error banner, then a board that fills the remaining height and does not scroll. The board is an absolutely positioned CSS grid inset 12px top and bottom and 24px left and right, with 12px gaps. Three screens:
+- **Pedidos:** alert markers across the top; a left rail (17%, 12.5 to 17rem) with state cards and cause, a main orders table; three charts (1.4fr / 1fr / 1fr); a delivery matrix at the bottom.
+- **Resumen:** the KPI card, a combo area, two lower cards, and a tall closing card on the right.
+- **Diagnóstico:** two cards over a matrix and a detail table.
 
-Fit and scale: `--u` = min(window width / 1440, height / 800), capped at 3, applied to `html` font-size (16px x u). Columns hide by card width (amount below 800u, creation below 660u, matrix abbreviations below 440u).
+Spacing rhythm is 4/8/12/16/24 (px at scale 1). Scale: `--u` = min(3, window / 1440x860 reference), set by JS on the root font size so rem tracks the window. Below 0.9 scale the "flow" mode locks type at 0.9 and the page scrolls (main height 48rem). Columns of tables hide by card width (amount under 800px, created under 660px, scaled) and matrix headers abbreviate under 440px.
 
-TV mode (`.tv`): its own reference canvas of 1152x648 (versus 1440x800), so type and figures render much larger; filters and the segmented tools are hidden and replaced by a one-line filter summary; creation and SLA columns are hidden; the column-hide thresholds shrink to 0.72; rows that do not fit whole are cut and a "+N más" line reports the count; the cursor hides when idle; chart text gets a further 1.15x.
+**TV mode:** the same board enlarged from a 1280x720 reference canvas; filters, the theme control and Demo tag are hidden and replaced by a one-line filter summary, creation and SLA columns drop, card bodies are cut with a "+N más" line, the cursor hides after 4s idle. It is still the desktop board enlarged, not a room recomposition (known gap).
 
-Flow mode (`html.flow`): when the fitted scale would fall under 0.9, `--u` is held at 0.9, the page scrolls and `main` gets a 46rem height.
-
-Mobile (<900px): the rail becomes a wrapping top bar, screens stack in a column with 16rem minimum panel height, tables cap at 26rem, KPIs go 2-up, filters collapse behind a button. Print hides rail, toasts and filters.
+**Mobile (under 900px):** page scrolls; header wraps with nav on its own scrollable row; filters collapse behind a "Filtros" disclosure; cards stack at min 16rem, tables cap at 26rem; KPI card goes to two columns; the notification panel and toasts become full-width.
 
 ## Elevation & Depth
 
-Flat and tonal. Depth is made by paper-on-desk contrast, hairline borders and the 2px ink top rule, not shadow. The one shadow (`0 1px 2px rgba(18,23,28,.12), 0 6px 14px rgba(18,23,28,.16); stronger black in dark`) is used by the new-order toast because it is the only object that floats over the board. Sticky table heads sit on paper with an ink underline.
+Flat by default: depth is tonal (grey canvas, white card) plus a 1px hairline. Cards carry only a faint ambient shadow, and none in dark. Real elevation is reserved for things that float above the board.
+
+### Shadow Vocabulary
+- **Card** (`box-shadow: 0 1px 2px rgba(17,24,39,.04)`): cards and the KPI card; removed in dark.
+- **Popover** (`box-shadow: 0 6px 16px rgba(17,24,39,.12), 0 3px 6px -4px rgba(17,24,39,.12), 0 9px 28px 8px rgba(17,24,39,.05)`): notification panel, toasts, loading progress card. Dark uses `0 6px 16px rgba(0,0,0,.5), 0 3px 6px -4px rgba(0,0,0,.5)`.
+- **Focus halo** (`0 0 0 3px primary-soft`): focused inputs, with a primary border; elsewhere a 2px primary outline at 2px offset.
 
 ### Named Rules
-**The Flat Desk Rule.** Panels, tiles, markers and buttons carry no shadow at rest or on hover; hover changes border to ink or fills paper-2.
+**The Hairline-First Rule.** Separate with a 1px line or a tonal step before reaching for a shadow; shadows belong only to floating layers.
 
 ## Shapes
 
-Square-cornered paper: the shared radius is 2px (`--r`) on controls, tags and rail items. Panels are rounded only at the bottom (0 0 2px 2px) so the ink top rule stays a straight edge. Status dots and the sync light are circles (50%); legend swatches and column heads use 2px squares or 3px bars. Borders are 1px; the panel top rule is 2px ink; selected tiles add an inset 2px cobalt outline.
+One radius scale: 8px for cards, buttons, inputs, selects, popovers, toasts and segmented controls; 4px for tags, count chips, the logo plate, sort headers and links; 50% only for icon discs and small state dots in rows. Bars and legend swatches use 2px. Borders are always 1px; the only dashed border is the "clear" alert marker. The logo sits on a fixed white plate with a 1px ring so the wordmark stays legible in dark.
 
 ## Components
 
-### Rail
-Ink column: logo plate, screen nav, then sync status, the three-way theme segment (auto, light, dark) and the TV toggle. Current screen and pressed tools invert to paper-on-ink; hover fills rail hairline; focus ring is white. Press scales to 0.98 over 100ms.
+### Header and navigation
+White 56px bar with a bottom hairline. Left: logo on its white plate, h1. Nav items are Tabler icon (outline) + label, 500 weight, secondary ink; hover gives a grey fill; the active item is Deep Ant Blue, 600, with a 2px blue underline flush with the header bottom. Right: status text with a live dot (green, amber or red by connection state; the second line hides under 1700px), the Demo tag (amber) with a simulate button when in demo, a theme segmented control (icon only, pressed segment = Sky Wash + Deep Blue), the Modo TV button, and the notification bell. A 2px loading bar animates under the header while queries run.
 
-### Panel (docket)
-Paper, 1px hairline, 2px ink top, 0.5rem 0.75rem header with title left and muted sub right, body scrolls inside. The panel is the only container; panels are never nested.
+### Buttons
+- **Default (outlined):** white, 1px control line, 8px radius, 32px high, 500 weight; hover turns border to blue and text to Deep Blue; press scales to .97; pressed state (toggle) = Sky Wash with Sky Line border.
+- **Primary (filled):** Deep Ant Blue with white text; hover lightens to Ant Blue.
+- **Small:** 24px high, 12px text. **Link button:** Deep Blue 600 text, soft-blue hover fill.
 
-### KPI row (label object)
-One bordered paper strip with a 2px ink rule, six equal fields separated by 1px hairlines: legend, big tabular value, delta line. Risk field value is red. It is a single object, not six cards.
+### Filter bar
+White strip with a bottom hairline; each control has a sentence-case 12px label above a 32px select or input (8px radius, control-line border, blue border on hover, blue border plus 3px soft halo on focus). Search input debounced 350ms.
 
 ### Alert markers
-Square 2rem buttons: a dot, label, and mono count chip. Pressed = ink fill with paper text. Critical markers use a red dot and a red-soft count chip. "Limpiar" is dashed.
+36px outlined buttons (8px radius) with a label and a count chip in mono; the critical marker's chip is red-soft with strong-red text; active marker fills Deep Blue with an inverted chip; "clear" is dashed. Context text right-aligned.
 
-### Order-state tiles
-Full-width rows with a state-colored dot, label and a 1.0625rem count; pressed = cobalt-soft fill with inset cobalt outline; changed counts flash paper-3 for 1.4s.
+### Cards
+White, 1px hairline, 8px radius, header with 16px bold title and a right-aligned 12px muted subline, body scrolls internally with 8px padding.
 
-### Tag
-2px-cornered 0.75rem/600 chip in soft tint plus matching text: neutral, green, blue, red, amber, cobalt. "NUEVO" is an ink-filled tag.
+### KPI row
+One card holding six equal cells split by 1px hairlines: label, large tabular value, delta (green up, red down, grey flat); risk cells color the value red. Two columns on mobile.
 
-### Matrices (heatmaps)
-Sticky head with a 3px state-colored bar, left column with state dot; cells tinted by the Heat Tint Rule; the delivery matrix marks overdue in solid red and due-soon in solid amber with fixed on-colors.
+### Tables
+Ant style: sticky 12px header on `surface-2` with 600 weight and a bottom hairline, 13px cells with 5px vertical padding and hairline row dividers, row hover on `surface-2`, sortable headers show a chevron at 45% opacity that goes full and blue when active, totals rows bold on `surface-2`, new rows flash Sky Wash with a "Nuevo" filled tag.
 
-### Controls
-Filter fields: legend above, 1.875rem tall, paper, 1px edge, cobalt focus outline; buttons share the same height and hover border ink.
+### Tags
+24px, 4px radius, 12px 500 text. Variants: grey (default), green, red, amber (soft fill, strong text), blue (Sky Wash with Sky Line border and Deep Blue text).
+
+### Heat matrices
+Matrix cells color through `color-mix` on the `--st-*` tokens; the delivery matrix uses solid red (`err` with white) and amber (`warn-solid` with `on-warn`) cells, zeros muted at 65% opacity, sticky first column with a 1px edge, column headers carry a 3px state-color bar.
 
 ### Charts
-Chart.js reading CSS tokens through `css()`: series use the `--st-*` tokens; gridlines hair; ticks muted; labels ink-2; closing chart pairs ink (compliance) with muted (aging). Legends are square points.
+Chart.js reading tokens: gridlines in `line`, ticks in `text-3` at 11.5px (scaled), bars 2px radius, legends as square swatches. The closing combo chart (compliance % in `text`, average age on a right axis in `primary`) is meant for two or more closed months (unverified, see gaps); a single closed month renders as two KPI fields instead of a curve.
 
-### Loading calc bar and toast
-A 3px cobalt gradient sweeps along the top of the stage while data loads (1.1s linear loop). The toast is an ink pill centered at the bottom, 160ms rise.
+### Loading
+Skeleton blocks in the board's shape (white, hairline, shimmer sweep 1.4s) with a centered progress card listing each query with a state icon (green ok, amber loading, red error) and a count.
 
-### Logo
-`public/img/logo.png` (Electrolux wordmark, user's existing corporate logo, unchanged) always sits on a fixed white plate with 2px corners so it reads in dark theme.
+### Toast
+Top right, 22rem, white 8px card with popover shadow, a blue icon disc, bold title and muted subline, a close button; slides in 220ms, auto-closes at 7s, fades out 180ms.
+
+### Notification center
+Bell button (36px, 8px radius) with a red count badge (17px pill, white 2px ring) and a ring animation (0.9s) plus a pop on the badge when new orders arrive. The popover (24rem, max 32rem tall, 8px radius, popover shadow, opens with a 140ms scale-fade from the top right) has a header with "Marcar todas como leídas", a list of items (icon disc, bold title, muted time and channel; unread = Sky Wash background, blue filled icon disc and a blue dot), an empty state, and a footer note that the last 50 are kept in this browser. Under 900px the panel is full width.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** head every panel with the 2px ink rule over a paper body with a 1px hairline.
-- **Do** read order-state colors only from `--st-if/ip/nf/np/ca`.
-- **Do** keep motion to 100-160ms ease-out state feedback and respect `prefers-reduced-motion`.
-- **Do** write figures with tabular numerals and identifiers in JetBrains Mono.
-- **Do** define new colors as light/dark token pairs and use `--u` for all sizes.
+- **Do** use Ant Blue only for interactive and selected state; use `primary-strong` for blue text and filled buttons.
+- **Do** separate surfaces with a 1px `line` hairline on white cards over the #F5F5F5 canvas.
+- **Do** use 8px radius for containers and controls and 4px for tags and chips; no third radius.
+- **Do** read colors from the tokens (CSS and Chart.js) so light and dark stay in sync; check any new pair for contrast.
+- **Do** keep the board fitted to the window: new content must share the existing grid and scale with `--u`.
+- **Do** use Tabler outline icons through the local icon map, and skeletons for loading.
+- **Do** write labels in sentence case with tabular numerals; use JetBrains Mono for codes and counts.
 
 ### Don't:
-- **Don't** wrap metrics in separate soft-shadowed cards or enlarge a single hero number; KPIs stay one label with fields.
-- **Don't** add shadows to panels or controls; the toast alone floats.
-- **Don't** use the cobalt accent for status or data series.
-- **Don't** put an uppercase caption above panel titles or headings; uppercase legends belong to fields, KPI names and column heads only.
-- **Don't** load fonts, scripts or images from the internet; everything is served locally.
-
-## Known Gaps
-
-- TV legibility is the desktop board enlarged on a smaller reference canvas, not a recomposition for a room screen.
-- The closing combo chart's second series (muted, aging in days) is unverified: demo data has one closed month, which renders the two-field solo view instead of the curve.
+- **Don't** add a second accent hue or use green, amber or red for anything but order and alert state.
+- **Don't** add hero bands, gradients as decoration, or hard offset shadows; floating layers only use the popover shadow.
+- **Don't** use em dashes or glyph or emoji icons; use the middle dot sparingly.
+- **Don't** let the board scroll on desktop; use the existing flow mode below 0.9 scale instead.
+- **Don't** put white text on `primary` (#1677FF); use `primary-strong` for that pairing.
 
 ## Provenance
 
-The only raster is `public/img/logo.png`, the user's pre-existing corporate logo (Electrolux wordmark), extracted unchanged from the data URI in the v2.6 page (`POC_Dashboard.v2.6.original.py`) and shown on a fixed white plate (#fff). No generated assets.
+The only raster is public/img/logo.png, the corporate logo (Electrolux wordmark) supplied by the user and extracted unchanged from the v2.6 page, always on a fixed white plate. Fonts: Plus Jakarta Sans (Google Fonts, OFL) and JetBrains Mono, both self-hosted woff2. Icons: Tabler Icons (MIT), outline, served locally from iconos.js.
+
+## Known gaps
+
+- TV mode is still the desktop board enlarged, not a recomposition for a room.
+- The closing combo chart with two or more closed months (second series `primary`) is unverified because demo data has only one closed month.
+- The image-to-code step used the reference preview image and its DESIGN.md instead of a generated mock, because no image generation was available.
