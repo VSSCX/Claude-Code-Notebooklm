@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Genera POC_Dashboard.py (el instalador todo-en-uno) a partir de esta carpeta.
 
-Uso:   py construir_instalador.py [--version 2.7] [--base POC_Dashboard.v2.6.original.py] [--salida POC_Dashboard.py]
+Uso:   py construir_instalador.py [--version 2.7] [--base instalador_base.py] [--salida POC_Dashboard.py]
 
 Toma el codigo del instalador anterior (todo lo que NO es el paquete), le cambia la version, el paquete
 comprimido y el checksum, y deja el archivo listo para repartir. Los archivos de texto van como texto;
@@ -18,7 +18,7 @@ from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
 BINARIOS = {".woff2", ".png", ".ico"}
-RAIZ = [".env.example", ".gitignore", "requirements.txt", "run.bat"]
+RAIZ = [".env.example", ".gitignore", "requirements.txt", "run.bat", "servidor.bat"]
 CARPETAS = ["app", "public"]
 
 
@@ -71,7 +71,7 @@ COPIAR_NUEVO = '''def copiar_archivos(destino, archivos):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default="2.7")
-    ap.add_argument("--base", default=str(AQUI / "POC_Dashboard.v2.6.original.py"))
+    ap.add_argument("--base", default=str(AQUI / "instalador_base.py"))
     ap.add_argument("--salida", default=str(AQUI / "POC_Dashboard.py"))
     a = ap.parse_args()
 
