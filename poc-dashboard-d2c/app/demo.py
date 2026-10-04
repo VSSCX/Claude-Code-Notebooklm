@@ -32,6 +32,8 @@ def firma_demo() -> int:
 def agregar_pedido() -> dict:
     """Simula la llegada de un pedido nuevo a VTEX (aun sin ingresar a SAP)."""
     with _LOCK:
+        if len(_EXTRAS) >= 500:          # tope: el demo no debe crecer sin limite
+            return {"sequence": str(9000000 + len(_EXTRAS)), "canal": "-", "hora": "-", "tope": True}
         n = len(_EXTRAS) + 1
         r = random.Random(1000 + n)
         ahora = datetime.now()

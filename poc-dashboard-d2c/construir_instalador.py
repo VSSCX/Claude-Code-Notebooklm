@@ -19,7 +19,7 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 BINARIOS = {".woff2", ".png", ".ico"}
 RAIZ = [".env.example", ".gitignore", "requirements.txt", "run.bat"]
-CARPETAS = ["app", "web"]
+CARPETAS = ["app", "public"]
 
 
 def reunir():
@@ -59,7 +59,7 @@ COPIAR_NUEVO = '''def copiar_archivos(destino, archivos):
             nuevos += 1
         if binario:
             dst.write_bytes(datos)
-        elif ruta.startswith("web/vendor/"):
+        elif ruta.startswith("public/vendor/"):
             dst.write_bytes(cont.encode("utf-8"))  # librerias minificadas: tal cual, sin cambiar saltos de linea
         else:
             dst.write_text(cont, encoding="utf-8")

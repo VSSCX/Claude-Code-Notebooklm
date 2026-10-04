@@ -39,11 +39,15 @@ class Settings:
     # Recarga completa de respaldo aunque no se detecte ningun cambio.
     recarga_maxima: int = int(os.getenv("RECARGA_MAXIMA_SEGUNDOS", "300"))
     # Cada cuantos segundos el navegador pregunta al servidor si hay datos nuevos (consulta barata).
-    navegador_cada: int = int(os.getenv("NAVEGADOR_SEGUNDOS", "2"))
+    # En Vercel cada consulta es una invocacion de la funcion: se pregunta con menos frecuencia.
+    navegador_cada: int = 30 if os.getenv("VERCEL") else int(os.getenv("NAVEGADOR_SEGUNDOS", "2"))
     # Cuanto tiempo un pedido recien llegado se marca como NUEVO en la tabla.
     nuevo_segundos: int = int(os.getenv("NUEVO_SEGUNDOS", "300"))
     # Modo demo: usa datos de ejemplo en vez de SQL (para probar sin conexión)
-    demo: bool = os.getenv("DEMO", "").strip().lower() in ("1", "true", "si", "sí", "yes")
+    # En Vercel (funciones sin servidor) NUNCA se consultan las bases: ahi solo corre el modo DEMO
+    # (ver VERCEL.md). Vercel define la variable VERCEL=1 en cada despliegue.
+    serverless: bool = bool(os.getenv("VERCEL"))
+    demo: bool = bool(os.getenv("VERCEL")) or os.getenv("DEMO", "").strip().lower() in ("1", "true", "si", "sí", "yes")
 
 
 settings = Settings()
