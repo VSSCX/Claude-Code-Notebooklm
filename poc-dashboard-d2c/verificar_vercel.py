@@ -55,8 +55,8 @@ chequeo("requirements.txt no trae paquetes de desarrollo", not any(re.match(r"(p
 
 print("3. Archivos estaticos (public/)")
 pub = AQUI / "public"
-for f in ["index.html", "css/app.css", "js/app.js", "js/tema.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
-          "fonts/hanken-grotesk-latin.woff2", "fonts/jetbrains-mono-latin.woff2", "img/logo.png"]:
+for f in ["index.html", "css/app.css", "js/app.js", "js/tema.js", "js/iconos.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
+          "fonts/plus-jakarta-sans-latin.woff2", "fonts/jetbrains-mono-latin.woff2", "img/logo.png"]:
     chequeo(f"existe public/{f}", (pub / f).exists())
 html = leer("public/index.html")
 chequeo("index.html no tiene scripts en linea ni manejadores on*=",
@@ -67,6 +67,8 @@ for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public
         if "w3.org" not in m.group(0):
             externo.append(f"{f}: {m.group(0)[:60]}")
 chequeo("ninguna fuente, libreria ni imagen se pide a internet (todo local)", not externo, "; ".join(externo[:3]))
+raya = [f for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public/js/iconos.js"] if "\u2014" in leer(f) or "\u2013" in leer(f)]
+chequeo("sin rayas largas (em/en dash) en la interfaz (regla de taste-skill: solo guion normal)", not raya, str(raya))
 tam = sum(p.stat().st_size for p in pub.rglob("*") if p.is_file())
 chequeo(f"public/ pesa {tam/1024:.0f} KB (< 5 MB)", tam < 5 * 1024 * 1024)
 

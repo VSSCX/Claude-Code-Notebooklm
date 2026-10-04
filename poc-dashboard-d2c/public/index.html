@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Cruce VTEX · SAP — Order Desk</title>
+<title>Cruce VTEX y SAP - Order Desk</title>
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#E4E8EC">
+<meta name="theme-color" content="#F5F5F5">
 <script src="/js/tema.js"></script>
 <link rel="icon" href="data:,">
-<link rel="preload" as="font" type="font/woff2" href="/fonts/hanken-grotesk-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/plus-jakarta-sans-latin.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="/fonts/jetbrains-mono-latin.woff2" crossorigin>
 <link rel="stylesheet" href="/css/app.css">
 <script src="/vendor/chart.umd.min.js"></script>
@@ -16,30 +16,31 @@
 </head>
 <body>
 <a class="skip" href="#app">Saltar al contenido</a>
-<div class="app">
-  <aside class="rail">
+<div class="app" id="shell">
+  <header class="top">
     <div class="brand">
-      <img src="/img/logo.png" alt="Logo de la empresa" width="95" height="22">
-      <h1 translate="no">Cruce VTEX · SAP</h1>
-      <span>Order Desk · pedidos D2C</span>
+      <span class="brand-logo"><img src="/img/logo.png" alt="Logo de la empresa" width="95" height="22"></span>
+      <h1 translate="no">Cruce VTEX y SAP</h1>
     </div>
     <nav class="nav" id="nav" aria-label="Pantallas"></nav>
-    <div class="rail-foot">
+    <div class="acciones">
       <div class="sync" id="sync" role="status"></div>
-      <div class="rail-tools" id="tools"></div>
       <div class="demo" id="demo" hidden>
-        <span class="tag">Datos de ejemplo</span>
-        <button class="rbtn" id="demoSim" title="Simula la llegada de un pedido nuevo para ver la actualización en vivo"></button>
+        <span class="tag a" title="Los datos que ves son de ejemplo, no son reales">Demo</span>
+        <button class="btn sm" id="demoSim" title="Simula la llegada de un pedido nuevo para ver la actualización en vivo"></button>
       </div>
+      <div class="tools" id="tools"></div>
+      <div class="notif" id="notif"></div>
     </div>
-  </aside>
-  <div class="stage" id="stage">
-    <section class="slicers" id="slicers" aria-label="Filtros"></section>
-    <div id="banner" role="alert"></div>
-    <main id="app" tabindex="-1"><div class="splash">Cargando datos de VTEX y SAP…</div></main>
-  </div>
+    <div class="loadbar" aria-hidden="true"></div>
+  </header>
+  <section class="slicers" id="slicers" aria-label="Filtros"></section>
+  <div id="banner" role="alert"></div>
+  <main id="app" tabindex="-1"><div class="splash"></div></main>
 </div>
-<div id="toasts" aria-live="polite"></div>
+<div id="avisos"></div>
+<div class="sr" id="anuncio" aria-live="polite"></div>
+<script src="/js/iconos.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>

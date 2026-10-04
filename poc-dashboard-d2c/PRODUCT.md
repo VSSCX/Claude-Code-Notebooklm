@@ -32,6 +32,7 @@ A live VTEX-versus-SAP integration monitor on the analyst's own machine, with th
 
 ## Capabilities and Constraints
 
+- Notification center (seller-center style): a bell in the header counts unread new VTEX orders, opens a panel with the latest 50 (Sequence, canal, relative time), lets the analyst mark all as read or jump to one order in the detail, and rings once on arrival; read state lives in the browser (localStorage). A toast also appears top right.
 - Five order states with fixed meaning: Integrado · Facturado, Integrado · Pendiente, No integrado · Facturado, No integrado · Pendiente, Cancelado.
 - Filters (canal, cliente, status, SLA Type, bodega, alcance, creation dates, free search) and column sorting are applied on the server over the whole set, not just the visible rows.
 - No Node, no build step, no CDN: corporate networks may block external hosts, so fonts and libraries must be served from the app itself.
@@ -40,7 +41,7 @@ A live VTEX-versus-SAP integration monitor on the analyst's own machine, with th
 
 ## Brand Commitments
 
-Existing visual authority: none for this project. The user asked for the same rework done on `od-trazabilidad` (system "etiqueta logística", light/dark themes, local fonts), so that DESIGN.md is the world to inherit. The corporate logo embedded in the current page is kept.
+The user asked for an enterprise "seller center" look and chose the Ant / Enterprise design skill (awesome-design-skills, typeui.sh: primary #1677ff, Plus Jakarta Sans, radii 4 and 8, spacing 4/8/12/16/24/32) as the reference, built with taste-skill rules and image-to-code extraction. This replaces the earlier "etiqueta logística" look. The corporate logo (Electrolux wordmark, pre-existing) is kept on a white plate.
 
 ## Evidence on Hand
 

@@ -34,13 +34,14 @@ con login corporativo delante. Mientras tanto, el dashboard real sigue corriendo
 
 - Solo demo: `VERCEL=1` fuerza `DEMO`; nunca intenta conectarse a las bases.
 - Sin hilo de monitoreo; el navegador pregunta cada 30 s (no cada 2 s) para no gastar invocaciones.
+- La campana de notificaciones no recibe avisos (en demo sobre Vercel no entran pedidos nuevos); cuando haya datos reales, cada notificación se guarda solo en el navegador de cada persona (no se comparte entre analistas).
 - Sin botón «Simular pedido» (el pedido simulado viviría en la memoria de una sola instancia).
 - No se publican `/docs`, `/openapi.json`, `/api/diagnostico` ni `/api/demo/pedido`.
 - Los errores devuelven un mensaje genérico (en el PC del analista siguen mostrando el detalle: VPN, driver, credenciales).
 
 ## Auditoría
 
-Se corre con `python verificar_vercel.py` (31 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
+Se corre con `python verificar_vercel.py` (32 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
 
 | Área | Qué se comprobó | Resultado |
 |---|---|---|
@@ -53,6 +54,14 @@ Se corre con `python verificar_vercel.py` (31 comprobaciones; sale con código 1
 | Guías web de Vercel (*Web Interface Guidelines*) | Revisión de `index.html`, `app.css`, `app.js` | Aplicadas: enlace «Saltar al contenido», `h1`, landmarks, `name`/`autocomplete`/`spellcheck` en controles, `translate="no"`, espacios duros en montos, comillas tipográficas, `text-wrap: balance`, `touch-action`, `theme-color`, `viewport-fit` y áreas seguras, precarga de fuentes, dimensiones del logo, lecturas de layout agrupadas, vista en la URL (`#resumen`) |
 | Diseño (Impeccable) | Detector mecánico + revisión final con subagente | 3 avisos, todos justificados: la barra de carga de 3 px (no es un borde de tarjeta) y un falso positivo de relleno |
 | Comportamiento | Playwright: foco y texto del buscador, scroll y gráficos se conservan al llegar un pedido; tema, modo TV, orden por teclado, persistencia | OK |
+
+### Revisión del rediseño (referencia Ant / Enterprise)
+
+La interfaz se rehízo con la skill de diseño **Ant** (awesome-design-skills), reglas de **taste-skill** y la extracción de **image-to-code**
+(sin imagen generada: se usó la vista previa de la referencia y su DESIGN.md). Se revisó con **playwright-cli** (árbol de accesibilidad,
+consola, clic en la campana, capturas de escritorio y móvil), Playwright, axe-core y `verificar_vercel.py`. Resultado tras el rediseño:
+axe-core **0 violaciones** en las 15 combinaciones, sin errores de consola ni de CSP, 32 comprobaciones de `verificar_vercel.py` en orden
+(incluye «sin rayas largas»). Íconos: Tabler (MIT) locales; fuentes: Plus Jakarta Sans y JetBrains Mono locales.
 
 ### Pendiente o a tu criterio
 
