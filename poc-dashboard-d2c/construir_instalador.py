@@ -18,7 +18,7 @@ from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
 BINARIOS = {".woff2", ".png", ".ico"}
-RAIZ = [".env.example", ".gitignore", "requirements.txt", "run.bat", "servidor.bat"]
+RAIZ = [".env.example", ".gitignore", "requirements.txt", "run.bat", "servidor.bat", "diagnostico.bat"]
 CARPETAS = ["app", "public"]
 
 

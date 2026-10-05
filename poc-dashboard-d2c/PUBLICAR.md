@@ -45,6 +45,12 @@ Para 10 a 20 personas del Order Desk, que filtran en momentos distintos, no debe
 - **HTTP, no HTTPS:** el tráfico dentro de la red no va cifrado. Para una intranet suele bastar; si TI lo exige, se pone un proxy con
   certificado delante.
 - **Las notificaciones de la campana** (pedidos nuevos) se guardan en el navegador de cada persona: cada uno ve las suyas.
+- **Si el otro PC se queda en «Loading…» (pantalla gris, nunca carga):** casi siempre es el firewall de Windows del equipo servidor,
+  que descarta la conexión sin responder. Causas típicas: la red del equipo está marcada como *Public* (la regla de `servidor.bat` es solo
+  para redes de dominio y privadas), o Windows creó una regla que **bloquea python.exe** cuando apareció el aviso del firewall y se canceló.
+  Ejecuta `diagnostico.bat` en el equipo servidor: muestra el perfil de red, la regla y los bloqueos. Desde el otro PC, en PowerShell:
+  `Test-NetConnection NOMBRE-O-IP -Port 8000` (`TcpTestSucceeded : False` = lo bloquea el firewall o la red; `True` = revisa el proxy del navegador).
+  Prueba también con la IP en vez del nombre.
 - **Si algo no abre:** (1) ¿está abierta la ventana de `servidor.bat`? (2) ¿el firewall deja pasar el puerto 8000? (3) ¿el otro PC está
   en la misma red o en la VPN? (4) ¿en el equipo se ve `http://localhost:8000`? Si no se ve ahí, el problema es el `.env` o el driver ODBC.
 - Pide a TI el visto bueno: se publican datos de pedidos a toda la red interna.
