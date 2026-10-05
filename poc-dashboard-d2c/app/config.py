@@ -49,6 +49,15 @@ class Settings:
     item_col_sku: str = os.getenv("ITEM_COL_SKU", "").strip()           # codigo SAP (por defecto Reference_Code)
     item_precio_centavos: str = os.getenv("ITEM_PRECIO_CENTAVOS", "auto").strip().lower()   # auto | 1 | 0 (VTEX suele guardar en centavos)
 
+    # --- Maestra de productos (clasificacion 2 y producto por codigo SAP), para el grafico de ventas por Clasif2 ---
+    # Nombre de la tabla (por ejemplo dbo.maestra_productos) y en que servidor esta: sap (el ODS) o vtex. Las columnas se
+    # adivinan por nombre (codigoSap, Clasif2, Descripcion...); si no calzan, se fijan aqui.
+    maestra_tabla: str = os.getenv("MAESTRA_TABLA", "").strip()
+    maestra_origen: str = os.getenv("MAESTRA_ORIGEN", "sap").strip().lower()
+    maestra_col_sku: str = os.getenv("MAESTRA_COL_SKU", "").strip()
+    maestra_col_clasif2: str = os.getenv("MAESTRA_COL_CLASIF2", "").strip()
+    maestra_col_producto: str = os.getenv("MAESTRA_COL_PRODUCTO", "").strip()
+
     # --- Asistente de consultas (chat) ---
     # Sin configurar usa reglas (funciona sin internet ni IA). Con IA_MODO la IA solo traduce la pregunta
     # a un plan; las cifras las calcula siempre el servidor. Valores: ollama | openai | anthropic
@@ -57,6 +66,8 @@ class Settings:
     ia_modelo: str = os.getenv("IA_MODELO", "").strip()
     ia_clave: str = os.getenv("IA_CLAVE", "").strip()
     ia_timeout: int = int(os.getenv("IA_TIMEOUT_SEGUNDOS", "25"))
+    # Donde se guarda el historial de preguntas del asistente (vacio = data/historial_asistente.jsonl; en Vercel solo en memoria)
+    asistente_historial: str = os.getenv("ASISTENTE_HISTORIAL", "").strip()
 
     # Cuanto tiempo un pedido recien llegado se marca como NUEVO en la tabla.
     nuevo_segundos: int = int(os.getenv("NUEVO_SEGUNDOS", "300"))

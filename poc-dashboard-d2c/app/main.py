@@ -1,5 +1,6 @@
 """FastAPI del dashboard D2C. Sirve el frontend y expone los datos por /api."""
 import mimetypes
+import re
 from contextlib import asynccontextmanager
 
 import logging
@@ -11,7 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
-from . import asistente, servicio
+from . import asistente, servicio, ventas
 from .seguridad import CABECERAS
 
 log = logging.getLogger("dashboard")
@@ -91,9 +92,60 @@ def api_pedido(sequence: str):
     return det if det else JSONResponse(status_code=404, content={"error": "Pedido no encontrado"})
 
 
+async def _cuerpo(request: Request) -> dict:
+    try:
+        c = await request.json()
+    except Exception:
+        return {}
+    return c if isinstance(c, dict) else {}
+
+
+@app.post("/api/ventas")
+async def api_ventas(request: Request):
+    """Ventas por Clasif2 de la maestra de productos (y por producto de una clasificacion), con los filtros del tablero."""
+    c = await _cuerpo(request)
+    try:
+        return await run_in_threadpool(ventas.ventas, c, c.get("clasif2") if isinstance(c.get("clasif2"), str) else None)
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+
+
+@app.post("/api/ventas/exportar")
+async def api_ventas_exportar(request: Request):
+    """CSV Clasif2 | Producto | Venta de una clasificacion (clasif2) o de todas (sin clasif2), respetando los filtros."""
+    c = await _cuerpo(request)
+    cl = c.get("clasif2") if isinstance(c.get("clasif2"), str) else None
+    try:
+        csv = await run_in_threadpool(ventas.exportar_csv, c, cl)
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": str(e)})
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+    nombre = "ventas-" + (re.sub(r"[^A-Za-z0-9]+", "-", cl).strip("-").lower() if cl else "todas") + ".csv"
+    return Response(content=csv.encode("utf-8"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
 @app.get("/api/chat/motor")
 def api_chat_motor():
-    return {**asistente.info_motor(), "ejemplos": asistente.EJEMPLOS}
+    m = asistente.memoria
+    return {**asistente.info_motor(), "ejemplos": asistente.EJEMPLOS, "frecuentes": m.frecuentes(6), "recientes": m.recientes(6)}
+
+
+@app.post("/api/chat/valorar")
+async def api_chat_valorar(request: Request):
+    """Pulgar arriba o abajo de una respuesta: alimenta la memoria del asistente (ver app/asistente/memoria.py)."""
+    c = await _cuerpo(request)
+    ok = asistente.memoria.valorar(str(c.get("id", "")), c.get("util") if isinstance(c.get("util"), bool) else None)
+    return {"ok": ok}
+
+
+@app.get("/api/chat/historial")
+def api_chat_historial():
+    """Para quien mantiene el programa: uso del asistente y las preguntas que no entendio (sin datos de pedidos)."""
+    if settings.serverless:
+        return JSONResponse(status_code=404, content={"error": "No disponible"})
+    return asistente.memoria.estadisticas()
 
 
 @app.post("/api/chat")

@@ -55,19 +55,19 @@ chequeo("requirements.txt no trae paquetes de desarrollo", not any(re.match(r"(p
 
 print("3. Archivos estaticos (public/)")
 pub = AQUI / "public"
-for f in ["index.html", "css/app.css", "js/util.js", "js/datos.js", "js/notificaciones.js", "js/vistas.js", "js/graficos.js", "js/app.js", "js/tema.js", "js/iconos.js", "js/detalle.js", "js/asistente.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
+for f in ["index.html", "css/app.css", "js/util.js", "js/datos.js", "js/notificaciones.js", "js/vistas.js", "js/graficos.js", "js/ventas.js", "js/app.js", "js/tema.js", "js/iconos.js", "js/detalle.js", "js/asistente.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
           "fonts/plus-jakarta-sans-latin.woff2", "fonts/jetbrains-mono-latin.woff2", "img/logo.png"]:
     chequeo(f"existe public/{f}", (pub / f).exists())
 html = leer("public/index.html")
 chequeo("index.html no tiene scripts en linea ni manejadores on*=",
         not re.search(r"<script(?![^>]*\bsrc=)", html) and not re.search(r"\son[a-z]+\s*=", html))
 externo = []
-for f in ["public/index.html", "public/css/app.css", "public/js/tema.js", "public/js/detalle.js", "public/js/asistente.js"] + [f"public/js/{n}.js" for n in ("util", "datos", "notificaciones", "vistas", "graficos", "app")]:
+for f in ["public/index.html", "public/css/app.css", "public/js/tema.js", "public/js/detalle.js", "public/js/asistente.js"] + [f"public/js/{n}.js" for n in ("util", "datos", "notificaciones", "vistas", "graficos", "ventas", "app")]:
     for m in re.finditer(r"https?://[^\s\"')]+", leer(f)):
         if "w3.org" not in m.group(0):
             externo.append(f"{f}: {m.group(0)[:60]}")
 chequeo("ninguna fuente, libreria ni imagen se pide a internet (todo local)", not externo, "; ".join(externo[:3]))
-raya = [f for f in ["public/index.html", "public/css/app.css", "public/js/iconos.js", "public/js/detalle.js", "public/js/asistente.js"] + [f"public/js/{n}.js" for n in ("util", "datos", "notificaciones", "vistas", "graficos", "app")] if "\u2014" in leer(f) or "\u2013" in leer(f)]
+raya = [f for f in ["public/index.html", "public/css/app.css", "public/js/iconos.js", "public/js/detalle.js", "public/js/asistente.js"] + [f"public/js/{n}.js" for n in ("util", "datos", "notificaciones", "vistas", "graficos", "ventas", "app")] if "\u2014" in leer(f) or "\u2013" in leer(f)]
 chequeo("sin rayas largas (em/en dash) en la interfaz (regla de taste-skill: solo guion normal)", not raya, str(raya))
 tam = sum(p.stat().st_size for p in pub.rglob("*") if p.is_file())
 chequeo(f"public/ pesa {tam/1024:.0f} KB (< 5 MB)", tam < 5 * 1024 * 1024)
@@ -118,6 +118,14 @@ try:
     st, h, b = llamar("/api/chat", "POST", {"pregunta": "cuantas unidades del refrigerador med 165b cayeron hoy"})
     r = json.loads(b) if st == 200 else {}
     chequeo("/api/chat responde con reglas (sin IA) y calcula una cifra", st == 200 and r.get("ok") and r.get("via") == "reglas" and r.get("valor", 0) > 0, str(r)[:120])
+    st, h, b = llamar("/api/ventas", "POST", {"alcance": "todos"})
+    vt = json.loads(b) if st == 200 else {}
+    chequeo("/api/ventas entrega ventas por Clasif2 con la maestra de ejemplo", st == 200 and vt.get("ok") and len(vt.get("clasif", [])) > 3 and vt["total"] > 0)
+    st, h, b = llamar("/api/ventas/exportar", "POST", {"alcance": "todos", "clasif2": "Lavadoras"})
+    chequeo("/api/ventas/exportar entrega un CSV Clasif2;Producto;Venta", st == 200 and b.decode("utf-8-sig").startswith("Clasif2;Producto;Venta") and "text/csv" in h.get("content-type", ""))
+    st, h, b = llamar("/api/chat", "POST", {"pregunta": "cuantos pedidos hoy"})
+    st2, _, b2 = llamar("/api/chat/valorar", "POST", {"id": json.loads(b).get("id"), "util": True})
+    chequeo("/api/chat/valorar registra el pulgar y /api/chat/historial no esta publicado", st2 == 200 and json.loads(b2).get("ok") and llamar("/api/chat/historial")[0] == 404)
     chequeo("/api/chat tolera cuerpos invalidos", llamar("/api/chat", "POST", ["x"])[0] == 200 and llamar("/api/chat", "POST", {"pregunta": "x" * 5000, "previo": "no"})[0] == 200)
     chequeo("/docs y /openapi.json no estan publicados", llamar("/docs")[0] == 404 and llamar("/openapi.json")[0] == 404)
     st, h, b = llamar("/api/dashboard", "POST", ["no", "es", "un", "objeto"])

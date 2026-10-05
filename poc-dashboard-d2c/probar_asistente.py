@@ -110,6 +110,57 @@ prueba("hasta cuando hay datos", "pedidos cargados" in p("hasta cuando hay datos
 prueba("pregunta que no entiende", p("blablabla")["ok"] is False)
 prueba("pregunta vacia o muy larga no rompe", p("")["ok"] is False and p("x" * 5000)["ok"] is False)
 
+print("Ventas por Clasif2 (maestra de productos)")
+from app import items, ventas  # noqa: E402
+from app.demo import CLASIF2  # noqa: E402
+
+nc = dim[(dim["Creation_Date"] >= hoy.replace(day=1)) & (dim["Status"] != "canceled")]
+lv = lin.merge(nc[["Sequence", "SalesChannelName"]], on="Sequence")
+lv["C2"] = lv["SKU"].map(CLASIF2)
+esp = lv.groupby("C2")["Monto"].sum().sort_values(ascending=False)
+f_mes = {"alcance": "todos", "fecha_ini": hoy.replace(day=1).strftime("%Y-%m-%d"), "fecha_fin": hoy.strftime("%Y-%m-%d")}
+v = ventas.ventas(f_mes)
+prueba("ventas por Clasif2 coinciden con el calculo a mano", v["ok"] and [c["nombre"] for c in v["clasif"]] == list(esp.index) and cerca(v["total"], esp.sum()))
+v2 = ventas.ventas({**f_mes, "cliente": ["MELI"]})
+e2 = lv[lv["SalesChannelName"] == "MELI"].groupby("C2")["Monto"].sum()
+prueba("respeta el filtro de cliente (clic en MELI)", cerca(v2["total"], e2.sum()) and v2["total"] < v["total"])
+v3 = ventas.ventas(f_mes, "Lavadoras")
+prueba("zoom: productos de una clasificacion", [p["producto"] for p in v3["productos"]] == list(lv[lv["C2"] == "Lavadoras"].groupby("Descripcion")["Monto"].sum().sort_values(ascending=False).index))
+csv_sel = ventas.exportar_csv({**f_mes, "cliente": ["MELI"]}, "Lavadoras").lstrip("\ufeff").split("\r\n")
+csv_todo = ventas.exportar_csv({**f_mes, "cliente": ["MELI"]}).lstrip("\ufeff").split("\r\n")
+prueba("exportar: Clasif2 | Producto | Venta, solo la elegida y todas", csv_sel[0] == "Clasif2;Producto;Venta" and {x.split(";")[0] for x in csv_sel[1:] if x} == {"Lavadoras"}
+       and {x.split(";")[0] for x in csv_todo[1:] if x} == set(e2.index) and sum(int(x.split(";")[2]) for x in csv_todo[1:] if x) == int(e2.sum()))
+cols = ["Country", "Order", "Sequence", "ID_SKU", "Quantity_SKU", "Category_Ids_Sku", "Reference_Code", "SKU_Name", "SKU_Value", "SKU_Selling_Price",
+        "Item_Attachments", "warehouse", "SLA_type", "List_freight_price", "Freight_price", "Shipping_Estimate_Date"]
+fila = pd.DataFrame([["CH", "O1", "1", "9", 2, "/1/", "240096077", "Secadora 9Kg", 1939900, 1939900, "", "EC01", "Conv", 0, 0, None]], columns=cols)
+d_it, inf = items.normalizar(fila, pd.Series({"1": 38798.0}))
+prueba("columnas reales de OrderItems (SKU_Selling_Price en centavos)", inf["mapa"]["precio_unitario"] == "SKU_Selling_Price" and inf["centavos"] and cerca(d_it["Monto"].iloc[0], 38798))
+
+print("Memoria del asistente (historial y valoracion)")
+import tempfile  # noqa: E402
+
+from app.asistente import memoria  # noqa: E402
+
+hist = tempfile.mktemp(suffix=".jsonl")
+memoria.reiniciar_para_pruebas(hist)
+r1 = p("cuantas unidades del med165b hoy")
+prueba("la pregunta queda en el historial", bool(r1.get("id")) and memoria.estadisticas()["preguntas"] == 1)
+memoria.valorar(r1["id"], True)
+prueba("una pregunta validada se repite desde la memoria", p("cuantas unidades del MED165B hoy?")["via"] == "memoria")
+r2 = p("pedidos cancelados hoy")
+memoria.valorar(r2["id"], False)
+prueba("una respuesta rechazada avisa la proxima vez", any("no te sirvió" in n for n in p("pedidos cancelados hoy")["notas"]))
+memoria.reiniciar_para_pruebas(hist)
+prueba("el historial sobrevive a un reinicio del servidor", memoria.estadisticas()["preguntas"] >= 3 and memoria.exacta("cuantas unidades del med165b hoy") is not None)
+p("blablabla")
+prueba("registra lo que no entendio para mejorar las reglas", ("blablabla", 1) in memoria.estadisticas()["no_entendidas"])
+r3 = p("y ayer?", r1["plan"])
+prueba("un seguimiento no se guarda como pregunta reutilizable", memoria.exacta("y ayer") is None)
+memoria.valorar(r3["id"], True)
+prueba("un seguimiento validado tampoco se reutiliza (depende del contexto)", memoria.exacta("y ayer") is None)
+p("cuantas unidades del med165b hoy")
+prueba("las preguntas repetidas pasan a ser frecuentes", "cuantas unidades del med165b hoy" in memoria.frecuentes() or "cuantas unidades del MED165B hoy?" in memoria.frecuentes())
+
 print()
 if fallos:
     print(f"RESULTADO: {len(fallos)} falla(s): " + "; ".join(fallos))

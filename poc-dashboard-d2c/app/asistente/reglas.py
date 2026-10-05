@@ -182,7 +182,7 @@ def _pedido_o_sku(X: Texto, dim: pd.DataFrame, plan: dict) -> None:
             plan["sku"], X.usado[i] = t, True
 
 
-def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None = None, cat_fn=None):
+def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None = None, cat_fn=None, ruido: set | None = None):
     """-> (plan, banderas). `cat_fn()` entrega el catalogo de productos solo si hace falta (cargar las lineas cuesta)."""
     X, K = Texto(q), conocidos(dim)
     plan, expl = plan_vacio(), set()
@@ -211,7 +211,7 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
         expl.add("comparar")
 
     # lo que sobra puede ser el nombre de un producto
-    libres = [t for t in X.libres() if t not in L.STOP and t not in L.MESES and len(t) >= 2 and not (t.isdigit() and len(t) < 2)]
+    libres = [t for t in X.libres() if t not in L.STOP and t not in L.MESES and t not in (ruido or ()) and len(t) >= 2 and not (t.isdigit() and len(t) < 2)]
     if libres and not plan["pedido"]:
         cat = cat_fn() if cat_fn else None
         if cat is not None:

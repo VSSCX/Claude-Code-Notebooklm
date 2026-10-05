@@ -35,6 +35,7 @@ con login corporativo delante. Mientras tanto, el dashboard real sigue corriendo
 - Solo demo: `VERCEL=1` fuerza `DEMO`; nunca intenta conectarse a las bases.
 - Sin hilo de monitoreo; el navegador pregunta cada 30 s (no cada 2 s) para no gastar invocaciones.
 - La campana de notificaciones no recibe avisos (en demo sobre Vercel no entran pedidos nuevos); cuando haya datos reales, cada notificación se guarda solo en el navegador de cada persona (no se comparte entre analistas).
+- El gráfico de ventas por Clasif2 y el asistente funcionan con los datos y la maestra de ejemplo; el historial de preguntas del asistente vive en la memoria de cada instancia (no se guarda en disco) y `/api/chat/historial` no se publica.
 - Sin botón «Simular pedido» (el pedido simulado viviría en la memoria de una sola instancia).
 - No se publican `/docs`, `/openapi.json`, `/api/diagnostico` ni `/api/demo/pedido`.
 - El detalle de un pedido y el asistente de consultas funcionan con los datos de ejemplo (el asistente solo con reglas). No configures `IA_MODO` ni claves en un despliegue público: no tiene usuario ni clave, y el tope de 40 preguntas por minuto es por instancia, no global.
@@ -42,7 +43,7 @@ con login corporativo delante. Mientras tanto, el dashboard real sigue corriendo
 
 ## Auditoría
 
-Se corre con `python verificar_vercel.py` (44 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
+Se corre con `python verificar_vercel.py` (48 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
 
 | Área | Qué se comprobó | Resultado |
 |---|---|---|

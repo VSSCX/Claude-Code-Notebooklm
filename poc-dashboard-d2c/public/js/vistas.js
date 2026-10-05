@@ -130,7 +130,7 @@ function vistaPedidos(){
       <section class="card"><div class="card-h"><h2>Causa pendiente</h2></div><div class="card-b flush" tabindex="0">${causa}</div></section>
     </div>
     ${card('a-tabla','Detalle de pedidos',fmt(d.n_filtrado)+' pedidos'+(d.detalle.length>=500?', primeros 500':'')+descOrden('det'),tablaDetalle())}
-    <div class="charts3 a-graf">${chartCard('','Pedidos por SLA Type','cSla',d.g_sla)}${chartCard('','Pedidos por Cliente','cCli',d.g_cli)}${chartCard('','Pedidos por Warehouse','cWh',d.g_wh)}</div>
+    <div class="charts3 a-graf">${chartCard('','Pedidos por SLA Type','cSla',d.g_sla)}${chartCard('','Pedidos por Cliente','cCli',d.g_cli)}${cardVentas()}</div>
     ${card('a-entr','Matriz por día de entrega estimada','<span class="lg"><i class="r"></i>vencido</span><span class="lg"><i class="a"></i>vence hoy</span><span>(Integrado · Pendiente)</span>',tablaEntrega(),'fit')}
   </div>`;
 }

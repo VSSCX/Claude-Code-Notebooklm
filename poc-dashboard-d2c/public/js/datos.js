@@ -43,11 +43,15 @@ function morph(el,html){
 }
 
 /* ============ carga ============ */
+function cuerpoFiltros(){   // los filtros tal como se mandan al servidor (los usa el tablero y las ventas por clasificación)
+  const body={...S.filtros}; if(S.view!=='pedidos') body.alcance='todos';
+  if(body.buscar){body.alcance='todos';body.bodega=[];body.fecha_ini=null;body.fecha_fin=null;}   // una busqueda puntual ignora el alcance, la bodega y el periodo
+  return body;
+}
 async function cargar(){
   sincPer();
   const id=++S.req; $('#shell').classList.add('loading');
-  const body={...S.filtros}; if(S.view!=='pedidos') body.alcance='todos';
-  if(body.buscar){body.alcance='todos';body.bodega=[];body.fecha_ini=null;body.fecha_fin=null;}   // una busqueda puntual ignora el alcance, la bodega y el periodo
+  const body=cuerpoFiltros();
   body.orden_det=S.orden.det;body.orden_crit=S.orden.crit;   // el orden se aplica en el servidor sobre TODO el conjunto
   try{
     const r=await fetch('/api/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -58,6 +62,7 @@ async function cargar(){
     S.prevTarj=S.data?S.data.tarjetas:null;
     S.data=j;S.version=j.version;S.err=j.error||null;
     render();
+    if(S.view==='pedidos')cargarVentas();
   }catch(e){
     if(id!==S.req)return; $('#shell').classList.remove('loading');
     S.err='No hay conexión con el servidor. ¿Está corriendo el dashboard (run.bat)?';render();

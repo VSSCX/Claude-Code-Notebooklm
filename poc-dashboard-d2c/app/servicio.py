@@ -462,11 +462,8 @@ def construir(filtros: dict) -> dict:
     sin_fecha = _aplicar_filtros(dim_full, {**f, "fecha_ini": None, "fecha_fin": None})
     # Filtrado cruzado como en Power BI: el grafico donde se hizo clic NO se filtra por su propia seleccion
     # (sigue mostrando todas las barras; el navegador resalta las elegidas). Los demas si se filtran.
-    bod = list(f.get("bodega") or [])
-    bod_base = BASE_BODEGA if bod and set(bod) < set(BASE_BODEGA) else bod      # una sola bodega elegida en el grafico
     dim_sla = _aplicar_filtros(dim_full, {**f, "sla": None})
     dim_cli = _aplicar_filtros(dim_full, {**f, "cliente": None})
-    dim_wh = _aplicar_filtros(dim_full, {**f, "bodega": bod_base})
     dim_mes = sin_fecha if (_sel_mes(f) or _sel_dia(f)) else dim            # composicion: muestra todos los meses
     dim_dia = sin_fecha if _sel_dia(f) else dim                              # estado por dia: muestra todos los dias
     mes_ini = hoy.replace(day=1)
@@ -523,7 +520,7 @@ def construir(filtros: dict) -> dict:
         "matriz_entrega": _matriz_entrega(dim, hoy), "matriz_dia": _matriz(dim_dia),
         "composicion": _composicion(dim_mes), "canal": _canal(dim, sin_fecha, hoy),
         "cierre": _cierre(base, hoy),
-        "g_sla": _top(dim_sla, "SLA_Type"), "g_cli": _top(dim_cli, "SalesChannelName"), "g_wh": _top(dim_wh, "warehouse"),
+        "g_sla": _top(dim_sla, "SLA_Type"), "g_cli": _top(dim_cli, "SalesChannelName"),
         "g_noint": _top(dim_cli[dim_cli["Estado Ingreso"] == "No ingresado"], "SalesChannelName"),
         "tabla_criticos": crit_filas, "criticos_total": crit_tot,
         "detalle": _detalle(dim, recientes, f.get("orden_det")), "nuevos": [x["sequence"] for x in []],
@@ -571,6 +568,12 @@ def base_pedidos():
     """(dim, hoy): los pedidos ya modelados, sin tocar las lineas."""
     dim, hoy, _ = _snapshot()
     return dim, hoy
+
+
+def filtrar_pedidos(filtros: dict) -> pd.DataFrame:
+    """Los pedidos que quedan con los mismos filtros del tablero (para calcular otras cifras sobre ellos)."""
+    dim, _, _ = _snapshot()
+    return _aplicar_filtros(dim, dict(filtros or {}))
 
 
 def stock_vtex():

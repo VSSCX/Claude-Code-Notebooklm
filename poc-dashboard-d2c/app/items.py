@@ -18,7 +18,7 @@ from .config import settings
 
 CAND = {
     "desc": ["skuname", "productname", "itemname", "name", "description", "descripcion", "nombre", "skudescription", "refname"],
-    "precio": ["sellingprice", "unitprice", "priceperunit", "itemprice", "price", "precio", "preciounitario", "skuprice"],
+    "precio": ["skusellingprice", "sellingprice", "unitprice", "priceperunit", "itemprice", "skuvalue", "price", "precio", "preciounitario", "skuprice"],
     "monto": ["totalprice", "linetotal", "linetotalprice", "amount", "monto", "subtotal", "total"],
     "sku": ["referencecode", "referenceid", "refid", "codigosap", "sapcode", "sku"],
     "qty": ["quantitysku", "quantity", "qty", "cantidad"],

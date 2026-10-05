@@ -37,7 +37,8 @@ const _mc=document.createElement('canvas').getContext('2d');
 const cutPx=(l,px,sz=fz(11.5))=>{_mc.font=sz+'px '+fam();if(_mc.measureText(l).width<=px)return l;let s=l;while(s.length>1&&_mc.measureText(s+'…').width>px)s=s.slice(0,-1);return s.trimEnd()+'…';};
 const valueLabels={id:'valueLabels',afterDatasetsDraw(ch){
   const c=ch.ctx;c.save();c.font='600 '+fz(11.5)+'px '+fam();c.fillStyle=css('--text-2');c.textBaseline='middle';
-  ch.getDatasetMeta(0).data.forEach((b,i)=>c.fillText(fmt(ch.data.datasets[0].data[i]),b.x+fz(5),b.y));c.restore();}};
+  const f=ch.data.datasets[0].fmtv||fmt;
+  ch.getDatasetMeta(0).data.forEach((b,i)=>c.fillText(f(ch.data.datasets[0].data[i]),b.x+fz(5),b.y));c.restore();}};
 const segLabels={id:'segLabels',afterDatasetsDraw(ch){
   const c=ch.ctx;c.save();c.font='700 '+fz(11.5)+'px '+fam();c.textAlign='center';c.textBaseline='middle';
   ch.data.datasets.forEach((ds,di)=>{c.fillStyle=onClr(ds.colorBase||ds.backgroundColor);ch.getDatasetMeta(di).data.forEach((b,i)=>{
@@ -59,26 +60,26 @@ function grafico(id,cfg){
   if(ex)ex.destroy();
   charts[id]=new Chart(el,cfg);
 }
-function miniBar(id,data,color,campo){
+function miniBar(id,data,color,campo,f){
   const el=document.getElementById(id);if(!el||!data||!data.labels.length)return;
   const n=Math.max(2,Math.floor((el.parentElement.clientHeight-fz(4))/fz(19)));
   const L=data.labels.slice(0,n),V=data.valores.slice(0,n);
   const sub=data.total>L.length?`top ${L.length} de ${data.total}`:'';
   S.subs[id]=sub;const se=document.getElementById('sub-'+id);if(se)se.textContent=sub;
-  const o=baseO();o.indexAxis='y';o.layout={padding:{right:fz(36)}};
-  const maxPx=Math.max(fz(48),((el.parentElement.clientWidth-fz(36))/2)-fz(18));
+  const o=baseO();o.indexAxis='y';const pad=f?fz(64):fz(36);o.layout={padding:{right:pad}};
+  const maxPx=Math.max(fz(48),((el.parentElement.clientWidth-pad)/2)-fz(18));
   o.scales.x={display:false,beginAtZero:true};
   o.scales.y.ticks={autoSkip:false,color:css('--text-2'),font:{size:fz(11.5)},padding:fz(4),callback:function(v){return cutPx(this.getLabelForValue(v),maxPx);}};
   o.plugins.tooltip={callbacks:{title:i=>L[i[0].dataIndex]}};
   const sel=campo?seleccion(campo):[];
   o.onClick=(ev,els)=>{if(campo&&els.length)alternar(campo,L[els[0].index],multiClic(ev));};o.onHover=manito;
-  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:sel.length?L.map(l=>sel.includes(l)?color:alfa(color,.28)):color,borderRadius:4,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20)}]},options:o,plugins:[valueLabels]});
+  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:sel.length?L.map(l=>sel.includes(l)?color:alfa(color,.28)):color,borderRadius:4,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20),fmtv:f}]},options:o,plugins:[valueLabels]});
 }
 function pintar(){
   const d=S.data;if(!d)return;
   Chart.defaults.font.family=fam();Chart.defaults.color=css('--text-3');
   const prim=css('--primary');
-  if(S.view==='pedidos'){miniBar('cSla',d.g_sla,prim,'sla');miniBar('cCli',d.g_cli,prim,'cliente');miniBar('cWh',d.g_wh,prim,'bodega');}
+  if(S.view==='pedidos'){miniBar('cSla',d.g_sla,prim,'sla');miniBar('cCli',d.g_cli,prim,'cliente');pintarVentas();}
   if(S.view==='resumen'){
     const cp=d.composicion;
     if(document.getElementById('cComp')&&cp.meses.length){

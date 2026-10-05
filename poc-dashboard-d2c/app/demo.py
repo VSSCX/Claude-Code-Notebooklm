@@ -44,6 +44,17 @@ CATALOGO = [
     ("980050001", "Purificador de Aire PA 50 m2", 159990, 2, 16),
 ]
 _PESOS = [c[3] for c in CATALOGO]
+# Maestra de productos de ejemplo: codigo SAP -> clasificacion 2
+CLASIF2 = {"910016501": "Refrigeradores", "910016502": "Refrigeradores", "910028001": "Refrigeradores", "910041001": "Refrigeradores",
+           "910008001": "Frigobares y congeladores", "910014001": "Frigobares y congeladores", "920008501": "Lavadoras",
+           "920010001": "Lavadoras", "920012001": "Lavadoras", "920009001": "Secadoras", "930060001": "Cocinas y encimeras",
+           "930090001": "Cocinas y encimeras", "930070001": "Hornos", "930036001": "Cocinas y encimeras", "940060001": "Campanas",
+           "940090001": "Campanas", "950025001": "Microondas", "960001001": "Aspiradoras", "970012001": "Lavavajillas",
+           "980050001": "Purificadores de aire"}
+
+
+def maestra_demo() -> pd.DataFrame:
+    return pd.DataFrame([{"SKU": c[0], "Clasif2": CLASIF2[c[0]], "Producto": c[1]} for c in CATALOGO])
 STOCK_DEMO = {c[0]: c[4] for c in CATALOGO}
 
 

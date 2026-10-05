@@ -41,7 +41,7 @@ SCHEMA = {"type": "object", "additionalProperties": False, "properties": {
     "top": {"type": "integer"}, "comparar": {"type": "boolean"}}}
 
 
-def prompt_sistema(K: dict, hoy: pd.Timestamp) -> str:
+def prompt_sistema(K: dict, hoy: pd.Timestamp, ejemplos: list | None = None) -> str:
     j = lambda x: json.dumps(x, ensure_ascii=False)  # noqa: E731
     return f"""Eres el traductor de preguntas de un dashboard de pedidos D2C (VTEX contra SAP). NO respondas la pregunta ni inventes cifras:
 devuelve SOLO un objeto JSON con los campos que apliquen (omite los que no).
@@ -60,7 +60,15 @@ Ejemplos:
 "cuantos pedidos se cancelaron el ultimo mes" -> {{"accion":"medir","metrica":"pedidos","estado":["cancelado"],"periodo":"ultimos","dias":30}}
 "muestrame los pedidos post fechados de hoy con productos y monto" -> {{"accion":"listar","bodega":["POST_Fechado"],"periodo":"hoy"}}
 "cual es el status de post fechado hoy" -> {{"accion":"medir","metrica":"pedidos","bodega":["POST_Fechado"],"periodo":"hoy","agrupar":"status"}}
-"hay stock de la lavadora de 8,5 kg" -> {{"accion":"stock","producto":"lavadora 8,5 kg"}}"""
+"hay stock de la lavadora de 8,5 kg" -> {{"accion":"stock","producto":"lavadora 8,5 kg"}}""" + _validados(ejemplos)
+
+
+def _validados(ejemplos) -> str:
+    """Preguntas parecidas que los analistas ya validaron (pulgar arriba): la IA aprende de ellas en cada pregunta."""
+    if not ejemplos:
+        return ""
+    lineas = [f'"{e["q"]}" -> {json.dumps({k: v for k, v in e["plan"].items() if v not in (None, [], False)}, ensure_ascii=False)}' for e in ejemplos]
+    return "\nEjemplos validados por los analistas (misma forma, parecidos a la pregunta):\n" + "\n".join(lineas)
 
 
 def _post(url: str, cuerpo: dict, cab: dict) -> dict:
@@ -111,8 +119,8 @@ def _llm(system: str, user: str) -> str:
     raise RuntimeError("IA no configurada")
 
 
-def planificar(q: str, K: dict, hoy: pd.Timestamp, previo: dict | None) -> dict | None:
+def planificar(q: str, K: dict, hoy: pd.Timestamp, previo: dict | None, ejemplos: list | None = None) -> dict | None:
     usuario = q if not previo else f"(plan de la pregunta anterior: {json.dumps(previo, ensure_ascii=False)})\n{q}"
-    txt = _llm(prompt_sistema(K, hoy), usuario)
+    txt = _llm(prompt_sistema(K, hoy, ejemplos), usuario)
     m = re.search(r"\{.*\}", txt, re.S)
     return E.validar(json.loads(m.group(0)), K) if m else None
