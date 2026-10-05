@@ -27,9 +27,20 @@ def _semilla() -> list[dict]:
     return filas
 
 
+def _corregir_valores_de_fabrica(s: Session) -> None:
+    """SODIMAC mide la altura total con tarima: 120 cm menos los 15 del pallet dejan 105 de carga.
+    Las instalaciones que quedaron con el valor de fábrica anterior (120) se corrigen; uno cambiado a mano no se toca."""
+    c = s.get(Cliente, "SODIMAC")
+    if c is not None and c.pallet_alto == 120.0:
+        c.pallet_alto = 105.0
+        c.actualizado = ahora()
+        s.flush()
+
+
 def asegurar_semilla(s: Session) -> int:
     """La primera vez deja cargados los clientes que estaban en el código."""
     if s.scalar(select(Cliente).limit(1)) is not None:
+        _corregir_valores_de_fabrica(s)
         return 0
     for f in _semilla():
         s.add(Cliente(**f, actualizado=ahora()))

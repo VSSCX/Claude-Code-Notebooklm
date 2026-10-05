@@ -1230,3 +1230,18 @@ def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
     assert por_sku == {"CTOST": 40, "CLIC": 10, "LIC": 3}              # unidades de producto: 10×4, 5×2 y 3 sueltas
     assert d["unidades"] == 53
     assert all(f.get("bultos") for f in d["filas"] if f["sku"] in ("CTOST", "CLIC"))
+
+
+def test_el_pallet_de_sodimac_deja_105_cm_de_carga(datos):
+    from app.analisis import pallet_cliente
+    from app.integrations import clientes as cli_mod
+    from app.models import Cliente
+    assert pallet_cliente("SODIMAC") == (120, 100, 105)
+    with SessionLocal() as s:
+        assert cli_mod.buscar(s, "SODIMAC").pallet_alto == 105
+        s.get(Cliente, "SODIMAC").pallet_alto = 120.0              # instalación con el valor de fábrica anterior
+        s.commit()
+        assert cli_mod.buscar(s, "SODIMAC").pallet_alto == 105      # se corrige sola
+        s.get(Cliente, "SODIMAC").pallet_alto = 110.0              # cambiado a mano: se respeta
+        s.commit()
+        assert cli_mod.buscar(s, "SODIMAC").pallet_alto == 110

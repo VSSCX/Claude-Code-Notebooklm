@@ -38,10 +38,11 @@ CLIENTES = {
 }
 
 
+# SODIMAC mide la altura total con tarima (120 cm): descontados los 15 cm del pallet quedan 105 de carga.
 # Pallet por cliente (hoja "Clientes", columnas D/E/F). Default del VBA: 120 x 100 x 140.
 PALLETS = {
     "EASY": (120, 100, 150), "WALMART": (120, 100, 150), "RIPLEY": (120, 100, 160),
-    "SODIMAC": (120, 100, 120), "PARIS": (120, 100, 150), "FALABELLA": (120, 100, 180),
+    "SODIMAC": (120, 100, 105), "PARIS": (120, 100, 150), "FALABELLA": (120, 100, 180),
     "LA POLAR": (120, 100, 150), "HITES": (120, 100, 140), "MULTICENTRO": (120, 100, 150),
     "DIMARSA": (120, 100, 150), "TOTTUS": (120, 100, 170), "ABC": (120, 100, 150),
 }
