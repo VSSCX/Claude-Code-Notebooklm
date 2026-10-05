@@ -732,7 +732,10 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         letra, color = orden[sku]
         if d is not None:
             dc = cache.get(("c" + sku).lower())
-            detalle[sku] = {"piezas": int(d.piezas or 1), "caja": int(dc.piezas or 1) if dc is not None else 0,
+            # caja master: C + el SKU del producto suelto (o una "C…" con varias piezas)
+            es_master = sku[:1] in ("C", "c") and (cache.get(sku[1:].lower()) is not None or int(d.piezas or 1) > 1)
+            detalle[sku] = {"piezas": int(d.piezas or 1), "master": es_master,
+                            "caja": int(dc.piezas or 1) if dc is not None else 0,
                             "descripcion": d.desc or sku,
                             "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
                             "apilable": d.apilable, "peso": d.peso,
@@ -746,6 +749,18 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
            "desconocidos": desconocidos, "modo_usado": modo,
            "faltantes": _faltantes_de(lineas, lambda sku: cache.get(sku.lower()) is not None)}
 
+    # Las cajas master cuentan como un bulto con varias unidades: 10 cajas de 4 = 40 unidades en 10 bultos.
+    # El motor coloca cajas; aquí las unidades de cada fila y el total se llevan a unidades de producto.
+    por_caja = {k: v["piezas"] for k, v in detalle.items() if v.get("master") and v["piezas"] > 1}
+    if por_caja:
+        for lista in (doc.get("filas") or [], doc.get("filas04") or []):
+            for f in lista:
+                m = por_caja.get(str(f.get("sku")))
+                if m:
+                    f["bultos"] = f.get("bultos") or f["unidades"]
+                    f["unidades"] = f["unidades"] * m
+        doc["unidades"] = sum(f["unidades"] for f in (doc.get("filas04") or doc.get("filas") or []))
+    doc["por_caja_master"] = por_caja
     if "PREDISTRIBUIDO" in modo and pre:
         doc["avisos"] = list(doc.get("avisos") or []) + _avisos_reparto(lineas, pre)
     if por_grupos:
@@ -809,7 +824,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     [_Cam(numero=1, tipo=camiones[0].tipo, L=camiones[0].L, w=camiones[0].w,
                           h=camiones[0].h)])
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
-        datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor, modo=modo)
+        datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor, modo=modo,
+                                    por_caja=por_caja)
         html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob("libre_*.html"):
             viejo.unlink(missing_ok=True)

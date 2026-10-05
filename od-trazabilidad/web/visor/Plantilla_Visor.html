@@ -795,7 +795,7 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay){
   // --- vehiculo y totales
   doc.setFont('helvetica','bold');doc.setFontSize(11.5);doc.setTextColor.apply(doc,INK);
   doc.text((c.tipo||'CAMIÓN')+'  ('+Math.round(c.L*10)+' x '+Math.round(c.W*10)+' x '+Math.round(c.H*10)+' mm)',M,36);
-  var libres=Math.max(0,(c.L-(c.maxX||0))/100), uni=(c.items||[]).reduce(function(a,it){return a+(it.n||0);},0), oc=Math.max(0,Math.min(100,c.ocupVol||0));
+  var libres=Math.max(0,(c.L-(c.maxX||0))/100), uni=(c.items||[]).reduce(function(a,it){return a+(it.n||0)*(it.m||1);},0), oc=Math.max(0,Math.min(100,c.ocupVol||0));
   doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(70,80,95);
   doc.text('Peso total: '+fmt(c.pesoTot)+' kg',M,42.4);
   doc.text('Volumen total: '+fmt(c.volTot)+' m3  ('+oc.toFixed(0)+' %)',M+52,42.4);
@@ -831,7 +831,7 @@ function pdfTabla(doc,c,lay){
     doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(60,70,85);
     var cx=lay.dos?{desc:x+1.5,uni:x+cw-2}:{desc:x+1.5,uni:x+cw-82,L:x+cw-62,A:x+cw-44,H:x+cw-26,peso:x+cw-2};
     doc.text('Descripción',cx.desc,y+4.1);
-    doc.text('Piezas',cx.uni,y+4.1,{align:'right'});
+    doc.text('Unidades',cx.uni,y+4.1,{align:'right'});
     if(!lay.dos){doc.text('Long.',cx.L,y+4.1,{align:'right'});doc.text('Ancho',cx.A,y+4.1,{align:'right'});doc.text('Alto',cx.H,y+4.1,{align:'right'});doc.text('Peso kg',cx.peso,y+4.1,{align:'right'});}
     y+=6.5;
     g.forEach(function(it,k){
@@ -848,16 +848,17 @@ function pdfTabla(doc,c,lay){
       doc.setTextColor(40,50,65);
       if(doc.getTextWidth(nm)>maxW-(xn-xd)){while(nm.length>1&&doc.getTextWidth(nm+'…')>maxW-(xn-xd))nm=nm.slice(0,-1);nm+='…';}
       doc.text(nm,xn,ym+1.05);
-      doc.setFont('helvetica','bold');doc.text(fmt(it.n),cx.uni,ym+1.05,{align:'right'});doc.setFont('helvetica','normal');
+      doc.setFont('helvetica','bold');doc.text(fmt(it.n*(it.m||1)),cx.uni,ym+1.05,{align:'right'});doc.setFont('helvetica','normal');
+      if((it.m||1)>1&&!lay.dos){doc.setFontSize(7);doc.setTextColor(120,130,145);doc.text(fmt(it.n)+' bultos x '+it.m,cx.uni-12,ym+1.05,{align:'right'});}
       if(!lay.dos){doc.text(num(it.L),cx.L,ym+1.05,{align:'right'});doc.text(num(it.W),cx.A,ym+1.05,{align:'right'});doc.text(num(it.H),cx.H,ym+1.05,{align:'right'});doc.text(fmt(it.n*it.pesoU),cx.peso,ym+1.05,{align:'right'});}
       doc.setDrawColor(228,232,238);doc.setLineWidth(0.2);doc.line(x,y+(k+1)*rh,x+cw,y+(k+1)*rh);
     });
   });
   // total
   var ty=y0+6.5+(lay.dos?Math.ceil(items.length/2):items.length)*rh+5.4;
-  var uni=items.reduce(function(a,it){return a+(it.n||0);},0), peso=items.reduce(function(a,it){return a+(it.n||0)*(it.pesoU||0);},0);
+  var uni=items.reduce(function(a,it){return a+(it.n||0)*(it.m||1);},0), bult=items.reduce(function(a,it){return a+(it.n||0);},0), peso=items.reduce(function(a,it){return a+(it.n||0)*(it.pesoU||0);},0);
   doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor.apply(doc,INK);
-  doc.text('Total: '+items.length+' producto'+(items.length===1?'':'s')+'  ·  '+fmt(uni)+' unidades  ·  '+fmt(peso)+' kg',M,ty);
+  doc.text('Total: '+items.length+' producto'+(items.length===1?'':'s')+'  ·  '+fmt(uni)+' unidades'+(bult!==uni?'  ·  '+fmt(bult)+' bultos':'')+'  ·  '+fmt(peso)+' kg',M,ty);
 }
 function hex(h){h=String(h||'#888888').replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 function num(n){return (Math.round((n||0)*10)/10).toString().replace('.',',');}

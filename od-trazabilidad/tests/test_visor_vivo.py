@@ -7,7 +7,7 @@ from app.cubicaje.visor import VISOR_VIVO, asegurar_visor_vivo, preparar_carpeta
 
 def test_visor_vivo_se_crea_y_se_actualiza_solo_si_cambia_la_plantilla(tmp_path):
     url = asegurar_visor_vivo(tmp_path, "A __CUBICAJE_JSON__ B")
-    assert url == f"/visor/{VISOR_VIVO}"
+    assert url.startswith(f"/visor/{VISOR_VIVO}?v=")
     archivo = tmp_path / VISOR_VIVO
     assert archivo.read_text(encoding="utf-8") == 'A {"camiones":[]} B'
     antes = archivo.stat().st_mtime_ns

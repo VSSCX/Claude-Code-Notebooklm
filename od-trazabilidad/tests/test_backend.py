@@ -1205,3 +1205,28 @@ def test_exportar_el_analisis_para_los_kam(datos):
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
     assert wb["Entregas"][1][0].value == "N° entrega" and all(len(x) == 4 for x in ent)
     assert c.get("/api/analisis/9999999999/excel").status_code == 404
+
+
+def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import Medida
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "TOST", "TOSTADOR")
+        _medida(s, "LIC", "LICUADORA")
+        for sku, desc, piezas in (("CTOST", "CAJA MASTER TOSTADOR", 4), ("CLIC", "CAJA MASTER LICUADORA", 2)):
+            s.add(Medida(sku=sku, descripcion=desc, piezas=piezas, largo=60, ancho=50, alto=40, peso=20,
+                         apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
+        s.commit()
+    # 10 cajas de 4 tostadores + 5 cajas de 2 licuadoras + 3 licuadoras sueltas
+    d = c.post("/api/cubicaje-libre", json={"cliente": "", "modo": "MDA", "lineas": [
+        {"sku": "CTOST", "qty": 10}, {"sku": "CLIC", "qty": 5}, {"sku": "LIC", "qty": 3}]}).json()
+    assert d["detalle_lineas"]["CTOST"]["master"] is True and d["detalle_lineas"]["LIC"]["master"] is False
+    assert d["por_caja_master"] == {"CTOST": 4, "CLIC": 2}
+    por_sku = {}
+    for f in d["filas"]:
+        por_sku[f["sku"]] = por_sku.get(f["sku"], 0) + f["unidades"]
+    assert por_sku == {"CTOST": 40, "CLIC": 10, "LIC": 3}              # unidades de producto: 10×4, 5×2 y 3 sueltas
+    assert d["unidades"] == 53
+    assert all(f.get("bultos") for f in d["filas"] if f["sku"] in ("CTOST", "CLIC"))

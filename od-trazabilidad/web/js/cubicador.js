@@ -199,7 +199,7 @@ function quitarLinea(i){
    con "con caja master" en SDA, las unidades de un SKU se agrupan en cajas de a `caja` y las sueltas cuentan una a una. */
 function bultosDe(l, d, conCaja){
   const q = +l.qty || 0;
-  if (/^C\d/i.test(l.sku) && d && d.piezas > 1) return {bultos: q, un: q * d.piezas, caja: d.piezas};
+  if (d && (d.master || /^C\d/i.test(l.sku)) && d.piezas > 1) return {bultos: q, un: q * d.piezas, caja: d.piezas};
   if (conCaja && d && d.caja > 1) return {bultos: Math.floor(q / d.caja) + q % d.caja, un: q, caja: d.caja};
   return {bultos: q, un: q, caja: 0};
 }
@@ -439,7 +439,7 @@ function vistaCubicador(){
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div></div>`
     : camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${soloPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
-        ${(c.unidades || 0) !== unidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(unidades)} unidades` : ''}
+        ${(c.unidades || 0) !== totUnidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(totUnidades)} unidades` : ''}
         <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}
         ${pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
         ${enPallet && c.pallet_visto ? `<span class="sep"></span>pallet <b class="num">${c.pallet_visto}</b> resaltado${cam ? ` · va en el camión <b class="num">${cam.numero}</b>` : ''}` : ''}
@@ -483,7 +483,7 @@ function vistaCubicador(){
       <p class="se-cubica small muted">Se cubica como <b>${ef.texto}</b>${inp.piso_pallet || inp.destino ? ' · la carga y el destino elegidos mandan sobre el modo' : ''}</p>
       ${resumen}
       ${faltaMedidas ? `<div class="panel empty"><h3>Falta la Base de Medidas</h3><p>El cubicaje necesita las medidas de los productos. Se cargan una vez y quedan guardadas.</p><button class="btn primary" data-go="config">Ir a Configuración</button></div>` : ''}
-      ${alertaFaltantes(c.faltantes, '/api/cubicaje-libre/faltantes.xlsx', unidades)}
+      ${alertaFaltantes(c.faltantes, '/api/cubicaje-libre/faltantes.xlsx', totUnidades)}
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>

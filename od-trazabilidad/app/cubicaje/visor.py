@@ -47,20 +47,20 @@ def _medidas(placed: list[Placement]):
 
 def construir_json(placed: list[Placement], camiones, es_sda: bool = False,
                    pallets: list[dict] | None = None, tarima: float = 14.5,
-                   cliente: str = "", modo: str = "") -> str:
+                   cliente: str = "", modo: str = "", por_caja: dict | None = None) -> str:
     """ConstruirJson: mismo formato que consume Plantilla_Visor.html."""
     med = _medidas(placed)
     letras, colores = _letras_colores(placed)
     pedido = _js(placed[0].ped) if placed else ""
     partes = []
     for c, cam in enumerate(camiones, start=1):
-        partes.append(_camion_json(c, cam, placed, med, letras, colores, pallets or [], tarima))
+        partes.append(_camion_json(c, cam, placed, med, letras, colores, pallets or [], tarima, por_caja or {}))
     return ('{"titulo":"Order Desk - Cubicaje B2B","esSda":' + ("true" if es_sda else "false") +
             ',"pedido":"' + pedido + '","cliente":"' + _js(cliente) + '","modo":"' + _js(modo) +
             '","camiones":[' + ",".join(partes) + "]}")
 
 
-def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=14.5) -> str:
+def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=14.5, por_caja=None) -> str:
     vol_cap = cam.L * cam.w * cam.h / 1_000_000.0
     vol_tot = peso_tot = 0.0
     items, orden, cajas = {}, [], []
@@ -88,6 +88,7 @@ def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=1
         pu = peso / n if n > 0 else 0.0
         items_json.append(
             '{"cod":"' + _js(cod) + '","desc":"' + _js(desc) + '","n":' + str(n) +
+            ',"m":' + str((por_caja or {}).get(cod, 1)) +
             ',"L":' + fmt_num(dL) + ',"W":' + fmt_num(dW) + ',"H":' + fmt_num(dH) +
             ',"pesoU":' + fmt_num(pu) + ',"letra":"' + letras[cod] +
             '","color":"' + colores[cod] + '"}')
@@ -140,7 +141,7 @@ def asegurar_visor_vivo(carpeta, plantilla: str) -> str:
         # sin releer el archivo: basta con que siga igual que lo que se escribió (misma plantilla,
         # tamaño y fecha). Si alguien lo cambió por fuera, se detecta y se repara.
         if _vivo_escrito.get(str(ruta)) == estado():
-            return f"/visor/{VISOR_VIVO}"
+            return f"/visor/{VISOR_VIVO}?v={huella[:10]}"
     except OSError:
         pass
     try:
@@ -150,7 +151,8 @@ def asegurar_visor_vivo(carpeta, plantilla: str) -> str:
         _vivo_escrito[str(ruta)] = estado()
     except (OSError, ValueError):
         return ""
-    return f"/visor/{VISOR_VIVO}"
+    # la huella de la plantilla va en la dirección: al actualizar, el navegador no reutiliza el visor viejo que tenía guardado
+    return f"/visor/{VISOR_VIVO}?v={huella[:10]}"
 
 
 def guardar_datos_visor(carpeta, nombre: str, json_visor: str) -> None:
