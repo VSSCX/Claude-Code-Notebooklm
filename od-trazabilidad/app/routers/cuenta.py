@@ -46,6 +46,13 @@ def _publico(u: Usuario) -> dict:
             "debe_cambiar_clave": bool(u.debe_cambiar_clave)}
 
 
+@router.get("/ping")
+def ping(s: Session = Depends(get_session)):
+    """Para el monitoreo del servidor (balanceador, Zabbix, Uptime…): responde sin pedir sesión y sin datos internos."""
+    s.execute(select(1))
+    return {"ok": True}
+
+
 @router.get("/sesion")
 def estado_sesion(request: Request, s: Session = Depends(get_session)):
     from ..config import settings
@@ -161,7 +168,7 @@ def mi_actividad(request: Request, limite: int = 100, desde: str = "", s: Sessio
     """Lo que hice yo: mismo historial que ve el administrador, pero solo el propio."""
     c = cuenta_de(request)
     yo = c["usuario"] if c else domain.usuario_actual()
-    q = select(Actividad).where(Actividad.usuario == yo).order_by(Actividad.id.desc())
+    q = select(Actividad).where(Actividad.usuario == yo).order_by(Actividad.at.desc(), Actividad.id.desc())
     if desde:
         try:
             from datetime import datetime

@@ -383,8 +383,11 @@ function render(){
     : UI.view === 'proyeccion' ? vistaProyeccion()
     : UI.view === 'importar' ? vistaImportar()
     : UI.view === 'config' ? vistaConfiguracion()
+    : UI.view === 'miactividad' ? vistaMiActividad()
+    : UI.view === 'admin' ? vistaAdmin()
     : vistaPedidos()));
   Visor.sincronizar();
+  if (UI.view === 'admin') admPostRender();
   postRenderCub();
   moverIndicador();
 }
@@ -526,7 +529,7 @@ document.addEventListener('change', async ev => {
 });
 
 render();
-pedirSesion().then(() => Store.init());   // primero quién eres, después se carga todo
+Sesion.iniciar().catch(() => {}).then(() => { if (!E.res){ document.body.classList.remove('entrando'); $('.app').inert = false; } Store.init(); });   // primero quién eres, después se carga todo
 
 /* ---- Carga por sobre el plan SOP: autorización por lote ---- */
 async function autorizarExceso(){

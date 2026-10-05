@@ -120,7 +120,7 @@ def actividad(usuario: str = "", categoria: str = "", q: str = "", desde: str = 
               entidad: str = "", limite: int = 100, offset: int = 0, s: Session = Depends(get_session)):
     f = _consulta_actividad(usuario, categoria, q, desde, hasta, resultado, entidad)
     total = s.scalar(select(func.count()).select_from(Actividad).where(*f)) or 0
-    filas = s.scalars(select(Actividad).where(*f).order_by(Actividad.id.desc()).offset(max(0, offset))
+    filas = s.scalars(select(Actividad).where(*f).order_by(Actividad.at.desc(), Actividad.id.desc()).offset(max(0, offset))
                       .limit(max(1, min(limite, 500)))).all()
     nombres = _nombres(s)
     usuarios = [u for (u,) in s.execute(select(Actividad.usuario).distinct().order_by(Actividad.usuario)).all()]
@@ -132,7 +132,7 @@ def actividad(usuario: str = "", categoria: str = "", q: str = "", desde: str = 
 def actividad_csv(usuario: str = "", categoria: str = "", q: str = "", desde: str = "", hasta: str = "", resultado: str = "",
                   entidad: str = "", s: Session = Depends(get_session)):
     f = _consulta_actividad(usuario, categoria, q, desde, hasta, resultado, entidad)
-    filas = s.scalars(select(Actividad).where(*f).order_by(Actividad.id.desc()).limit(20000)).all()
+    filas = s.scalars(select(Actividad).where(*f).order_by(Actividad.at.desc(), Actividad.id.desc()).limit(20000)).all()
     nombres = _nombres(s)
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")

@@ -11,7 +11,7 @@
 <link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/css/app.css">
 </head>
-<body>
+<body class="entrando">
 <div class="app">
   <aside class="rail">
     <div class="rail-brand"><span>Order Desk</span><b>Trazabilidad de pedidos</b></div>
@@ -20,6 +20,7 @@
   </aside>
   <div class="stage"><main id="app" tabindex="-1"></main></div>
 </div>
+<div id="entrada" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -32,6 +33,8 @@
 <script src="/js/cubicador.js"></script>
 <script src="/js/proyeccion.js"></script>
 <script src="/js/sap.js"></script>
+<script src="/js/cuentas.js"></script>
+<script src="/js/admin.js"></script>
 <script src="/js/dialogos.js"></script>
 </body>
 </html>

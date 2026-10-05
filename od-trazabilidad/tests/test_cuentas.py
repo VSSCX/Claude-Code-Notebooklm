@@ -189,3 +189,10 @@ def test_servidor_y_purga(c):
     d = c.get("/api/admin/servidor").json()
     assert d["autenticacion"] == "cuentas" and "python" in d
     assert c.post("/api/admin/purgar", headers=H).status_code == 200
+
+
+def test_ping_publico_para_monitoreo(c):
+    _admin(c)
+    with TestClient(app, client=("10.0.0.9", 50000)) as otro:
+        r = otro.get("/api/ping")
+        assert r.status_code == 200 and r.json() == {"ok": True}

@@ -252,7 +252,7 @@ async function importarCarga(input){
   UI.cubOcupado = true; renderSoon();
   try {
     const r = await fetch('/api/cubicaje-libre/importar', {method: 'POST', body: fd,
-      headers: Usuario.get() ? {'X-Usuario': Usuario.get()} : {}});
+      headers: cab()});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'No se pudo importar');
     adoptarDoc(d);

@@ -81,11 +81,8 @@ const Avisos = {
   },
 };
 function setSync(state, text){
-  const quien = typeof Usuario !== 'undefined' ? Usuario.get() : '';
-  const el = $('#sync'); if (!el) return;
-  const html = `<span class="sync-linea"><span class="dot ${state}" aria-hidden="true"></span><span>${esc(text)}</span></span>` +
-    (quien ? `<button class="sync-user" data-act="cambiarUsuario" title="Cambiar de usuario">${esc(quien)}</button>` : '');
-  if (el.innerHTML !== html) el.innerHTML = html;
+  _pieSync = {estado: state, texto: text};
+  renderFoot();
 }
 function toDateISO(v){
   if (v == null || v === '') return '';
@@ -110,24 +107,28 @@ const Usuario = {
   get(){ try { return localStorage.getItem('od_usuario') || ''; } catch(e){ return ''; } },
   set(v){ try { localStorage.setItem('od_usuario', (v || '').trim().slice(0, 40)); } catch(e){} },
 };
+/* Cabeceras de toda llamada: quién (modo abierto) y la marca que el servidor exige contra peticiones de otros sitios */
+const cab = (extra = {}) => ({'X-Requested-With': 'od', ...(Usuario.get() ? {'X-Usuario': Usuario.get()} : {}), ...extra});
 async function api(method, path, body){
   let r;
-  const cabeceras = body ? {'Content-Type':'application/json'} : {};
-  if (Usuario.get()) cabeceras['X-Usuario'] = Usuario.get();
+  const cabeceras = cab(body ? {'Content-Type':'application/json'} : {});
   try {
     r = await fetch('/api' + path, {method, headers: cabeceras, body: body ? JSON.stringify(body) : undefined});
   } catch(e){ throw new Error('Sin conexión con el servidor. Revisa que run.bat siga abierto.'); }
+  const codigo = r.headers.get('X-Request-ID') || '';
   if (r.status === 401 && !path.startsWith('/sesion')){
-    if (typeof pedirSesion === 'function') await pedirSesion();
-    throw new Error('Hay que entrar con la clave para continuar.');
+    if (Sesion.conCuentas()) Sesion.expirada();
+    else if (typeof pedirSesion === 'function') await pedirSesion();
+    const e = new Error('Hay que entrar para continuar.'); e.api = true; throw e;
   }
   if (!r.ok){
-    let msg = `Error ${r.status}`;
+    let msg = `Error ${r.status}`, j = {};
     try {
-      const j = await r.json();
+      j = await r.json();
       msg = typeof j.detail === 'string' ? j.detail : (j.detail || []).map(d => `${(d.loc || []).slice(1).join('.')}: ${d.msg}`).join('; ') || msg;
     } catch(e) {}
-    throw new Error(msg);
+    if (r.status === 403 && j.cambiar_clave && Sesion.cuenta){ Sesion.cuenta.debe_cambiar_clave = true; Sesion.pantalla('cambio'); }
+    const e = new Error(msg); e.api = true; e.status = r.status; e.codigo = j.codigo || codigo; throw e;
   }
   return r.status === 204 ? null : r.json();
 }
@@ -369,8 +370,10 @@ const NAV = [['pedidos','Pedidos'], ['bandeja','Por hacer'], ['cubicador','Cubic
              ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
 function renderNav(){
   const pendientes = grupos().filter(g => g.next).length;
-  const html = NAV.map(([v, t]) => {
-    const c = v === 'bandeja' && pendientes ? `<span class="count">${pendientes}</span>` : '';
+  const items = Sesion.esAdmin() ? [...NAV, ['admin', 'Administración']] : NAV;
+  const html = items.map(([v, t]) => {
+    const c = v === 'bandeja' && pendientes ? `<span class="count">${pendientes}</span>`
+      : v === 'admin' && UI.erroresNuevos ? `<span class="count alerta" title="Errores sin revisar">${UI.erroresNuevos}</span>` : '';
     return `<button class="rail-item" data-go="${v}" ${UI.view === v ? 'aria-current="page"' : ''}>${ICON[v === 'importar' ? 'sap' : v === 'bandeja' ? 'porhacer' : v === 'config' ? 'config' : v]}<span>${t}</span>${c}</button>`;
   }).join('');
   pintar($('#nav'), html);

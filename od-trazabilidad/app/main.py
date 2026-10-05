@@ -32,7 +32,7 @@ async def _vida(_app):
 
 app = FastAPI(title="Trazabilidad Order Desk", version="0.1.0", lifespan=_vida)
 app.include_router(router)
-PUBLICAS_API = ("/api/sesion", "/api/log/cliente")
+PUBLICAS_API = ("/api/sesion", "/api/log/cliente", "/api/ping")
 ESCRITURA = ("POST", "PUT", "PATCH", "DELETE")
 
 
@@ -94,7 +94,8 @@ async def _sesion_y_registro(request, call_next):
         resp.headers["Cache-Control"] = "no-cache"
     if es_api:
         st = resp.status_code
-        registro.linea(tipo="acceso", rid=rid, usuario=quien, metodo=metodo, ruta=ruta, status=st, ms=ms, ip=ip)
+        if st >= 400 or not ruta.startswith(("/api/version", "/api/ping")):      # el sondeo cada 10 s no llena el log
+            registro.linea(tipo="acceso", rid=rid, usuario=quien, metodo=metodo, ruta=ruta, status=st, ms=ms, ip=ip)
         desc = registro.describir(metodo, ruta)
         if desc and (metodo != "GET" or st < 400):
             cat, texto, ent = desc

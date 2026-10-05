@@ -238,7 +238,7 @@ async function importarPredist(input, pedido){
   const fd = new FormData(); fd.append('file', f);
   try {
     const r = await fetch(`/api/predistribuido/${encodeURIComponent(pedido)}/importar`, {method:'POST', body:fd,
-      headers: Usuario.get() ? {'X-Usuario': Usuario.get()} : {}});
+      headers: cab()});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'No se pudo importar el reparto');
     UI.predist[pedido] = d;

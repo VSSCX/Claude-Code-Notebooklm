@@ -192,7 +192,7 @@ RUTAS = [
     ("GET", r"^/api/cubicaje-libre/excel$", "cubicaje", "Exportó el cubicaje del cubicador", 0),
 ]
 _RUTAS = [(m, re.compile(p), c, t, g) for m, p, c, t, g in RUTAS]
-SIN_REGISTRO = ("/api/cubicaje-libre", "/api/sesion", "/api/log", "/api/version", "/api/estado", "/api/salud", "/api/mi", "/api/admin")
+SIN_REGISTRO = ("/api/cubicaje-libre", "/api/sesion", "/api/log", "/api/ping", "/api/version", "/api/estado", "/api/salud", "/api/mi", "/api/admin")
 
 
 def describir(metodo: str, ruta: str):
