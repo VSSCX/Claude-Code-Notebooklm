@@ -32,6 +32,7 @@ A live VTEX-versus-SAP integration monitor on the analyst's own machine, with th
 
 ## Capabilities and Constraints
 
+- Cross-filtering as in Power BI: clicking a bar (Pedidos por SLA Type, Cliente, Warehouse, No integrados por cliente, Pedidos por mes y estado, Estado por dia) or a row (Riesgo por canal, Pedidos por dia de creacion) sets the matching top filter and filters every panel and every screen; the clicked chart keeps all its bars and dims the unselected ones; clicking again clears; Ctrl or Shift adds more values. Filters are per browser.
 - Notification center (seller-center style): a bell in the header counts unread new VTEX orders, opens a panel with the latest 50 (Sequence, canal, relative time), lets the analyst mark all as read or jump to one order in the detail, and rings once on arrival; read state lives in the browser (localStorage). A toast also appears top right.
 - Five order states with fixed meaning: Integrado · Facturado, Integrado · Pendiente, No integrado · Facturado, No integrado · Pendiente, Cancelado.
 - Filters (canal, cliente, status, SLA Type, bodega, alcance, creation dates, free search) and column sorting are applied on the server over the whole set, not just the visible rows.

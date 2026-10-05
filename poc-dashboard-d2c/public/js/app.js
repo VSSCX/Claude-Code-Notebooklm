@@ -161,7 +161,7 @@ function renderSlicers(){
   const el=$('#slicers');
   if(!S.opts||S.opts.error){morph(el,'');return;}
   const o=S.opts,f=S.filtros;
-  const sel=(k,l,arr)=>`<div class="sl"><label for="sl-${k}">${l}</label><select id="sl-${k}" name="${k}" autocomplete="off" data-sl="${k}"><option value="">Todas</option>${(arr||[]).map(v=>`<option value="${esc(v)}" ${f[k][0]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
+  const sel=(k,l,arr)=>`<div class="sl"><label for="sl-${k}">${l}</label><select id="sl-${k}" name="${k}" autocomplete="off" data-sl="${k}"><option value="" ${f[k].length?'':'selected'}>Todas</option>${f[k].length>1?`<option value="__multi" selected>${f[k].length} seleccionados</option>`:''}${(arr||[]).map(v=>`<option value="${esc(v)}" ${f[k].length===1&&f[k][0]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
   const igual=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
   const bv=igual(f.bodega,BASE)?'__base':(f.bodega.length===0?'__todas':f.bodega[0]);
   const bodega=`<div class="sl w"><label for="sl-bodega">Bodega</label><select id="sl-bodega" name="bodega" autocomplete="off" data-bodega>
@@ -234,7 +234,7 @@ function tablaCreacion(){
   const cel=(v,j)=>v?`<td style="background:color-mix(in srgb,${stVar(m.columnas[j])} ${Math.round(12+36*v/mx[j])}%,transparent)">${fmt(v)}</td>`:'<td class="z">0</td>';
   return `<table class="mx"><thead><tr><th class="f">Día</th>${m.columnas.map(c=>`<th title="${esc(c)}"><i style="background:${stVar(c)}"></i><span class="fl">${esc(c).replace(' · ','<br>')}</span><span class="ab">${AB[c]||esc(c)}</span></th>`).join('')}<th>Total</th></tr></thead><tbody>
   <tr class="fin arriba"><td class="f">Total</td>${m.totales_col.map(v=>`<td>${fmt(v)}</td>`).join('')}<td>${fmt(m.total)}</td></tr>
-  ${m.fechas.map((f,i)=>`<tr id="d${f}"><td class="f">${esc(dia(f,anios))}</td>${m.filas[i].map(cel).join('')}<td class="tot">${fmt(m.totales_fila[i])}</td></tr>`).join('')}</tbody></table>`;
+  ${m.fechas.map((f,i)=>`<tr id="d${f}" class="clic ${diaSel()===f?'sel':''}" data-fdia="${f}" tabindex="0" title="Clic: filtrar por este día de creación"><td class="f">${esc(dia(f,anios))}</td>${m.filas[i].map(cel).join('')}<td class="tot">${fmt(m.totales_fila[i])}</td></tr>`).join('')}</tbody></table>`;
 }
 function tablaCriticos(){
   const t=S.data.tabla_criticos;
@@ -249,7 +249,7 @@ function tablaCanal(){
   if(oc){c=[...c].sort((a,b)=>{const x=a[oc.col],y=b[oc.col];if(x==null)return 1;if(y==null)return -1;const r=typeof x==='string'?x.localeCompare(y,'es'):x-y;return oc.dir==='asc'?r:-r;});}
   const V=c.reduce((a,r)=>a+r.vigentes,0),P_=c.reduce((a,r)=>a+r.pendientes,0),M=c.reduce((a,r)=>a+r.monto_riesgo,0);
   return `<table class="t"><thead><tr>${thOrd('canal','canal','Canal')}${thOrd('canal','vigentes','Pedidos vigentes mes actual','n')}${thOrd('canal','pct_pendiente','% Pendiente','n')}${thOrd('canal','monto_riesgo','Monto en riesgo','n')}</tr></thead><tbody>
-  ${c.map(r=>`<tr id="k${esc(r.canal)}"><td><b>${esc(r.canal)}</b></td><td class="n">${fmt(r.vigentes)}</td><td class="n">${pct(r.pct_pendiente)}</td><td class="n">${money(r.monto_riesgo)}</td></tr>`).join('')}
+  ${c.map(r=>`<tr id="k${esc(r.canal)}" class="clic ${S.filtros.canal.includes(r.canal)?'sel':''}" data-fcanal="${esc(r.canal)}" tabindex="0" title="Clic: filtrar por este canal. Ctrl + clic: sumar otro"><td><b>${esc(r.canal)}</b></td><td class="n">${fmt(r.vigentes)}</td><td class="n">${pct(r.pct_pendiente)}</td><td class="n">${money(r.monto_riesgo)}</td></tr>`).join('')}
   <tr class="fin"><td>Total</td><td class="n">${fmt(V)}</td><td class="n">${pct(V?P_/V:null)}</td><td class="n">${money(M)}</td></tr></tbody></table>`;
 }
 const card=(cls,titulo,sub,cuerpo,bcls='')=>`<section class="card ${cls}"><div class="card-h"><h2>${titulo}</h2>${sub?`<span class="sub">${sub}</span>`:''}</div><div class="card-b ${bcls}" tabindex="0">${cuerpo}</div></section>`;
@@ -318,6 +318,37 @@ function vistaDiagnostico(){
   </div>`;
 }
 
+/* ============ filtrado cruzado (como Power BI): clic en una barra o fila filtra todo el tablero ============
+   El filtro queda en los mismos filtros de arriba (se ve en el selector) y vale para las tres pantallas.
+   Clic de nuevo en lo seleccionado lo quita; Ctrl (o Mayús) + clic suma otro valor. El gráfico donde se hizo clic
+   sigue mostrando todas las barras (el servidor no lo filtra por su propia selección) y atenúa las no elegidas. */
+const alfa=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`;};
+const igualLista=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
+function seleccion(campo){const v=S.filtros[campo]||[];return campo==='bodega'&&(igualLista(v,BASE)||!v.length)?[]:v;}
+function mesSel(){const f=S.filtros;return f.fecha_ini&&f.fecha_fin&&f.fecha_ini!==f.fecha_fin&&f.fecha_ini.slice(0,7)===f.fecha_fin.slice(0,7)&&f.fecha_ini.slice(8,10)==='01'?f.fecha_ini.slice(0,7):null;}
+function diaSel(){const f=S.filtros;return f.fecha_ini&&f.fecha_ini===f.fecha_fin?f.fecha_ini:null;}
+function aplicarCruzado(){renderSlicers();if(S.data)render();cargar();}
+function alternar(campo,v,multi){
+  const cur=S.filtros[campo]||[];let nuevo;
+  if(multi)nuevo=cur.includes(v)?cur.filter(x=>x!==v):[...cur,v];
+  else nuevo=(cur.length===1&&cur[0]===v)?[]:[v];
+  if(campo==='bodega'&&!nuevo.length)nuevo=[...BASE];   // sin bodega elegida vuelve a la base (EC01 + POS)
+  S.filtros[campo]=nuevo;aplicarCruzado();
+}
+function sinFechas(){S.filtros.fecha_ini=S.opts?S.opts.fecha_min:null;S.filtros.fecha_fin=S.opts?S.opts.fecha_max:null;}
+function alternarMes(m){   // 'AAAA-MM' -> del día 1 al último día del mes (o al último dato)
+  if(mesSel()===m){sinFechas();return aplicarCruzado();}
+  const ult=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate();
+  const max=S.opts&&S.opts.fecha_max;
+  S.filtros.fecha_ini=m+'-01';S.filtros.fecha_fin=(max&&max.slice(0,7)===m)?max:m+'-'+String(ult).padStart(2,'0');aplicarCruzado();
+}
+function alternarDia(d){
+  if(diaSel()===d){sinFechas();return aplicarCruzado();}
+  S.filtros.fecha_ini=d;S.filtros.fecha_fin=d;aplicarCruzado();
+}
+const multiClic=ev=>!!(ev&&ev.native&&(ev.native.ctrlKey||ev.native.metaKey||ev.native.shiftKey));
+const manito=(ev,els)=>{if(ev&&ev.native&&ev.native.target)ev.native.target.style.cursor=els.length?'pointer':'default';};
+
 /* ============ graficos (se actualizan en su lugar; los colores salen de los tokens del tema) ============ */
 const charts={};
 const fam=()=>getComputedStyle(document.body).fontFamily;
@@ -328,7 +359,7 @@ const valueLabels={id:'valueLabels',afterDatasetsDraw(ch){
   ch.getDatasetMeta(0).data.forEach((b,i)=>c.fillText(fmt(ch.data.datasets[0].data[i]),b.x+fz(5),b.y));c.restore();}};
 const segLabels={id:'segLabels',afterDatasetsDraw(ch){
   const c=ch.ctx;c.save();c.font='700 '+fz(11.5)+'px '+fam();c.textAlign='center';c.textBaseline='middle';
-  ch.data.datasets.forEach((ds,di)=>{c.fillStyle=onClr(ds.backgroundColor);ch.getDatasetMeta(di).data.forEach((b,i)=>{
+  ch.data.datasets.forEach((ds,di)=>{c.fillStyle=onClr(ds.colorBase||ds.backgroundColor);ch.getDatasetMeta(di).data.forEach((b,i)=>{
     const v=ds.data[i],w=Math.abs(b.x-b.base);if(v>=7&&w>fz(34)&&(b.height||0)>=fz(13))c.fillText(dec1(v)+'%',(b.x+b.base)/2,b.y);});});c.restore();}};
 const pointLabels={id:'pointLabels',afterDatasetsDraw(ch){
   const c=ch.ctx;c.save();c.font='700 '+fz(12)+'px '+fam();c.textAlign='center';
@@ -347,7 +378,7 @@ function grafico(id,cfg){
   if(ex)ex.destroy();
   charts[id]=new Chart(el,cfg);
 }
-function miniBar(id,data,color){
+function miniBar(id,data,color,campo){
   const el=document.getElementById(id);if(!el||!data||!data.labels.length)return;
   const n=Math.max(2,Math.floor((el.parentElement.clientHeight-fz(4))/fz(19)));
   const L=data.labels.slice(0,n),V=data.valores.slice(0,n);
@@ -358,13 +389,15 @@ function miniBar(id,data,color){
   o.scales.x={display:false,beginAtZero:true};
   o.scales.y.ticks={autoSkip:false,color:css('--text-2'),font:{size:fz(11.5)},padding:fz(4),callback:function(v){return cutPx(this.getLabelForValue(v),maxPx);}};
   o.plugins.tooltip={callbacks:{title:i=>L[i[0].dataIndex]}};
-  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:color,borderRadius:2,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20)}]},options:o,plugins:[valueLabels]});
+  const sel=campo?seleccion(campo):[];
+  o.onClick=(ev,els)=>{if(campo&&els.length)alternar(campo,L[els[0].index],multiClic(ev));};o.onHover=manito;
+  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:sel.length?L.map(l=>sel.includes(l)?color:alfa(color,.28)):color,borderRadius:2,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20)}]},options:o,plugins:[valueLabels]});
 }
 function pintar(){
   const d=S.data;if(!d)return;
   Chart.defaults.font.family=fam();Chart.defaults.color=css('--text-3');
   const prim=css('--primary');
-  if(S.view==='pedidos'){miniBar('cSla',d.g_sla,prim);miniBar('cCli',d.g_cli,prim);miniBar('cWh',d.g_wh,prim);}
+  if(S.view==='pedidos'){miniBar('cSla',d.g_sla,prim,'sla');miniBar('cCli',d.g_cli,prim,'cliente');miniBar('cWh',d.g_wh,prim,'bodega');}
   if(S.view==='resumen'){
     const cp=d.composicion;
     if(document.getElementById('cComp')&&cp.meses.length){
@@ -373,7 +406,9 @@ function pintar(){
       o.scales.x.stacked=true;o.scales.x.max=100;o.scales.x.ticks={color:css('--text-3'),font:{size:fz(11.5)},callback:v=>v+'%'};
       o.scales.y.stacked=true;o.scales.y.ticks={autoSkip:false,color:css('--text-2'),font:{size:fz(12.5),weight:'600'}};
       o.plugins.tooltip={callbacks:{label:c=>` ${c.dataset.label}: ${fmt(cp.filas[c.dataIndex][c.datasetIndex])} (${dec1(c.raw)}%)`}};
-      grafico('cComp',{type:'bar',data:{labels:cp.meses.map(mes),datasets:cp.columnas.map((col,i)=>({label:col,data:P_.map(r=>r[i]),backgroundColor:stClr(col),maxBarThickness:fz(42),borderSkipped:false}))},options:o,plugins:[segLabels]});
+      const ms=mesSel()||(diaSel()?diaSel().slice(0,7):null);
+      o.onClick=(ev,els)=>{if(els.length)alternarMes(cp.meses[els[0].index]);};o.onHover=manito;
+      grafico('cComp',{type:'bar',data:{labels:cp.meses.map(mes),datasets:cp.columnas.map((col,i)=>{const base=stClr(col);return {label:col,data:P_.map(r=>r[i]),colorBase:base,backgroundColor:ms?cp.meses.map(m=>m===ms?base:alfa(base,.3)):base,maxBarThickness:fz(42),borderSkipped:false};})},options:o,plugins:[segLabels]});
     }
     const ci=d.cierre;
     if(document.getElementById('cCierre')&&ci.meses.length){
@@ -389,12 +424,14 @@ function pintar(){
     }
   }
   if(S.view==='diagnostico'){
-    miniBar('cNoInt',d.g_noint,css('--err'));
+    miniBar('cNoInt',d.g_noint,css('--err'),'cliente');
     const m=d.matriz_dia;
     if(document.getElementById('cDiaEst')&&m.fechas.length){
       const o=baseO();o.plugins.legend=leyenda();o.scales.x.stacked=true;o.scales.y.stacked=true;o.scales.x.grid={display:false};o.scales.x.ticks=ejeFecha();
       o.plugins.tooltip={callbacks:{title:i=>dia(m.fechas[i[0].dataIndex])}};
-      grafico('cDiaEst',{type:'bar',data:{labels:m.fechas,datasets:m.columnas.map((col,i)=>({label:col,data:m.filas.map(f=>f[i]),backgroundColor:stClr(col),borderSkipped:false}))},options:o});
+      const dsel=diaSel();
+      o.onClick=(ev,els)=>{if(els.length)alternarDia(m.fechas[els[0].index]);};o.onHover=manito;
+      grafico('cDiaEst',{type:'bar',data:{labels:m.fechas,datasets:m.columnas.map((col,i)=>{const base=stClr(col);return {label:col,data:m.filas.map(f=>f[i]),backgroundColor:dsel?m.fechas.map(x=>x===dsel?base:alfa(base,.3)):base,borderSkipped:false};})},options:o});
     }
   }
   for(const id of Object.keys(charts)){if(!charts[id].canvas.isConnected){charts[id].destroy();delete charts[id];}}   // gráficos de pantallas que ya no están
@@ -466,6 +503,8 @@ document.addEventListener('click',ev=>{
   if(ev.target.closest('[data-notif]')){S.np=!S.np;if(S.np)$('#avisos').replaceChildren();renderNotif();if(S.np){const pn=$('#panel-notif');if(pn)pn.focus();}return;}
   if(ev.target.closest('[data-leer-todas]')){S.notifs.forEach(n=>{n.leida=true;});guardarNotifs();renderNotif();return;}
   const ni=ev.target.closest('[data-notif-item]');if(ni){abrirPedidoNotif(ni.dataset.notifItem);return;}
+  const fcan=ev.target.closest('[data-fcanal]');if(fcan){alternar('canal',fcan.dataset.fcanal,ev.ctrlKey||ev.metaKey||ev.shiftKey);return;}
+  const fdia=ev.target.closest('[data-fdia]');if(fdia){alternarDia(fdia.dataset.fdia);return;}
   const g=ev.target.closest('[data-go]');if(g){irA(g.dataset.go);return;}
   if(ev.target.closest('[data-ftoggle]')){S.fa=!S.fa;renderSlicers();return;}
   const tm=ev.target.closest('[data-tema]');if(tm){S.tema=tm.dataset.tema;aplicarTema();renderTools();pintar();return;}
@@ -489,9 +528,11 @@ document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'&&S.np){cerrarNotif(true);return;}
   const th=ev.target.closest&&ev.target.closest('th[data-ord]');
   if(th&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();ordenar(th);}
+  const fr=ev.target.closest&&ev.target.closest('tr[data-fcanal],tr[data-fdia]');
+  if(fr&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();if(fr.dataset.fcanal)alternar('canal',fr.dataset.fcanal,ev.ctrlKey||ev.metaKey||ev.shiftKey);else alternarDia(fr.dataset.fdia);}
 });
 document.addEventListener('change',ev=>{
-  const sl=ev.target.closest('[data-sl]');if(sl){S.filtros[sl.dataset.sl]=sl.value?[sl.value]:[];cargar();return;}
+  const sl=ev.target.closest('[data-sl]');if(sl){if(sl.value==='__multi')return;S.filtros[sl.dataset.sl]=sl.value?[sl.value]:[];cargar();return;}
   const bo=ev.target.closest('[data-bodega]');if(bo){S.filtros.bodega=bo.value==='__base'?[...BASE]:bo.value==='__todas'?[]:[bo.value];cargar();return;}
   const ac=ev.target.closest('[data-alcance]');if(ac){S.filtros.alcance=ac.value;cargar();return;}
   const fe=ev.target.closest('[data-fecha]');if(fe){S.filtros[fe.dataset.fecha==='ini'?'fecha_ini':'fecha_fin']=fe.value||null;cargar();}

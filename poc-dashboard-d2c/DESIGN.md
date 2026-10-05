@@ -319,6 +319,10 @@ Top right, 22rem, white 8px card with popover shadow, a blue icon disc, bold tit
 ### Notification center
 Bell button (36px, 8px radius) with a red count badge (17px pill, white 2px ring) and a ring animation (0.9s) plus a pop on the badge when new orders arrive. The popover (24rem, max 32rem tall, 8px radius, popover shadow, opens with a 140ms scale-fade from the top right) has a header with "Marcar todas como leídas", a list of items (icon disc, bold title, muted time and channel; unread = Sky Wash background, blue filled icon disc and a blue dot), an empty state, and a footer note that the last 50 are kept in this browser. Under 900px the panel is full width.
 
+## Cross-filter selection
+
+Clicking a bar or table row filters the whole board like Power BI. The clicked chart keeps every category: unselected bars drop to 28% alpha of their color (30% for state segments), the selected ones keep full color. Selected table rows use `--primary-soft`. The matching filter control above always shows the selection (several values read "N seleccionados"). Hover on a clickable bar uses a pointer cursor. Clicking the selection again clears it; Ctrl or Shift adds values.
+
 ## Do's and Don'ts
 
 ### Do:

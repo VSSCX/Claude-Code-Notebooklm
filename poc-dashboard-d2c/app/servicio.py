@@ -233,6 +233,17 @@ def opciones_filtros() -> dict:
             "fecha_min": fechas.min().strftime("%Y-%m-%d"), "fecha_max": fechas.max().strftime("%Y-%m-%d")}
 
 
+def _sel_dia(f: dict) -> bool:
+    """Un clic en una barra de dia deja desde = hasta: es una seleccion de dia (como en Power BI)."""
+    return bool(f.get("fecha_ini") and f.get("fecha_fin") and f["fecha_ini"] == f["fecha_fin"])
+
+
+def _sel_mes(f: dict) -> bool:
+    """Un clic en una barra de mes deja del dia 1 a un dia del mismo mes."""
+    ini, fin = str(f.get("fecha_ini") or ""), str(f.get("fecha_fin") or "")
+    return len(ini) == 10 and len(fin) == 10 and ini[:7] == fin[:7] and ini[8:10] == "01"
+
+
 def _aplicar_filtros(dim: pd.DataFrame, f: dict) -> pd.DataFrame:
     d = dim
     if f.get("alcance") == "abiertos":                       # = filtro de pagina Trazabilidad "En seguimiento"
@@ -444,6 +455,15 @@ def construir(filtros: dict) -> dict:
     dim = _aplicar_filtros(dim_full, f)
     dim.attrs["hoy"] = hoy
     sin_fecha = _aplicar_filtros(dim_full, {**f, "fecha_ini": None, "fecha_fin": None})
+    # Filtrado cruzado como en Power BI: el grafico donde se hizo clic NO se filtra por su propia seleccion
+    # (sigue mostrando todas las barras; el navegador resalta las elegidas). Los demas si se filtran.
+    bod = list(f.get("bodega") or [])
+    bod_base = BASE_BODEGA if bod and set(bod) < set(BASE_BODEGA) else bod      # una sola bodega elegida en el grafico
+    dim_sla = _aplicar_filtros(dim_full, {**f, "sla": None})
+    dim_cli = _aplicar_filtros(dim_full, {**f, "cliente": None})
+    dim_wh = _aplicar_filtros(dim_full, {**f, "bodega": bod_base})
+    dim_mes = sin_fecha if (_sel_mes(f) or _sel_dia(f)) else dim            # composicion: muestra todos los meses
+    dim_dia = sin_fecha if _sel_dia(f) else dim                              # estado por dia: muestra todos los dias
     mes_ini = hoy.replace(day=1)
     mes = sin_fecha[(sin_fecha["Creation_Date"] >= mes_ini) & (sin_fecha["Creation_Date"] <= hoy)]
     vig_mes = int((mes["Estado Pedido"] != "Cancelado").sum())
@@ -495,11 +515,11 @@ def construir(filtros: dict) -> dict:
         "hoy": hoy.strftime("%Y-%m-%d"), "generado": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": _CACHE["version"], "consulta": _CACHE["consulta"], "ultimo_pedido": _CACHE["ultimo_pedido"],
         "kpi": kpi, "ejecutivo": ejecutivo, "tarjetas": tarjetas, "alertas": alertas, "causa": causa,
-        "matriz_entrega": _matriz_entrega(dim, hoy), "matriz_dia": _matriz(dim),
-        "composicion": _composicion(dim), "canal": _canal(dim, sin_fecha, hoy),
+        "matriz_entrega": _matriz_entrega(dim, hoy), "matriz_dia": _matriz(dim_dia),
+        "composicion": _composicion(dim_mes), "canal": _canal(dim, sin_fecha, hoy),
         "cierre": _cierre(base, hoy),
-        "g_sla": _top(dim, "SLA_Type"), "g_cli": _top(dim, "SalesChannelName"), "g_wh": _top(dim, "warehouse"),
-        "g_noint": _top(dim[dim["Estado Ingreso"] == "No ingresado"], "SalesChannelName"),
+        "g_sla": _top(dim_sla, "SLA_Type"), "g_cli": _top(dim_cli, "SalesChannelName"), "g_wh": _top(dim_wh, "warehouse"),
+        "g_noint": _top(dim_cli[dim_cli["Estado Ingreso"] == "No ingresado"], "SalesChannelName"),
         "tabla_criticos": crit_filas, "criticos_total": crit_tot,
         "detalle": _detalle(dim, recientes, f.get("orden_det")), "nuevos": [x["sequence"] for x in []],
         "llegadas": llegadas, "color_estado": COLOR_ESTADO, "orden_estado": ORDEN_ESTADO,

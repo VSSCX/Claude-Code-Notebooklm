@@ -283,6 +283,10 @@ table.t td.ell{max-width:9.5rem;overflow:hidden;text-overflow:ellipsis}
 table.t tr.fin td{background:var(--surface-2);font-weight:700}
 table.t tr.nw td{background:var(--primary-soft);animation:llega 2.2s var(--ease-out)}
 @keyframes llega{0%{background:var(--primary-line)}100%{background:var(--primary-soft)}}
+tr.clic{cursor:pointer}
+table.t tr.sel td{background:var(--primary-soft)}
+table.mx tr.sel td,table.mx tr.sel td.f{background:var(--primary-soft)}
+tr.clic:focus-visible{outline-offset:-2px}
 .tag{display:inline-block;font-size:.75rem;font-weight:500;line-height:1.4rem;height:1.5rem;padding:0 .5rem;border-radius:var(--r-sm);white-space:nowrap;background:var(--surface-3);color:var(--text-2);border:1px solid var(--line)}
 .tag.g{background:var(--ok-soft);color:var(--ok);border-color:transparent}.tag.b{background:var(--primary-soft);color:var(--primary-strong);border-color:var(--primary-line)}
 .tag.r{background:var(--err-soft);color:var(--err-strong);border-color:transparent}.tag.a{background:var(--warn-soft);color:var(--warn);border-color:transparent}
