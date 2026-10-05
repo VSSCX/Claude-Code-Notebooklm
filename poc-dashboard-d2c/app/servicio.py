@@ -140,7 +140,7 @@ def _recargar(forzar: bool = False):
                 _PRIMERA_VEZ.setdefault(s, ahora)
         for s in [s for s, t in _PRIMERA_VEZ.items() if ahora - t > 3600]:
             _PRIMERA_VEZ.pop(s, None)
-        _CACHE.update(ts=ahora, dim=dim, hoy=hoy, ref=ref, version=ver, error=None,
+        _CACHE.update(ts=ahora, dim=dim, hoy=hoy, ref=ref, version=ver, error=None, stock=stock,
                       consulta=time.strftime("%H:%M:%S"), ultimo_pedido=ultimo)
         _MON["cargas"] += 1
 
@@ -571,6 +571,27 @@ def base_pedidos():
     """(dim, hoy): los pedidos ya modelados, sin tocar las lineas."""
     dim, hoy, _ = _snapshot()
     return dim, hoy
+
+
+def stock_vtex():
+    """Stock por codigo SAP (disponible = VTEX - Reservado), o None si no hay datos de stock."""
+    _cargar_dim()
+    s = _CACHE.get("stock")
+    if s is None or len(s) == 0:
+        return None
+    out = pd.DataFrame({"SKU": s["codigoSap"].astype(str).str.strip(),
+                        "VTEX": pd.to_numeric(s["VTEX"], errors="coerce").fillna(0),
+                        "Reservado": pd.to_numeric(s["Reservado"], errors="coerce").fillna(0)}).groupby("SKU", as_index=False).sum()
+    out["Disponible"] = out["VTEX"] - out["Reservado"]
+    return out
+
+
+def resumen_datos() -> dict:
+    """Cobertura de los datos cargados (para que el asistente conteste hasta cuando hay datos)."""
+    dim, hoy, _ = _snapshot()
+    f = dim["Creation_Date"]
+    return {"desde": f.min(), "hasta": f.max(), "pedidos": int(len(dim)), "hoy": hoy, "ultimo_pedido": _CACHE["ultimo_pedido"],
+            "consulta": _CACHE["consulta"], "demo": settings.demo}
 
 
 def lineas_todas():

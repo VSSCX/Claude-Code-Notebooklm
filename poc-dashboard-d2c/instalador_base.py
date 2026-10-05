@@ -10,6 +10,8 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v3.0: asistente de consultas completo (ventas por producto, cancelados, facturados, POST Fechado con sus
+productos, cantidad y monto, stock, rankings, comparaciones, CSV, seguimientos) con IA opcional (ver ASISTENTE.md).
 Novedades v2.9: el tablero carga unas 12 veces menos datos (compresion) y responde ~35% mas rapido; el JS queda en modulos.
 Novedades v2.8: clic en un pedido abre su detalle (lineas con codigo SAP, descripcion, cantidad y monto) en una
 pestana lateral; Pedidos VTEX abre en el mes en curso (se puede mirar hacia atras); filtros simplificados
@@ -36,7 +38,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "2.9"
+VERSION = "3.0"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

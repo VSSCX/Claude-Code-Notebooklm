@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Genera POC_Dashboard.py (el instalador todo-en-uno) a partir de esta carpeta.
 
-Uso:   py construir_instalador.py [--version 2.9] [--base instalador_base.py] [--salida POC_Dashboard.py]
+Uso:   py construir_instalador.py [--version 3.0] [--base instalador_base.py] [--salida POC_Dashboard.py]
 
 Toma el codigo del instalador anterior (todo lo que NO es el paquete), le cambia la version, el paquete
 comprimido y el checksum, y deja el archivo listo para repartir. Los archivos de texto van como texto;
@@ -63,6 +63,8 @@ COPIAR_NUEVO = '''def copiar_archivos(destino, archivos):
             dst.write_bytes(cont.encode("utf-8"))  # librerias minificadas: tal cual, sin cambiar saltos de linea
         else:
             dst.write_text(cont, encoding="utf-8")
+    for viejo in ("app/asistente.py",):   # archivos de versiones anteriores que ya no existen (el asistente ahora es el paquete app/asistente/)
+        (destino / viejo).unlink(missing_ok=True)
     ok(f"{nuevos} archivos nuevos, {cambiados} actualizados, {iguales} sin cambios")
     ok(f"Carpeta: {destino}")
 '''
@@ -70,7 +72,7 @@ COPIAR_NUEVO = '''def copiar_archivos(destino, archivos):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="2.9")
+    ap.add_argument("--version", default="3.0")
     ap.add_argument("--base", default=str(AQUI / "instalador_base.py"))
     ap.add_argument("--salida", default=str(AQUI / "POC_Dashboard.py"))
     a = ap.parse_args()
