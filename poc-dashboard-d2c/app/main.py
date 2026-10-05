@@ -7,6 +7,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
@@ -35,6 +36,9 @@ async def ciclo_de_vida(app):
 app = FastAPI(title="Dashboard D2C · Order Desk", version="3.1.0", lifespan=ciclo_de_vida,
               docs_url=None if settings.serverless else "/docs",
               redoc_url=None, openapi_url=None if settings.serverless else "/openapi.json")
+
+
+app.add_middleware(GZipMiddleware, minimum_size=1024)   # el JSON del tablero baja de ~125 KB a ~10 KB; tambien comprime js y css
 
 
 @app.middleware("http")

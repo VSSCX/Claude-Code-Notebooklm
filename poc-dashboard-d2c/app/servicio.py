@@ -430,8 +430,16 @@ def _criticos(dim, orden=None):
     return filas, {"n": int(len(crit)), "monto": float(crit["Total_Value"].sum() or 0)}
 
 
+COLS_DET = ["Sequence", "Creation_Date", "Estado Pedido", "Canal", "SLA_Type", "warehouse", "Status", "Total_Value",
+            "Pedido SAP", "Shipping_Estimate_Date", "Antigüedad Días"]
+
+
+def _fecha(serie):
+    return serie.dt.strftime("%Y-%m-%d").fillna("").tolist()
+
+
 def _detalle(dim, recientes, orden=None):
-    det = dim.copy()
+    det = dim[COLS_DET].copy()               # solo las columnas que se muestran: copiar las ~40 del modelo era lo mas caro
     det["_nuevo"] = det["Sequence"].isin(recientes)
     det["_ord"] = det["Estado Pedido"].map({e: i for i, e in enumerate(ORDEN_ESTADO)}).fillna(9)
     o = _ordenar(det, orden, ORDEN_DET)
@@ -439,14 +447,11 @@ def _detalle(dim, recientes, orden=None):
         det = o.head(500)                    # orden elegido por el usuario sobre TODO el conjunto
     else:
         det = det.sort_values(["_nuevo", "_ord", "Antigüedad Días"], ascending=[False, True, False]).head(500)
-    out = []
-    for _, r in det.iterrows():
-        out.append({"sequence": r["Sequence"], "fecha": r["Creation_Date"].strftime("%Y-%m-%d"),
-                    "estado": r["Estado Pedido"], "canal": r["Canal"], "sla": r["SLA_Type"],
-                    "warehouse": r["warehouse"], "status": r["Status"], "monto": float(r["Total_Value"] or 0),
-                    "pedido_sap": r["Pedido SAP"], "nuevo": bool(r["_nuevo"]),
-                    "sed": r["Shipping_Estimate_Date"].strftime("%Y-%m-%d") if pd.notna(r["Shipping_Estimate_Date"]) else ""})
-    return out
+    cols = zip(det["Sequence"], _fecha(det["Creation_Date"]), det["Estado Pedido"], det["Canal"], det["SLA_Type"],
+               det["warehouse"], det["Status"], det["Total_Value"].fillna(0).astype(float), det["Pedido SAP"],
+               det["_nuevo"], _fecha(det["Shipping_Estimate_Date"]))
+    return [{"sequence": sq, "fecha": f, "estado": e, "canal": c, "sla": sla, "warehouse": w, "status": st, "monto": m,
+             "pedido_sap": ps, "nuevo": bool(n), "sed": sed} for sq, f, e, c, sla, w, st, m, ps, n, sed in cols]
 
 
 def construir(filtros: dict) -> dict:

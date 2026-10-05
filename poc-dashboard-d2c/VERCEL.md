@@ -42,7 +42,7 @@ con login corporativo delante. Mientras tanto, el dashboard real sigue corriendo
 
 ## Auditoría
 
-Se corre con `python verificar_vercel.py` (39 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
+Se corre con `python verificar_vercel.py` (44 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
 
 | Área | Qué se comprobó | Resultado |
 |---|---|---|
@@ -52,7 +52,7 @@ Se corre con `python verificar_vercel.py` (39 comprobaciones; sale con código 1
 | Servidor (`VERCEL=1`) | Demo forzado, sin hilo, `/api/*` con `no-store`, rutas de diagnóstico ocultas, cuerpo inválido no rompe | OK |
 | Seguridad | CSP estricta (`script-src 'self'`, sin `unsafe-eval`), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, HSTS; mismas cabeceras en `vercel.json` (estáticos) y en el servidor (API) | OK |
 | Accesibilidad | axe-core (WCAG 2.0/2.1 A y AA + buenas prácticas) en 15 combinaciones: 3 pantallas × claro/oscuro × 1440, 390 y TV 1920 | **0 violaciones**; sin errores de CSP en consola |
-| Guías web de Vercel (*Web Interface Guidelines*) | Revisión de `index.html`, `app.css`, `app.js` | Aplicadas: enlace «Saltar al contenido», `h1`, landmarks, `name`/`autocomplete`/`spellcheck` en controles, `translate="no"`, espacios duros en montos, comillas tipográficas, `text-wrap: balance`, `touch-action`, `theme-color`, `viewport-fit` y áreas seguras, precarga de fuentes, dimensiones del logo, lecturas de layout agrupadas, vista en la URL (`#resumen`) |
+| Guías web de Vercel (*Web Interface Guidelines*) | Revisión de `index.html`, `app.css` y los módulos de `public/js` | Aplicadas: enlace «Saltar al contenido», `h1`, landmarks, `name`/`autocomplete`/`spellcheck` en controles, `translate="no"`, espacios duros en montos, comillas tipográficas, `text-wrap: balance`, `touch-action`, `theme-color`, `viewport-fit` y áreas seguras, precarga de fuentes, dimensiones del logo, lecturas de layout agrupadas, vista en la URL (`#resumen`) |
 | Diseño (Impeccable) | Detector mecánico + revisión final con subagente | 3 avisos, todos justificados: la barra de carga de 3 px (no es un borde de tarjeta) y un falso positivo de relleno |
 | Comportamiento | Playwright: foco y texto del buscador, scroll y gráficos se conservan al llegar un pedido; tema, modo TV, orden por teclado, persistencia | OK |
 
