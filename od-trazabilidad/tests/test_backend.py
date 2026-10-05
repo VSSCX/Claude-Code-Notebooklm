@@ -1178,3 +1178,30 @@ def test_detalle_trae_piezas_de_la_caja_master_para_contar_bultos(datos):
         s.commit()
     d = c.post("/api/cubicaje-libre", json={"cliente": "", "modo": "MDA", "lineas": [{"sku": "C9000", "qty": 50}, {"sku": "9000", "qty": 4}]}).json()
     assert d["detalle_lineas"]["C9000"]["piezas"] == 2 and d["detalle_lineas"]["9000"]["caja"] == 2
+
+
+def test_exportar_el_analisis_para_los_kam(datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        doc = _analisis_de_prueba()
+        doc["oc_sap"] = "OC-77"
+        fila = next(f for f in doc["resultado"]["filas"] if f["sku"] == "9000")
+        fila["stock"] = {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}
+        fila["disponibilidad"] = "300 - 15-10-2026"
+        domain.guardar_config(s, "analisis:4005100000", doc)
+        s.commit()
+    r = c.get("/api/analisis/4005100000/excel")
+    assert r.status_code == 200 and "Analisis_4005100000" in r.headers["content-disposition"]
+    wb = load_workbook(BytesIO(r.content))
+    assert wb.sheetnames == ["Análisis", "Entregas"]
+    filas = list(wb["Análisis"].iter_rows(min_row=2, values_only=True))
+    assert [x[1] for x in filas] and all(x[0] for x in filas)                   # la OC va en cada fila
+    f9000 = next(x for x in filas if x[1] == "9000")
+    assert f9000[3] == 100 and f9000[4] == 100 and f9000[5:9] == (5, 1, 2, 0) and f9000[9:11] == ("15-10-2026", "300")
+    ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
+    assert wb["Entregas"][1][0].value == "N° entrega" and all(len(x) == 4 for x in ent)
+    assert c.get("/api/analisis/9999999999/excel").status_code == 404

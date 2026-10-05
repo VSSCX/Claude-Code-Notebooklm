@@ -200,6 +200,74 @@ def get_analisis(numero: str, s: Session = Depends(get_session)):
     return _json.loads(c.valor)
 
 
+@router.get("/analisis/{numero}/excel")
+def excel_analisis(numero: str, s: Session = Depends(get_session)):
+    """Excel simple para responder a los KAM: la OC con sus productos (hoja Análisis) y el detalle de entregas (hoja Entregas)."""
+    import json as _json
+    import re
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    from ..models import Config, Pedido
+
+    ped = s.scalar(select(Pedido).where(Pedido.pedido == numero))
+    if ped is None:
+        raise HTTPException(404, "El pedido no existe.")
+    c = s.get(Config, _clave_analisis(numero))
+    doc = _json.loads(c.valor) if c else None
+    oc = (ped.oc or (doc or {}).get("oc_sap") or "").strip()
+    descr = {l.sku: l.descripcion for l in ped.lineas}
+    activas = [e for e in ped.entregas if not e.anulada]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Análisis"
+    ws.append(["OC", "SKU", "Descripción", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
+               "Stock EC01", "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+    if doc:
+        for f in doc["resultado"]["filas"]:
+            st = f.get("stock") or {}
+            cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
+            ws.append([oc, f["sku"], f["descripcion"], f["pendiente"], f["qty_entrega"],
+                       st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
+                       fecha.strip(), cant.strip()])
+    else:                                       # sin análisis: lo que la plataforma sabe del pedido
+        en_ent = {}
+        for e in activas:
+            for l in e.lineas:
+                en_ent[l.sku] = en_ent.get(l.sku, 0) + l.qty
+        for l in ped.lineas:
+            ws.append([oc, l.sku, l.descripcion, max(0, l.qty - en_ent.get(l.sku, 0) - l.externa), None,
+                       None, None, None, None, "", ""])
+
+    we = wb.create_sheet("Entregas")
+    we.append(["N° entrega", "SKU", "Descripción", "Qty"])
+    for e in sorted(activas, key=lambda x: x.entrega):
+        for l in e.lineas:
+            we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty])
+
+    cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")
+    for hoja in wb.worksheets:
+        for celda in hoja[1]:
+            celda.font, celda.fill = cab, fondo
+            celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for col in hoja.columns:
+            ancho = max(len(str(x.value if x.value is not None else "")) for x in col) + 2
+            hoja.column_dimensions[col[0].column_letter].width = min(max(ancho, 10), 46)
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = re.sub(r"[^\w.-]", "_", f"Analisis_{numero}" + (f"_OC_{oc}" if oc else ""))
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})
+
+
 @router.put("/analisis/{numero}/carga")
 def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
     """Ajuste manual de la CARGA (como editar la columna F del Excel).

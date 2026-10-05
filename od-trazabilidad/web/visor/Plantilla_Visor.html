@@ -701,146 +701,14 @@ function renderLegend(){
 }
 function fmt(n){return (Math.round((n||0)*10)/10).toLocaleString('es-CL');}
 
-const C128 = [
-  '11011001100',
-  '11001101100',
-  '11001100110',
-  '10010011000',
-  '10010001100',
-  '10001001100',
-  '10011001000',
-  '10011000100',
-  '10001100100',
-  '11001001000',
-  '11001000100',
-  '11000100100',
-  '10110011100',
-  '10011011100',
-  '10011001110',
-  '10111001100',
-  '10011101100',
-  '10011100110',
-  '11001110010',
-  '11001011100',
-  '11001001110',
-  '11011100100',
-  '11001110100',
-  '11101101110',
-  '11101001100',
-  '11100101100',
-  '11100100110',
-  '11101100100',
-  '11100110100',
-  '11100110010',
-  '11011011000',
-  '11011000110',
-  '11000110110',
-  '10100011000',
-  '10001011000',
-  '10001000110',
-  '10110001000',
-  '10001101000',
-  '10001100010',
-  '11010001000',
-  '11000101000',
-  '11000100010',
-  '10110111000',
-  '10110001110',
-  '10001101110',
-  '10111011000',
-  '10111000110',
-  '10001110110',
-  '11101110110',
-  '11010001110',
-  '11000101110',
-  '11011101000',
-  '11011100010',
-  '11011101110',
-  '11101011000',
-  '11101000110',
-  '11100010110',
-  '11101101000',
-  '11101100010',
-  '11100011010',
-  '11101111010',
-  '11001000010',
-  '11110001010',
-  '10100110000',
-  '10100001100',
-  '10010110000',
-  '10010000110',
-  '10000101100',
-  '10000100110',
-  '10110010000',
-  '10110000100',
-  '10011010000',
-  '10011000010',
-  '10000110100',
-  '10000110010',
-  '11000010010',
-  '11001010000',
-  '11110111010',
-  '11000010100',
-  '10001111010',
-  '10100111100',
-  '10010111100',
-  '10010011110',
-  '10111100100',
-  '10011110100',
-  '10011110010',
-  '11110100100',
-  '11110010100',
-  '11110010010',
-  '11011011110',
-  '11011110110',
-  '11110110110',
-  '10101111000',
-  '10100011110',
-  '10001011110',
-  '10111101000',
-  '10111100010',
-  '11110101000',
-  '11110100010',
-  '10111011110',
-  '10111101110',
-  '11101011110',
-  '11110101110',
-  '11010000100',
-  '11010010000',
-  '11010011100'
-];
-const C128_STOP = '1100011101011';
-
-function code128Modulos(txt){
-  const s = String(txt ?? '');
-  let start, vals;
-  if (/^\d{4,}$/.test(s) && s.length % 2 === 0){
-    start = 105; vals = [];
-    for (let i = 0; i < s.length; i += 2) vals.push(+s.slice(i, i + 2));
-  } else {
-    start = 104;
-    vals = [...s].map(c => { const n = c.charCodeAt(0) - 32; return n >= 0 && n <= 94 ? n : 31; });
-  }
-  let suma = start;
-  vals.forEach((v, i) => { suma += v * (i + 1); });
-  return [start, ...vals, suma % 103].map(v => C128[v]).join('') + C128_STOP;
-}
-
-// ---- PDF para operaciones: A4 horizontal, un archivo por camion (sus dos vistas), pensado para imprimirse en blanco y negro ----
-// Todo se lee sin color: reglas y bloques de tinta, celdas con borde y la letra de cada producto dentro de su recuadro.
-const PDF={W:297,H:210,M:10,INK:[18,23,28],GRIS:[96,106,120],TENUE:[225,229,234]};
+// ---- PDF para operaciones: A4 vertical, un archivo por camion (sus dos vistas, cada una en su hoja con el detalle de carga).
+// Se lee tambien en blanco y negro: cada producto lleva su letra en un recuadro y las cajas del 3D van rotuladas.
+const PDF={W:210,H:297,M:12,INK:[20,30,45],GRIS:[90,100,115],TENUE:[225,229,234],AZUL:[37,99,214]};
 function pdfPausa(ms){return new Promise(r=>setTimeout(r,ms));}
 function pdfNombre(c,i,total){
   var san=function(t){return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'');};
   var ped=(DATA.pedido&&DATA.pedido!=='LIBRE'?san(DATA.pedido):'')||'Libre', n=c.idx||(i+1);
   return 'Cubicaje_'+ped+'_'+(esSoloPallet(c.tipo)?'Pallet':'Camion')+n+'de'+total+'_'+san(c.tipo||'')+'.pdf';
-}
-// Code 128 vectorial (mismo patron que la etiqueta de la plataforma): operaciones lo lee con la pistola
-function pdfBarras(doc,x,y,w,h,txt){
-  var m=code128Modulos(txt), sil=10, mod=w/(m.length+sil*2), cx=x+sil*mod;
-  doc.setFillColor(0,0,0);
-  for(var i=0;i<m.length;){var j=i;while(j<m.length&&m[j]===m[i])j++;
-    if(m[i]==='1')doc.rect(cx+i*mod,y,(j-i)*mod,h,'F');i=j;}
 }
 // Encuadre ajustado al camion y su carga: la foto aprovecha todo el ancho (antes el camion quedaba chico en una hoja vertical)
 function pdfEncuadrar(azv,elv,aspect){
@@ -888,11 +756,12 @@ async function exportPDF(soloActual){
     busy.textContent='Generando PDF '+(k+1)+' de '+idxs.length+'...';
     await pdfPausa(60);
     buildScene(i);
-    var doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-    var lay=pdfDisposicion(c);
-    for(var v=0;v<VISTAS.length;v++){
+    var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    var lay=pdfDisposicion(c,VISTAS);
+    if(lay.juntas){pdfPagina(doc,c,i,CAM.length,VISTAS.map(function(v,k){return [k,v];}),VISTAS.length,lay);}     // caben las dos vistas en una hoja
+    else for(var v=0;v<VISTAS.length;v++){
       if(v>0)doc.addPage();
-      pdfPagina(doc,c,i,CAM.length,v,VISTAS.length,VISTAS[v],lay);
+      pdfPagina(doc,c,i,CAM.length,[[v,VISTAS[v]]],VISTAS.length,lay);
     }
     doc.save(pdfNombre(c,i,CAM.length));                                   // un archivo por camion, con su numero en el nombre
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
@@ -900,103 +769,109 @@ async function exportPDF(soloActual){
   palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
   busy.classList.remove('on');
 }
-// Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja
-function pdfDisposicion(c){
-  var n=(c.items||[]).length, M=PDF.M, yFoto=46, limite=PDF.H-18, dos=n>12;
-  var filas=dos?Math.ceil(n/2):n, rh=n<=8?5.4:(n<=12?4.8:4.2);
-  var altoTabla=6+filas*rh+7;
-  return {n:n,dos:dos,rh:rh,altoTabla:altoTabla,yFoto:yFoto,altoFoto:Math.max(60,limite-altoTabla-3-yFoto),yTabla:limite-altoTabla};
+// Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja.
+// Si caben las dos vistas en la misma hoja van juntas; si no, cada una en su hoja con el detalle de carga.
+function pdfDisposicion(c,vistas){
+  var n=(c.items||[]).length, dos=n>26, filas=dos?Math.ceil(n/2):n;
+  var rh=dos?4.6:(n<=10?6.2:(n<=18?5.4:4.7)), yTabla=58, altoTabla=6.5+filas*rh+9;
+  var yFoto=yTabla+altoTabla+3, pie=PDF.H-17, iw=PDF.W-2*PDF.M;
+  var altos=vistas.map(function(v){return Math.max(50,iw/pdfAspectoVista(v[1],v[2])*1.04);});
+  var sumaFotos=altos.reduce(function(a,x){return a+x;},0), hueco=pie-yFoto-(altos.length-1)*5;
+  var juntas=hueco>=sumaFotos*0.8, esc=Math.min(1,hueco/sumaFotos);       // las dos vistas caben (algo mas chicas) en la misma hoja
+  if(juntas)altos=altos.map(function(x){return x*esc;});
+  return {n:n,dos:dos,rh:rh,yTabla:yTabla,altoTabla:altoTabla,yFoto:yFoto,altoFoto:Math.max(50,pie-yFoto),altos:altos,juntas:juntas};
 }
-function pdfCaja(doc,x,y,w,h,cap,val,tam){
-  doc.setDrawColor.apply(doc,PDF.INK);doc.setLineWidth(0.3);doc.rect(x,y,w,h);
-  doc.setFont('helvetica','bold');doc.setFontSize(6.2);doc.setTextColor.apply(doc,PDF.GRIS);doc.text(cap.toUpperCase(),x+2.4,y+3.9);
-  doc.setFont('helvetica','bold');doc.setFontSize(tam||11.5);doc.setTextColor.apply(doc,PDF.INK);doc.text(String(val),x+2.4,y+h-2.6);
-}
-function pdfPagina(doc,c,i,total,vi,nv,vista,lay){
-  var W=PDF.W,M=PDF.M,INK=PDF.INK,tit=vista[0], ped=(DATA.pedido&&DATA.pedido!=='LIBRE')?DATA.pedido:'';
+function pdfPagina(doc,c,i,total,vistasPag,nv,lay){
+  var W=PDF.W,M=PDF.M,INK=PDF.INK,GRIS=PDF.GRIS,AZUL=PDF.AZUL, ped=(DATA.pedido&&DATA.pedido!=='LIBRE')?DATA.pedido:'';
   var n=c.idx||(i+1), esPal=esSoloPallet(c.tipo);
-  // --- cabecera: logo, titulo y codigo de barras del pedido; insignia de tinta con el numero de camion (se lee en blanco y negro)
-  var lw=36,lh=lw*LOGO_PDF_R;try{doc.addImage(LOGO_PDF,'JPEG',M,M,lw,lh,undefined,'FAST');}catch(e){}
-  doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor.apply(doc,INK);doc.text('ORDEN DE CARGA',M+lw+8,M+7);
-  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor.apply(doc,PDF.GRIS);
-  var sub=(ped?'Pedido '+ped:'Cubicaje libre')+(DATA.cliente?'   ·   '+DATA.cliente:'')+(DATA.modo?'   ·   '+DATA.modo:'');
-  doc.text(sub,M+lw+8,M+13.2);
-  var bx=W-M-62, by=M-1;
-  if(ped){pdfBarras(doc,bx,by,62,10.5,ped);doc.setFont('courier','bold');doc.setFontSize(8);doc.setTextColor.apply(doc,INK);doc.text(ped,bx+31,by+14.2,{align:'center'});}
-  var ix=W-M-62-4-46;
-  doc.setFillColor.apply(doc,INK);doc.rect(ix,M-1,46,15.5,'F');
-  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text((esPal?'PALLET':'CAMIÓN')+' ',ix+3,M+3.4);
-  doc.setFontSize(19);doc.text(n+' de '+total,ix+3,M+11.6);
-  doc.setDrawColor.apply(doc,INK);doc.setLineWidth(1);doc.line(M,29.5,W-M,29.5);
-  // --- ficha del vehiculo: celdas con borde
+  // --- cabecera (como el informe de antes): titulo y pedido a la izquierda, logo y nombre de la vista a la derecha
+  doc.setFont('helvetica','bold');doc.setFontSize(19);doc.setTextColor.apply(doc,INK);doc.text('ORDER DESK',M,18);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor.apply(doc,GRIS);
+  doc.text('Informe de cubicaje  -  '+(ped?'Pedido '+ped:'Cubicaje libre'),M,24);
+  var sub=[DATA.cliente,DATA.modo].filter(Boolean).join('   ·   ');
+  if(sub){doc.setFontSize(8.5);doc.text(sub,M,29);}
+  var lw=44,lh=lw*LOGO_PDF_R;try{doc.addImage(LOGO_PDF,'JPEG',W-M-lw,9,lw,lh,undefined,'FAST');}catch(e){}
+  var juntas=vistasPag.length>1;
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor.apply(doc,AZUL);
+  doc.text(juntas?'VISTAS 1 Y '+nv:'VISTA '+(vistasPag[0][0]+1)+' DE '+nv,W-M,11+lh+5,{align:'right'});
+  if(!juntas){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(vistasPag[0][1][0],W-M,11+lh+9.4,{align:'right'});}
+  doc.setDrawColor.apply(doc,AZUL);doc.setLineWidth(0.6);doc.line(M,33.5,W-M,33.5);
+  // --- vehiculo y totales
+  doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor.apply(doc,INK);
+  doc.text((esPal?'Pallet ':'Camión ')+n+' de '+total+'   ·   '+(c.tipo||'CAMIÓN'),M,41);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor.apply(doc,GRIS);
+  doc.text(Math.round(c.L*10)+' x '+Math.round(c.W*10)+' x '+Math.round(c.H*10)+' mm',W-M,41,{align:'right'});
   var libres=Math.max(0,(c.L-(c.maxX||0))/100), uni=(c.items||[]).reduce(function(a,it){return a+(it.n||0);},0), oc=Math.max(0,Math.min(100,c.ocupVol||0));
-  var y=33,h=12.2,xs=[M,M+66,M+66+46,M+66+46+84,M+66+46+84+40];
-  var ws=[66,46,84,40,W-2*M-(66+46+84+40)];
-  pdfCaja(doc,xs[0],y,ws[0],h,'Vehículo',(c.tipo||'CAMIÓN')+'  '+Math.round(c.L)+' x '+Math.round(c.W)+' x '+Math.round(c.H)+' cm',10);
-  pdfCaja(doc,xs[1],y,ws[1],h,'Peso total',fmt(c.pesoTot)+' kg');
-  pdfCaja(doc,xs[2],y,ws[2],h,'Volumen',fmt(c.volTot)+' m3   '+oc.toFixed(0)+' %');
+  var datos=[['PESO TOTAL',fmt(c.pesoTot)+' kg'],['VOLUMEN',fmt(c.volTot)+' m3  ('+oc.toFixed(0)+' %)'],['UNIDADES',fmt(uni)],['METROS LIBRES',libres.toFixed(2).replace('.',',')+' m']];
+  var cw=(W-2*M)/4;
+  datos.forEach(function(d,k){
+    var x=M+k*cw;
+    doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor.apply(doc,GRIS);doc.text(d[0],x,46.6);
+    doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.setTextColor.apply(doc,INK);doc.text(d[1],x,52);
+  });
   // barra de ocupacion: contorno y relleno de tinta, se entiende en blanco y negro
-  var bw=30,bxx=xs[2]+ws[2]-bw-3;doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.3);doc.rect(bxx,y+h-5.6,bw,3.2);
-  doc.setFillColor.apply(doc,INK);doc.rect(bxx,y+h-5.6,bw*oc/100,3.2,'F');
-  pdfCaja(doc,xs[3],y,ws[3],h,'Unidades',fmt(uni));
-  pdfCaja(doc,xs[4],y,ws[4],h,'Metros libres',libres.toFixed(2).replace('.',',')+' m');
-  // --- foto del camion, a todo el ancho
-  var iw=W-2*M, ar=pdfAspectoVista(vista[1],vista[2]);
-  var ih=Math.max(58,Math.min(lay.altoFoto,iw/ar*1.04));            // la foto toma la forma del camion: sin hoja en blanco arriba y abajo
-  var img=shotWhite(vista[1],vista[2],2000,Math.round(2000*ih/iw));
-  doc.addImage(img,'JPEG',M,lay.yFoto,iw,ih,undefined,'FAST');
-  doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.35);doc.rect(M,lay.yFoto,iw,ih);
-  lay=Object.assign({},lay,{yTabla:lay.yFoto+ih+5});                // la tabla va justo debajo de la foto
-  doc.setFillColor.apply(doc,INK);doc.rect(M,lay.yFoto,74,5.4,'F');
-  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text('VISTA '+(vi+1)+' DE '+nv+'   ·   '+tit,M+2.4,lay.yFoto+3.8);
-  if(etiquetaLetra){doc.setTextColor.apply(doc,PDF.GRIS);doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.text('Cajas rotuladas con la letra de su producto',W-M-2,lay.yFoto+ih-2,{align:'right'});}
+  doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.25);doc.rect(M+cw+22,44.2,cw-26,2.6);
+  doc.setFillColor.apply(doc,INK);doc.rect(M+cw+22,44.2,(cw-26)*oc/100,2.6,'F');
+  doc.setDrawColor.apply(doc,PDF.TENUE);doc.setLineWidth(0.3);doc.line(M,55.2,W-M,55.2);
   // --- detalle de carga
   pdfTabla(doc,c,lay);
+  // --- fotos del camion a todo el ancho; cada una toma la forma del camion (sin hoja en blanco arriba y abajo)
+  var iw=W-2*M, yf=lay.yFoto;
+  vistasPag.forEach(function(vp){
+    var k=vp[0], vista=vp[1], ih=Math.min(lay.altoFoto,lay.altos[k]);
+    var img=shotWhite(vista[1],vista[2],2000,Math.round(2000*ih/iw));
+    doc.addImage(img,'JPEG',M,yf,iw,ih,undefined,'FAST');
+    doc.setDrawColor.apply(doc,PDF.TENUE);doc.setLineWidth(0.3);doc.rect(M,yf,iw,ih);
+    doc.setFillColor.apply(doc,INK);doc.rect(M,yf,8+(String(vista[0]).length*1.95),4.8,'F');           // rotulo de tinta: se lee en blanco y negro
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(6.6);doc.text('VISTA '+(k+1)+'  ·  '+vista[0],M+2.2,yf+3.3);
+    if(etiquetaLetra){doc.setTextColor.apply(doc,GRIS);doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.text('Cajas rotuladas con la letra de su producto',W-M-2,yf+ih-2,{align:'right'});}
+    yf+=ih+5;
+  });
   // --- pie: trazabilidad a la izquierda, firmas a la derecha
-  var fy=PDF.H-7;
-  doc.setDrawColor.apply(doc,PDF.TENUE);doc.setLineWidth(0.25);doc.line(M,fy-3.6,W-M,fy-3.6);
-  doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor.apply(doc,PDF.GRIS);
+  var fy=PDF.H-10;
+  doc.setDrawColor.apply(doc,PDF.TENUE);doc.setLineWidth(0.25);doc.line(M,fy-4.6,W-M,fy-4.6);
+  doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor.apply(doc,GRIS);
   var d=new Date();
-  doc.text('Order Desk · Electrolux Chile   |   generado '+d.toLocaleDateString('es-CL')+' '+d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})+'   |   '+(ped?'Pedido '+ped+'   |   ':'')+(esPal?'Pallet ':'Camión ')+n+'/'+total+'   |   Vista '+(vi+1)+'/'+nv,M,fy);
-  doc.setFontSize(5.6);doc.setTextColor(165);doc.text('Modelo 3D cabina: "Scania S730 2-Axle 2016"',M,fy+3.2);
-  doc.setFontSize(6.6);doc.setTextColor.apply(doc,PDF.GRIS);
-  [['Cargó',W-M-112],['Verificó',W-M-56]].forEach(function(f){doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.25);doc.line(f[1]+11,fy,f[1]+52,fy);doc.text(f[0],f[1],fy);});
+  doc.text('Order Desk - Electrolux Chile   |   '+d.toLocaleDateString('es-CL')+' '+d.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})+'   |   '+(esPal?'Pallet ':'Camión ')+n+' de '+total,M,fy);
+  doc.setFontSize(5.8);doc.setTextColor(170);doc.text('Modelo 3D cabina: "Scania S730 2-Axle 2016"',M,fy+3.6);
+  doc.setFontSize(7);doc.setTextColor.apply(doc,GRIS);
+  [['Cargó',W-M-86],['Verificó',W-M-44]].forEach(function(f){doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.25);doc.line(f[1]+11,fy,f[1]+(f[0]==='Cargó'?36:34),fy);doc.text(f[0],f[1],fy);});
 }
 function pdfTabla(doc,c,lay){
-  var M=PDF.M,INK=PDF.INK,items=c.items||[],W=PDF.W,rh=lay.rh,y0=lay.yTabla;
+  var M=PDF.M,INK=PDF.INK,GRIS=PDF.GRIS,items=c.items||[],W=PDF.W,rh=lay.rh,y0=lay.yTabla;
   var cw=lay.dos?(W-2*M-6)/2:W-2*M, grupos=lay.dos?[items.slice(0,Math.ceil(items.length/2)),items.slice(Math.ceil(items.length/2))]:[items];
   grupos.forEach(function(g,gi){
     var x=M+gi*(cw+6), y=y0;
-    // cabecera de la tabla: banda gris clara y regla de tinta
-    doc.setFillColor(238,241,245);doc.rect(x,y,cw,5.2,'F');doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.5);doc.line(x,y+5.2,x+cw,y+5.2);
-    doc.setFont('helvetica','bold');doc.setFontSize(6.6);doc.setTextColor(60,70,85);
-    var cx=lay.dos?{ok:x+1.6,letra:x+8.5,sku:x+20,desc:x+43,uni:x+cw-1.5}:{ok:x+1.8,letra:x+11,sku:x+25,desc:x+52,uni:x+cw-116,med:x+cw-84,peso:x+cw-1.5};
-    doc.text('OK',cx.ok+1.2,y+3.7);doc.text('LETRA',cx.letra,y+3.7);doc.text('SKU',cx.sku,y+3.7);doc.text('DESCRIPCIÓN',cx.desc,y+3.7);
-    doc.text('UNID.',cx.uni,y+3.7,{align:'right'});
-    if(!lay.dos){doc.text('MEDIDAS CM (LARGO X ANCHO X ALTO)',cx.med,y+3.7);doc.text('PESO KG',cx.peso,y+3.7,{align:'right'});}
-    y+=5.2+1;
+    doc.setFillColor(240,243,247);doc.rect(x,y,cw,6,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(7.4);doc.setTextColor(60,70,85);
+    // columnas: casilla OK, letra + descripcion, SKU, unidades, medidas en cm y peso
+    var cx=lay.dos?{ok:x+1,letra:x+6.5,desc:x+15,uni:x+cw-1.5}
+                  :{ok:x+1.2,letra:x+7.5,desc:x+17,sku:x+84,uni:x+cw-72,L:x+cw-60,A:x+cw-46,H:x+cw-32,peso:x+cw-1.5};
+    doc.text('OK',cx.ok,y+4.1);doc.text('Descripción',cx.desc,y+4.1);
+    if(!lay.dos){doc.text('SKU',cx.sku,y+4.1);doc.text('Piezas',cx.uni,y+4.1,{align:'right'});doc.text('Long.',cx.L,y+4.1,{align:'right'});doc.text('Ancho',cx.A,y+4.1,{align:'right'});doc.text('Alto',cx.H,y+4.1,{align:'right'});doc.text('Peso kg',cx.peso,y+4.1,{align:'right'});}
+    else doc.text('Piezas',cx.uni,y+4.1,{align:'right'});
+    y+=6.5;
     g.forEach(function(it,k){
       var ym=y+k*rh+rh/2;
-      // casilla para marcar lo cargado
-      doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.35);doc.rect(cx.ok+1.4,ym-1.7,3.4,3.4);
+      doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.3);doc.rect(cx.ok,ym-1.6,3.2,3.2);               // casilla para marcar lo cargado
       // letra en recuadro con el color del producto: negra sobre claros, blanca sobre oscuros, siempre con borde de tinta
-      var col=hex(it.color);doc.setFillColor(col[0],col[1],col[2]);doc.setLineWidth(0.3);doc.roundedRect(cx.letra,ym-2.2,6.4,4.4,0.8,0.8,'FD');
+      var col=hex(it.color);doc.setFillColor(col[0],col[1],col[2]);doc.setLineWidth(0.25);doc.roundedRect(cx.letra,ym-2.3,6.4,4.6,0.9,0.9,'FD');
       var claro=(0.299*col[0]+0.587*col[1]+0.114*col[2])>150;doc.setTextColor(claro?0:255,claro?0:255,claro?0:255);
       doc.setFont('helvetica','bold');doc.setFontSize(8);doc.text(String(it.letra||''),cx.letra+3.2,ym+1.15,{align:'center'});
-      doc.setTextColor.apply(doc,INK);doc.setFont('courier','bold');doc.setFontSize(7.4);doc.text(String(it.cod||''),cx.sku,ym+1);
-      doc.setFont('helvetica','normal');doc.setFontSize(lay.dos?7.2:8);
-      var nm=String(it.desc||it.cod||'').replace(new RegExp('^'+String(it.cod||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*'),'')||String(it.cod||''), maxW=(lay.dos?cx.uni-4:(cx.uni-3))-cx.desc;
+      doc.setTextColor(40,50,65);doc.setFont('helvetica','normal');doc.setFontSize(lay.dos?7.4:8.6);
+      var nm=String(it.desc||it.cod||'').replace(new RegExp('^'+String(it.cod||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*'),'')||String(it.cod||''), maxW=(lay.dos?cx.uni-12:cx.sku-2)-cx.desc;
       if(doc.getTextWidth(nm)>maxW){while(nm.length>1&&doc.getTextWidth(nm+'…')>maxW)nm=nm.slice(0,-1);nm+='…';}
-      doc.text(nm,cx.desc,ym+1);
-      doc.setFont('helvetica','bold');doc.setFontSize(lay.dos?8:9);doc.text(fmt(it.n),cx.uni,ym+1.1,{align:'right'});
-      if(!lay.dos){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(num(it.L)+' x '+num(it.W)+' x '+num(it.H),cx.med,ym+1);doc.text(fmt(it.n*it.pesoU),cx.peso,ym+1,{align:'right'});}
+      doc.text(nm,cx.desc,ym+1.05);
+      if(!lay.dos){doc.setFont('courier','bold');doc.setFontSize(7.8);doc.text(String(it.cod||''),cx.sku,ym+1);doc.setFont('helvetica','normal');doc.setFontSize(8.6);}
+      doc.setFont('helvetica','bold');doc.text(fmt(it.n),cx.uni,ym+1.05,{align:'right'});doc.setFont('helvetica','normal');
+      if(!lay.dos){doc.text(num(it.L),cx.L,ym+1.05,{align:'right'});doc.text(num(it.W),cx.A,ym+1.05,{align:'right'});doc.text(num(it.H),cx.H,ym+1.05,{align:'right'});doc.text(fmt(it.n*it.pesoU),cx.peso,ym+1.05,{align:'right'});}
       doc.setDrawColor.apply(doc,PDF.TENUE);doc.setLineWidth(0.2);doc.line(x,y+(k+1)*rh,x+cw,y+(k+1)*rh);
     });
   });
   // total
-  var ty=y0+5.2+1+(lay.dos?Math.ceil(items.length/2):items.length)*rh+4.2;
+  var ty=y0+6.5+(lay.dos?Math.ceil(items.length/2):items.length)*rh+5.6;
   var uni=items.reduce(function(a,it){return a+(it.n||0);},0), peso=items.reduce(function(a,it){return a+(it.n||0)*(it.pesoU||0);},0);
-  doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.5);doc.line(M,ty-3.6,W-M,ty-3.6);
+  doc.setDrawColor.apply(doc,INK);doc.setLineWidth(0.45);doc.line(M,ty-3.8,W-M,ty-3.8);
   doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor.apply(doc,INK);
   doc.text('TOTAL   '+items.length+' producto'+(items.length===1?'':'s')+'   ·   '+fmt(uni)+' unidades   ·   '+fmt(peso)+' kg',M,ty+0.6);
 }

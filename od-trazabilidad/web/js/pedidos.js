@@ -120,6 +120,7 @@ function detallePedido(p){
     <div class="label-top">
       <h2 class="lab-num"><span class="lab-pre">Pedido</span> ${esc(p.pedido)}</h2>
       <div class="label-act"><button class="btn sm" data-act="editarPedido">Editar pedido</button>
+        <a class="btn sm" href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel con la OC, los productos (pendiente, entrega, stock y próxima liberación) y el detalle de entregas">${ICON.file} Exportar análisis</a>
         <button class="btn primary sm" data-act="nuevaEntrega">${ICON.plus} Nueva entrega</button></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
     </div>
