@@ -43,6 +43,9 @@ def lanzar_python(accion_id: str, label: str, args: list[str], fn) -> dict:
     """Corre una función Python (por ejemplo, leer SAP directo) en la cola de trabajos,
     para que nunca haya dos cosas usando SAP al mismo tiempo."""
     _reservar()
+    from .. import registro
+    q = registro.quien()                       # quién lo pidió: el hilo de trabajo ya no tiene la petición
+    rid = registro.request_id()
     tid = uuid.uuid4().hex[:12]
     _registrar({"id": tid, "accion": accion_id, "label": label, "args": args,
                 "estado": "en_curso", "inicio": datetime.now().isoformat(timespec="seconds"),
@@ -68,8 +71,14 @@ def lanzar_python(accion_id: str, label: str, args: list[str], fn) -> dict:
                     job.update(estado="ok")
                 except Exception as e:  # noqa: BLE001
                     job.update(estado="error", error=str(e)[:500])
+                    registro.registrar_excepcion(e, origen="sap", usuario=q.get("usuario", ""), rid=rid,
+                                                 ruta=q.get("ruta", ""), metodo=q.get("metodo", ""),
+                                                 contexto={"accion": accion_id, "etiqueta": label, "args": [str(a)[:60] for a in args][:6]})
                 finally:
                     job["fin"] = datetime.now().isoformat(timespec="seconds")
+                    registro.registrar_actividad(q.get("usuario", ""), "sap", f"{label}: {'terminó bien' if job['estado'] == 'ok' else 'falló'}",
+                                                 entidad=str(args[0])[:40] if args else "", resultado="ok" if job["estado"] == "ok" else "error",
+                                                 detalle=job.get("error", ""), rid=rid)
                     if com:
                         com.CoUninitialize()
         finally:

@@ -171,3 +171,83 @@ class Config(Base):
     __tablename__ = "config"
     clave: Mapped[str] = mapped_column(Unicode(50), primary_key=True)
     valor: Mapped[str] = mapped_column(UnicodeText, default="{}")
+
+
+# ---------------------------------------------------------------------------
+# Cuentas, sesiones, historial de actividad y registro de errores (para trabajar en servidor)
+# ---------------------------------------------------------------------------
+class Usuario(Base):
+    """Cuenta de un analista. La clave se guarda con hash (nunca en claro)."""
+    __tablename__ = "usuarios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario: Mapped[str] = mapped_column(Unicode(40), unique=True, index=True)       # lo que escribe al entrar, en minúsculas
+    nombre: Mapped[str] = mapped_column(Unicode(60), default="")                      # lo que se ve en el historial
+    rol: Mapped[str] = mapped_column(Unicode(12), default="analista")                 # analista | admin
+    clave_hash: Mapped[str] = mapped_column(Unicode(200), default="")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    debe_cambiar_clave: Mapped[bool] = mapped_column(Boolean, default=False)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SesionWeb(Base):
+    """Sesión abierta en un navegador. Del token solo se guarda su huella."""
+    __tablename__ = "sesiones"
+    token_hash: Mapped[str] = mapped_column(Unicode(64), primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    creada: Mapped[datetime] = mapped_column(DateTime, default=ahora)
+    vista: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)     # última actividad (la sesión caduca por inactividad)
+    ip: Mapped[str] = mapped_column(Unicode(60), default="")
+    agente: Mapped[str] = mapped_column(Unicode(200), default="")
+
+
+class Actividad(Base):
+    """Qué hizo cada analista y cuándo: una fila por acción."""
+    __tablename__ = "actividad"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
+    usuario: Mapped[str] = mapped_column(Unicode(40), default="", index=True)         # nombre de la cuenta
+    categoria: Mapped[str] = mapped_column(Unicode(12), default="pedido", index=True)  # pedido | sap | cubicaje | datos | cuenta | sistema
+    accion: Mapped[str] = mapped_column(Unicode(200))                                  # "Guardó el pedido 4005…"
+    entidad: Mapped[str] = mapped_column(Unicode(40), default="", index=True)          # pedido, entrega o grupo afectado
+    resultado: Mapped[str] = mapped_column(Unicode(10), default="ok")                  # ok | error | rechazada
+    detalle: Mapped[str] = mapped_column(Unicode(400), default="")
+    ip: Mapped[str] = mapped_column(Unicode(60), default="")
+    ms: Mapped[int] = mapped_column(Integer, default=0)
+    request_id: Mapped[str] = mapped_column(Unicode(16), default="", index=True)
+
+
+class ErrorLog(Base):
+    """Un tipo de error (se agrupan los repetidos): primera vez, última, cuántas veces y su estado."""
+    __tablename__ = "errores"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    huella: Mapped[str] = mapped_column(Unicode(40), unique=True, index=True)
+    nivel: Mapped[str] = mapped_column(Unicode(10), default="error")                   # error | aviso | critico
+    origen: Mapped[str] = mapped_column(Unicode(12), default="servidor", index=True)  # servidor | navegador | sap | sql
+    mensaje: Mapped[str] = mapped_column(Unicode(400))
+    traza: Mapped[str] = mapped_column(UnicodeText, default="")
+    ruta: Mapped[str] = mapped_column(Unicode(200), default="")
+    primera: Mapped[datetime] = mapped_column(DateTime, default=ahora)
+    ultima: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
+    cuenta: Mapped[int] = mapped_column(Integer, default=1)
+    estado: Mapped[str] = mapped_column(Unicode(10), default="nuevo", index=True)      # nuevo | visto | resuelto
+    nota: Mapped[str] = mapped_column(Unicode(400), default="")
+
+    ocurrencias: Mapped[list["ErrorOcurrencia"]] = relationship(
+        back_populates="error_ref", cascade="all, delete-orphan", order_by="ErrorOcurrencia.id.desc()")
+
+
+class ErrorOcurrencia(Base):
+    """Cada vez que pasó: quién, desde dónde y con qué código de petición (para cruzarlo con el log del servidor)."""
+    __tablename__ = "errores_ocurrencias"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    error_id: Mapped[int] = mapped_column(ForeignKey("errores.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
+    usuario: Mapped[str] = mapped_column(Unicode(40), default="")
+    request_id: Mapped[str] = mapped_column(Unicode(16), default="", index=True)
+    metodo: Mapped[str] = mapped_column(Unicode(8), default="")
+    ruta: Mapped[str] = mapped_column(Unicode(200), default="")
+    status: Mapped[int] = mapped_column(Integer, default=0)
+    contexto: Mapped[str] = mapped_column(UnicodeText, default="")                      # JSON: vista, navegador, parámetros sin datos sensibles
+
+    error_ref: Mapped[ErrorLog] = relationship(back_populates="ocurrencias")

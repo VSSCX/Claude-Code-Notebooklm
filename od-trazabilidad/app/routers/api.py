@@ -11,9 +11,11 @@ su archivo y este solo los junta bajo /api.
 """
 from fastapi import APIRouter
 
-from . import core, cubicaje, datos, sap
+from . import admin, core, cubicaje, cuenta, datos, sap
 
 router = APIRouter(prefix="/api")
+router.include_router(cuenta.router)
+router.include_router(admin.router)
 router.include_router(datos.router)
 router.include_router(core.router)
 router.include_router(sap.router)

@@ -52,22 +52,6 @@ def put_config(clave: str, body: dict, s: Session = Depends(get_session)):
     return body
 
 
-@router.get("/sesion")
-def estado_sesion(request: Request):
-    from ..usuarios import requiere_clave, sesion_valida
-    return {"requiere_clave": requiere_clave(),
-            "abierta": sesion_valida(request.cookies.get("sesion", "")),
-            "usuario": domain.usuario_actual()}
-
-
-@router.post("/sesion")
-def abrir_sesion(body: dict, response: Response):
-    from ..usuarios import entrar
-    token = entrar(str(body.get("clave", "")), str(body.get("usuario", "")))
-    response.set_cookie("sesion", token, httponly=True, samesite="lax")
-    return {"ok": True, "usuario": str(body.get("usuario", "")).strip()[:40]}
-
-
 @router.get("/conexion")
 def get_conexion(s: Session = Depends(get_session)):
     """Datos de conexión a SQL Server de esta instalación. La clave nunca se devuelve."""

@@ -23,6 +23,7 @@ log = logging.getLogger("plataforma")
 @asynccontextmanager
 async def _vida(_app):
     """Lo que se hace al abrir la plataforma."""
+    _iniciar_cuentas_y_registro()
     _cargar_conexion_bases()
     _respaldo_al_iniciar()
     _rellenar_flujo()
@@ -31,23 +32,112 @@ async def _vida(_app):
 
 app = FastAPI(title="Trazabilidad Order Desk", version="0.1.0", lifespan=_vida)
 app.include_router(router)
+PUBLICAS_API = ("/api/sesion", "/api/log/cliente")
+ESCRITURA = ("POST", "PUT", "PATCH", "DELETE")
+
+
+def _json(codigo: int, detalle: str, rid: str, **extra):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": detalle, "codigo": rid, **extra}, status_code=codigo, headers={"X-Request-ID": rid})
+
+
 @app.middleware("http")
-async def _sesion_y_usuario(request, call_next):
-    """Quién hace la acción (para el historial) y, si hay clave, que haya entrado."""
-    from . import domain
-    from .usuarios import limpio, sesion_valida, requiere_clave
-    domain.usar_usuario(limpio(request.headers.get("x-usuario", "")))
-    ruta = request.url.path
-    protegida = (ruta.startswith(("/archivos/", "/visor/"))
-                 or (ruta.startswith("/api/") and not ruta.startswith("/api/sesion")))
-    if protegida and requiere_clave() and not sesion_valida(request.cookies.get("sesion", "")):
-        from fastapi.responses import JSONResponse
-        return JSONResponse({"detail": "Sesión no iniciada."}, status_code=401)
-    resp = await call_next(request)
+async def _sesion_y_registro(request, call_next):
+    """Quién hace la acción, que haya entrado (si hay cuentas), y el registro de actividad y errores."""
+    import time
+
+    from . import domain, registro, seguridad
+    from .db import SessionLocal
+    from .usuarios import limpio, requiere_clave, sesion_valida
+    inicio = time.perf_counter()
+    rid = registro.nuevo_request_id()
+    ruta, metodo = request.url.path, request.method
+    ip = request.client.host if request.client else ""
+    es_api = ruta.startswith("/api/")
+    protegida = ruta.startswith(("/archivos/", "/visor/")) or (es_api and not ruta.startswith(PUBLICAS_API))
+    cuenta, exige = None, False
+    try:
+        with SessionLocal() as s:
+            exige = seguridad.exige_entrar(s)
+            if exige:
+                u = seguridad.usuario_de(s, request.cookies.get(seguridad.COOKIE, ""))
+                if u is not None:
+                    cuenta = {"id": u.id, "usuario": u.usuario, "nombre": u.nombre or u.usuario, "rol": u.rol,
+                              "debe_cambiar_clave": bool(u.debe_cambiar_clave)}
+    except Exception as e:  # noqa: BLE001
+        log.warning("No se pudo revisar la sesión: %s", e)
+    request.state.cuenta = cuenta
+    quien = cuenta["usuario"] if cuenta else limpio(request.headers.get("x-usuario", ""))
+    domain.usar_usuario(cuenta["nombre"] if cuenta else quien)
+    registro.fijar_quien(quien, ip, ruta, metodo)
+
+    resp = None
+    if protegida and exige and cuenta is None:
+        resp = _json(401, "Sesión no iniciada.", rid)
+    elif protegida and not exige and requiere_clave() and not sesion_valida(request.cookies.get("sesion", "")):
+        resp = _json(401, "Sesión no iniciada.", rid)
+    elif es_api and metodo in ESCRITURA and request.headers.get("x-requested-with") != "od" and exige:
+        resp = _json(403, "Petición no permitida (falta la cabecera de seguridad).", rid)
+    elif (cuenta and cuenta["debe_cambiar_clave"] and es_api and not ruta.startswith(PUBLICAS_API)
+          and not ruta.startswith(("/api/mi",))):
+        resp = _json(403, "Debes cambiar tu clave antes de continuar.", rid, cambiar_clave=True)
+    if resp is None:
+        try:
+            resp = await call_next(request)
+        except Exception as exc:  # noqa: BLE001
+            registro.registrar_excepcion(exc, rid=rid, status=500)
+            resp = _json(500, f"Error interno. Código de seguimiento: {rid}", rid)
+    ms = int((time.perf_counter() - inicio) * 1000)
+    resp.headers["X-Request-ID"] = rid
     if ruta.startswith(("/js/", "/css/", "/vendor/", "/visor/")):
         # El navegador revalida cada vez (barato: 304): tras actualizar el instalador nunca queda una mezcla de archivos nuevos y viejos
         resp.headers["Cache-Control"] = "no-cache"
+    if es_api:
+        st = resp.status_code
+        registro.linea(tipo="acceso", rid=rid, usuario=quien, metodo=metodo, ruta=ruta, status=st, ms=ms, ip=ip)
+        desc = registro.describir(metodo, ruta)
+        if desc and (metodo != "GET" or st < 400):
+            cat, texto, ent = desc
+            if st < 400:
+                res = "ok"
+            elif st < 500:
+                res = "rechazada"
+            else:
+                res = "error"
+            registro.registrar_actividad(quien, cat, texto, entidad=ent, resultado=res, ms=ms, ip=ip, rid=rid,
+                                         detalle="" if res == "ok" else f"HTTP {st}")
     return resp
+
+
+@app.exception_handler(HTTPException)
+async def _http_error(request, exc):
+    """Los errores del servidor (5xx) también quedan en el registro; los de uso (400-499) no son fallas."""
+    from fastapi.responses import JSONResponse
+
+    from . import registro
+    rid = registro.request_id()
+    if exc.status_code >= 500:
+        registro.registrar_error("servidor", f"HTTP {exc.status_code}: {exc.detail}", status=exc.status_code, rid=rid)
+        detalle = f"{exc.detail} (código {rid})"
+    else:
+        detalle = exc.detail
+    return JSONResponse({"detail": detalle, "codigo": rid}, status_code=exc.status_code,
+                        headers={**(exc.headers or {}), "X-Request-ID": rid})
+
+
+def _iniciar_cuentas_y_registro():
+    """Logs en archivo, primera cuenta administradora (ADMIN_INICIAL) y limpieza de lo antiguo."""
+    from . import registro, seguridad
+    from .db import SessionLocal
+    try:
+        registro.configurar_logs()
+        with SessionLocal() as s:
+            u = seguridad.crear_admin_inicial(s)
+            if u:
+                log.info("Cuenta administradora creada: %s", u)
+        registro.purgar()
+    except Exception as e:  # noqa: BLE001
+        log.warning("No se pudo preparar el registro: %s", e)
 
 
 def _cargar_conexion_bases():

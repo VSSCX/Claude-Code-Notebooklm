@@ -36,6 +36,22 @@ class Settings:
     # Clave de acceso opcional (vacía = sin clave, como hasta ahora)
     clave_acceso: str = os.getenv("CLAVE_ACCESO", "")
 
+    # --- Servidor con cuentas por analista ---
+    # Vacío: si no hay cuentas creadas la plataforma sigue abierta (un PC, una persona). "obligatoria": pide
+    # entrar siempre; sin cuentas, la primera se crea desde el propio servidor o con ADMIN_INICIAL.
+    autenticacion: str = os.getenv("AUTENTICACION", "").strip().lower()
+    # Administrador de partida: usuario:clave:Nombre completo. Se crea solo si todavía no hay cuentas.
+    admin_inicial: str = os.getenv("ADMIN_INICIAL", "")
+    # Poner en 1 cuando se sirve por HTTPS: la cookie de sesión viaja solo cifrada.
+    cookie_segura: bool = os.getenv("COOKIE_SEGURA", "").strip().lower() in ("1", "true", "si", "sí", "yes")
+    # Horas de inactividad tras las que se pide entrar de nuevo
+    sesion_horas: int = int(os.getenv("SESION_HORAS", "10"))
+    # Cuánto se guarda el historial y los errores (días)
+    retencion_actividad_dias: int = int(os.getenv("RETENCION_ACTIVIDAD_DIAS", "365"))
+    retencion_errores_dias: int = int(os.getenv("RETENCION_ERRORES_DIAS", "120"))
+    # Log en archivo (una línea JSON por petición y por error): para quien administra el servidor
+    logs_dir: str = os.getenv("LOGS_DIR", str(BASE_DIR / "data" / "logs"))
+
     # Carpeta con la plantilla del visor y sus librerías (three, jspdf, gltf, scania)
     visor_assets: str = os.getenv(
         "VISOR_ASSETS",
