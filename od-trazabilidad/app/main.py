@@ -43,7 +43,11 @@ async def _sesion_y_usuario(request, call_next):
     if protegida and requiere_clave() and not sesion_valida(request.cookies.get("sesion", "")):
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "Sesión no iniciada."}, status_code=401)
-    return await call_next(request)
+    resp = await call_next(request)
+    if ruta.startswith(("/js/", "/css/", "/vendor/", "/visor/")):
+        # El navegador revalida cada vez (barato: 304): tras actualizar el instalador nunca queda una mezcla de archivos nuevos y viejos
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 def _cargar_conexion_bases():
@@ -108,4 +112,19 @@ def archivo(aid: int, s: Session = Depends(get_session)):
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
+    """La página lleva una versión en cada script y estilo: tras actualizar, el navegador pide los nuevos
+    aunque tenga guardados los viejos (antes quedaba una mezcla y la pantalla salía en blanco)."""
+    import hashlib
+    import re
+
+    from fastapi.responses import HTMLResponse
+    huella = hashlib.sha1()
+    for carpeta in ("js", "css", "vendor"):
+        for f in sorted((WEB / carpeta).glob("*")):
+            if f.is_file():
+                st = f.stat()
+                huella.update(f"{f.name}{st.st_size}{int(st.st_mtime)}".encode())
+    ver = huella.hexdigest()[:10]
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    html = re.sub(r'((?:src|href)="/(?:js|css|vendor)/[^"?]+)"', lambda m: f'{m.group(1)}?v={ver}"', html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

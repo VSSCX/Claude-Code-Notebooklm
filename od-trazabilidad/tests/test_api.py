@@ -1205,3 +1205,12 @@ def test_la_base_aguanta_dos_escrituras_a_la_vez(c):
         cx.execute(text("INSERT OR REPLACE INTO config (clave, valor) VALUES ('t2','b')"))
     assert time.monotonic() - inicio >= 0.3, "no llegó a esperar: la prueba no probó nada"
     h.join()
+
+
+def test_la_pagina_versiona_sus_archivos_para_no_mezclar_cache_vieja(c):
+    html = c.get("/").text
+    import re
+    refs = re.findall(r'(?:src|href)="(/(?:js|css|vendor)/[^"]+)"', html)
+    assert refs and all("?v=" in r for r in refs)
+    r = c.get("/js/base.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
