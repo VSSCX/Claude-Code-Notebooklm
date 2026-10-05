@@ -287,7 +287,7 @@ White 56px bar with a bottom hairline. Left: logo on its white plate, h1. Nav it
 - **Small:** 24px high, 12px text. **Link button:** Deep Blue 600 text, soft-blue hover fill.
 
 ### Filter bar
-White strip with a bottom hairline; each control has a sentence-case 12px label above a 32px select or input (8px radius, control-line border, blue border on hover, blue border plus 3px soft halo on focus). Search input debounced 350ms.
+White strip with a bottom hairline; each control has a sentence-case 12px label above a 32px select or input (8px radius, control-line border, blue border on hover, blue border plus 3px soft halo on focus). Only what is used all day sits in the bar: Canal, Cliente, Bodega (EC01 + POST, EC01, POST_Fechado, all), Período de creación (mes en curso, mes anterior, últimos 30 días, todo, personalizado; date inputs appear only for personalizado) and the search. Status, SLA Type and Alcance live in a "Más filtros" popover (16.5rem, popover shadow) with a count chip for the active ones. Search input debounced 350ms.
 
 ### Alert markers
 36px outlined buttons (8px radius) with a label and a count chip in mono; the critical marker's chip is red-soft with strong-red text; active marker fills Deep Blue with an inverted chip; "clear" is dashed. Context text right-aligned.
@@ -312,6 +312,12 @@ Chart.js reading tokens: gridlines in `line`, ticks in `text-3` at 11.5px (scale
 
 ### Loading
 Skeleton blocks in the board's shape (white, hairline, shimmer sweep 1.4s) with a centered progress card listing each query with a state icon (green ok, amber loading, red error) and a count.
+
+### Order drawer
+Clicking an order row (detail table, critical table, a notification, an assistant answer) opens a side sheet 33rem wide (full width under 900px) anchored under the header, over a 20% scrim, so the board stays visible on the left. Header: package disc, "Pedido" plus mono Sequence, VTEX order id, previous/next buttons that walk the detail table, close button. Body: state pill, VTEX status and pending cause as tags; a two-column facts grid (customer and channel, order amount, creation, estimated delivery, SLA, warehouse, SAP order, units); the lines table (SAP code in mono, wrapping description, quantity, price, amount, a totals row; price hides under 900px) in a focusable scroll region; a note when the lines do not add up to the VTEX total; an inline warning listing the available columns when description or price could not be found. Slides in 220ms; Esc, the scrim or the X close it and focus returns to the row.
+
+### Assistant
+A query icon (message bubble with a question mark) in the header opens a chat sheet with the same geometry as the drawer and no scrim, so it can stay open while working. Empty state: a blue icon disc, a title and four clickable example questions. User messages are solid deep-blue bubbles aligned right; answers are white cards with the figure at 28px bold, one sentence, filter chips, an optional scrollable table and muted notes (for example excluded cancelled orders); a skeleton bubble shows while waiting. The header subline says which engine answers and whether data leaves the network. Hidden in TV mode.
 
 ### Toast
 Top right, 22rem, white 8px card with popover shadow, a blue icon disc, bold title and muted subline, a close button; slides in 220ms, auto-closes at 7s, fades out 180ms.

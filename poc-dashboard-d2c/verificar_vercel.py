@@ -55,19 +55,19 @@ chequeo("requirements.txt no trae paquetes de desarrollo", not any(re.match(r"(p
 
 print("3. Archivos estaticos (public/)")
 pub = AQUI / "public"
-for f in ["index.html", "css/app.css", "js/app.js", "js/tema.js", "js/iconos.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
+for f in ["index.html", "css/app.css", "js/app.js", "js/tema.js", "js/iconos.js", "js/detalle.js", "js/asistente.js", "vendor/chart.umd.min.js", "vendor/morphdom.min.js",
           "fonts/plus-jakarta-sans-latin.woff2", "fonts/jetbrains-mono-latin.woff2", "img/logo.png"]:
     chequeo(f"existe public/{f}", (pub / f).exists())
 html = leer("public/index.html")
 chequeo("index.html no tiene scripts en linea ni manejadores on*=",
         not re.search(r"<script(?![^>]*\bsrc=)", html) and not re.search(r"\son[a-z]+\s*=", html))
 externo = []
-for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public/js/tema.js"]:
+for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public/js/tema.js", "public/js/detalle.js", "public/js/asistente.js"]:
     for m in re.finditer(r"https?://[^\s\"')]+", leer(f)):
         if "w3.org" not in m.group(0):
             externo.append(f"{f}: {m.group(0)[:60]}")
 chequeo("ninguna fuente, libreria ni imagen se pide a internet (todo local)", not externo, "; ".join(externo[:3]))
-raya = [f for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public/js/iconos.js"] if "\u2014" in leer(f) or "\u2013" in leer(f)]
+raya = [f for f in ["public/index.html", "public/css/app.css", "public/js/app.js", "public/js/iconos.js", "public/js/detalle.js", "public/js/asistente.js"] if "\u2014" in leer(f) or "\u2013" in leer(f)]
 chequeo("sin rayas largas (em/en dash) en la interfaz (regla de taste-skill: solo guion normal)", not raya, str(raya))
 tam = sum(p.stat().st_size for p in pub.rglob("*") if p.is_file())
 chequeo(f"public/ pesa {tam/1024:.0f} KB (< 5 MB)", tam < 5 * 1024 * 1024)
@@ -111,6 +111,14 @@ try:
     chequeo("no hay hilo de monitoreo en segundo plano", v.get("revisado") is None, str(v.get("revisado")))
     chequeo("/api/diagnostico no esta publicado", llamar("/api/diagnostico")[0] == 404)
     chequeo("/api/demo/pedido no esta publicado", llamar("/api/demo/pedido", "POST")[0] == 404)
+    st, h, b = llamar("/api/pedido/3500002")
+    d2 = json.loads(b) if st == 200 else {}
+    chequeo("/api/pedido/{sequence} entrega cabecera y lineas del pedido", st == 200 and d2.get("lineas") and d2["lineas"][0].get("descripcion"))
+    chequeo("/api/pedido rechaza un Sequence que no es numerico", llamar("/api/pedido/abc")[0] == 400 and llamar("/api/pedido/9999999999")[0] == 404)
+    st, h, b = llamar("/api/chat", "POST", {"pregunta": "cuantas unidades del refrigerador med 165b cayeron hoy"})
+    r = json.loads(b) if st == 200 else {}
+    chequeo("/api/chat responde con reglas (sin IA) y calcula una cifra", st == 200 and r.get("ok") and r.get("via") == "reglas" and r.get("valor", 0) > 0, str(r)[:120])
+    chequeo("/api/chat tolera cuerpos invalidos", llamar("/api/chat", "POST", ["x"])[0] == 200 and llamar("/api/chat", "POST", {"pregunta": "x" * 5000, "previo": "no"})[0] == 200)
     chequeo("/docs y /openapi.json no estan publicados", llamar("/docs")[0] == 404 and llamar("/openapi.json")[0] == 404)
     st, h, b = llamar("/api/dashboard", "POST", ["no", "es", "un", "objeto"])
     chequeo("un cuerpo invalido no rompe el servidor", st in (200, 422, 503))

@@ -92,7 +92,7 @@ def construir(orders: pd.DataFrame, order_items: pd.DataFrame, sap: pd.DataFrame
     un_dia, cinco = pd.Timedelta(days=1), pd.Timedelta(days=5)
     dim["Alerta BWS"] = np.where((dim["Canal"] == "BWS") & rfh & sed.notna() & (sed <= ref - un_dia),
                                  "Atención BWS", None)
-    dim["Alerta POS Fechado"] = np.where((dim["warehouse"] == "POS_Fechado") & rfh, "POS Fechado", None)
+    dim["Alerta POST Fechado"] = np.where((dim["warehouse"] == "POST_Fechado") & rfh, "POST Fechado", None)
     dim["Alerta MKP"] = np.where((dim["Canal"] == "MKP") & rfh & (cre <= ref - cinco), "Atención MKP", None)
 
     # ---- Facturado sin despacho (cruce con Facturacion, sin tope de dias) ----

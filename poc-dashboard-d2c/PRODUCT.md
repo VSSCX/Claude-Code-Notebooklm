@@ -20,7 +20,7 @@ Cross-check of every VTEX (Azure) order against SAP (ODS): which orders integrat
 
 ## Positioning
 
-A live VTEX-versus-SAP integration monitor on the analyst's own machine, with the Power BI bookmark logic built in (Atención BWS, POS Fechado, Atención MKP, Integración) and a demo mode that runs with no database. A generic BI tool does not carry those rules or the live "NUEVO" arrival feedback.
+A live VTEX-versus-SAP integration monitor on the analyst's own machine, with the Power BI bookmark logic built in (Atención BWS, POST Fechado, Atención MKP, Integración) and a demo mode that runs with no database. A generic BI tool does not carry those rules or the live "NUEVO" arrival feedback.
 
 ## Operating Context
 
@@ -33,6 +33,10 @@ A live VTEX-versus-SAP integration monitor on the analyst's own machine, with th
 ## Capabilities and Constraints
 
 - Cross-filtering as in Power BI: clicking a bar (Pedidos por SLA Type, Cliente, Warehouse, No integrados por cliente, Pedidos por mes y estado, Estado por dia) or a row (Riesgo por canal, Pedidos por dia de creacion) sets the matching top filter and filters every panel and every screen; the clicked chart keeps all its bars and dims the unselected ones; clicking again clears; Ctrl or Shift adds more values. Filters are per browser.
+- Order drawer: clicking an order (detail table, critical table, notification, assistant answer) opens a side sheet with the order header and its lines (SAP code, description, quantity, price, amount) read from OrderItems on demand; it never replaces the board. Column names of OrderItems for description and price are inferred and can be set in `.env`; if they cannot be found the sheet says so and lists the available columns instead of inventing data.
+- Default period: Pedidos VTEX opens on the current month; the Período selector goes back (mes anterior, últimos 30 días, todo, personalizado). Resumen ejecutivo and Diagnóstico keep the full range by default because they compare months. Searching a Sequence ignores the period. Choosing a period, dates or clicking a month or day applies to the three screens until Restablecer.
+- Slicers: the bar keeps Canal, Cliente, Bodega (EC01 + POST by default), Período and the search; Status, SLA Type and Alcance sit under "Más filtros".
+- Assistant (query icon in the header): asks about orders in plain Spanish, for example units of a product today. Rule-based by default (no AI, no internet); optionally Ollama, an OpenAI-compatible server or Claude translates the question into a validated plan, and the server always computes the figure (see ASISTENTE.md).
 - Notification center (seller-center style): a bell in the header counts unread new VTEX orders, opens a panel with the latest 50 (Sequence, canal, relative time), lets the analyst mark all as read or jump to one order in the detail, and rings once on arrival; read state lives in the browser (localStorage). A toast also appears top right.
 - Five order states with fixed meaning: Integrado · Facturado, Integrado · Pendiente, No integrado · Facturado, No integrado · Pendiente, Cancelado.
 - Filters (canal, cliente, status, SLA Type, bodega, alcance, creation dates, free search) and column sorting are applied on the server over the whole set, not just the visible rows.

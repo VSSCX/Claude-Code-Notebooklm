@@ -30,6 +30,7 @@
         <button class="btn sm" id="demoSim" title="Simula la llegada de un pedido nuevo para ver la actualización en vivo"></button>
       </div>
       <div class="tools" id="tools"></div>
+      <button class="campana" id="chatBtn" data-chat aria-label="Preguntar al asistente" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat" title="Preguntar al asistente"></button>
       <div class="notif" id="notif"></div>
     </div>
     <div class="loadbar" aria-hidden="true"></div>
@@ -39,8 +40,23 @@
   <main id="app" tabindex="-1"><div class="splash"></div></main>
 </div>
 <div id="avisos"></div>
+<div id="drawer"></div>
+<div class="dr chat" id="chat" role="dialog" aria-labelledby="chat-tit" hidden>
+  <div class="dr-h">
+    <div class="dr-t"><span class="dr-ic ia" id="chat-ic"></span><div><h2 id="chat-tit">Asistente de consultas</h2><p id="chat-motor"></p></div></div>
+    <div class="dr-nav"><button id="chat-limpia" data-chat-limpia aria-label="Borrar la conversación" title="Borrar la conversación"></button><button id="chat-x" data-chat-cerrar aria-label="Cerrar el asistente"></button></div>
+  </div>
+  <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
+  <form class="chat-f" id="chat-f" autocomplete="off">
+    <label class="sr" for="chat-q">Tu pregunta</label>
+    <input id="chat-q" name="pregunta" type="text" maxlength="300" autocomplete="off" placeholder="Ej: ¿cuántas unidades del MED 165B cayeron hoy?">
+    <button class="btn primario" type="submit" id="chat-send" aria-label="Enviar pregunta"></button>
+  </form>
+</div>
 <div class="sr" id="anuncio" aria-live="polite"></div>
 <script src="/js/iconos.js"></script>
 <script src="/js/app.js"></script>
+<script src="/js/detalle.js"></script>
+<script src="/js/asistente.js"></script>
 </body>
 </html>

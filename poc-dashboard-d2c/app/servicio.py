@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
-from . import modelo, queries
+from . import items as lineas, modelo, queries
 from .config import settings
 from .demo import datos_demo, firma_demo
 
@@ -41,11 +41,11 @@ COLOR_ESTADO = {
     "No integrado · Facturado": "#D0483A", "No integrado · Pendiente": "#E09A22",
     "Cancelado": "#A3AFBD",
 }
-BASE_BODEGA = ["EC01", "POS_Fechado"]
+BASE_BODEGA = ["EC01", "POST_Fechado"]
 # Marcadores del Power BI: cada boton fija su propio alcance (igual que los bookmarks).
 ALERTAS = {
     "bws": {"col": "Alerta BWS", "val": "Atención BWS", "ov": {"bodega": ["EC01"], "sla_excluir": ["Servicios"]}},
-    "pos": {"col": "Alerta POS Fechado", "val": "POS Fechado", "ov": {"bodega": BASE_BODEGA}},
+    "pos": {"col": "Alerta POST Fechado", "val": "POST Fechado", "ov": {"bodega": BASE_BODEGA}},
     "mkp": {"col": "Alerta MKP", "val": "Atención MKP", "ov": {"bodega": BASE_BODEGA}},
     "fac": {"col": "Facturado Sin Despacho", "val": "Facturado sin despacho", "ov": {"bodega": BASE_BODEGA}},
 }
@@ -229,7 +229,7 @@ def opciones_filtros() -> dict:
     fechas = dim["Creation_Date"].dropna()
     return {"canal": ops("Canal"), "cliente": ops("SalesChannelName"), "status": ops("Status"),
             "sla": ops("SLA_Type"), "bodega": ops("warehouse"), "bodega_base": BASE_BODEGA,
-            "estado_pedido": ORDEN_ESTADO,
+            "estado_pedido": ORDEN_ESTADO, "hoy": hoy.strftime("%Y-%m-%d"),
             "fecha_min": fechas.min().strftime("%Y-%m-%d"), "fecha_max": fechas.max().strftime("%Y-%m-%d")}
 
 
@@ -528,6 +528,51 @@ def construir(filtros: dict) -> dict:
     if _CACHE.get("error"):
         payload["error"] = _CACHE["error"]["msg"]
     return _sanear(payload)
+
+
+def detalle_pedido(sequence: str) -> dict | None:
+    """Cabecera + lineas (codigo SAP, descripcion, cantidad, precio, monto) de un pedido, para el cajon de detalle."""
+    dim, hoy, _ = _snapshot()
+    sq = str(sequence).strip()
+    fila = dim[dim["Sequence"] == sq]
+    if fila.empty:
+        return None
+    r = fila.iloc[0]
+    sed = r["Shipping_Estimate_Date"]
+    cab = {"sequence": sq, "orden": r["Order"], "estado": r["Estado Pedido"], "status": r["Status"], "canal": r["Canal"],
+           "cliente": r["SalesChannelName"], "sla": r["SLA_Type"], "warehouse": r["warehouse"],
+           "fecha": r["Creation_Date"].strftime("%Y-%m-%d"), "sed": sed.strftime("%Y-%m-%d") if pd.notna(sed) else "",
+           "pedido_sap": r["Pedido SAP"], "monto": float(r["Total_Value"] or 0), "unidades": float(r["Unidades"] or 0),
+           "causa": r.get("Causa Pendiente") if r["Status"] == "ready-for-handling" and r["Estado Ingreso"] == "Ingresado" else None}
+    out = {"pedido": cab, "lineas": [], "aviso": None, "columnas": []}
+    try:
+        df, info = lineas.lineas_pedido(sq, dim)
+    except Exception as e:  # noqa: BLE001
+        out["aviso"] = ("No se pudieron leer las líneas del pedido." if settings.serverless else
+                        "No se pudieron leer las líneas del pedido: " + str(e)[:200])
+        return _sanear(out)
+    out["columnas"] = info["columnas"]
+    faltan = [n for n, c in (("descripción", info["mapa"]["descripcion"]), ("precio", info["mapa"]["precio_unitario"])) if not c]
+    if faltan and not df.empty:
+        out["aviso"] = ("No encontré la columna de " + " ni de ".join(faltan) + " en OrderItems. Indica el nombre en el .env "
+                        "(ITEM_COL_DESC, ITEM_COL_PRECIO). Columnas disponibles: " + ", ".join(info["columnas"]) + ".")
+    out["lineas"] = [{"sku": x.SKU, "descripcion": x.Descripcion, "qty": x.Qty,
+                      "precio": None if pd.isna(x.PrecioUnit) else float(x.PrecioUnit),
+                      "monto": None if pd.isna(x.Monto) else float(x.Monto)} for x in df.itertuples()]
+    return _sanear(out)
+
+
+def base_pedidos():
+    """(dim, hoy): los pedidos ya modelados, sin tocar las lineas."""
+    dim, hoy, _ = _snapshot()
+    return dim, hoy
+
+
+def lineas_todas():
+    """(dim, hoy, lineas normalizadas, info, version) para el asistente."""
+    dim, hoy, _ = _snapshot()
+    df, info = lineas.todas(_CACHE["version"], dim)
+    return dim, hoy, df, info
 
 
 def obtener(filtros: dict | None = None) -> dict:

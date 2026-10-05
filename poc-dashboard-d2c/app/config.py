@@ -41,6 +41,23 @@ class Settings:
     # Cada cuantos segundos el navegador pregunta al servidor si hay datos nuevos (consulta barata).
     # En Vercel cada consulta es una invocacion de la funcion: se pregunta con menos frecuencia.
     navegador_cada: int = 30 if os.getenv("VERCEL") else int(os.getenv("NAVEGADOR_SEGUNDOS", "2"))
+    # --- Lineas del pedido (OrderItems) para el detalle y el asistente ---
+    # El dashboard adivina las columnas de descripcion y precio; si la tabla usa otros nombres, se fijan aqui.
+    item_col_desc: str = os.getenv("ITEM_COL_DESC", "").strip()
+    item_col_precio: str = os.getenv("ITEM_COL_PRECIO", "").strip()     # precio unitario
+    item_col_monto: str = os.getenv("ITEM_COL_MONTO", "").strip()       # monto de la linea (si no hay precio unitario)
+    item_col_sku: str = os.getenv("ITEM_COL_SKU", "").strip()           # codigo SAP (por defecto Reference_Code)
+    item_precio_centavos: str = os.getenv("ITEM_PRECIO_CENTAVOS", "auto").strip().lower()   # auto | 1 | 0 (VTEX suele guardar en centavos)
+
+    # --- Asistente de consultas (chat) ---
+    # Sin configurar usa reglas (funciona sin internet ni IA). Con IA_MODO la IA solo traduce la pregunta
+    # a un plan; las cifras las calcula siempre el servidor. Valores: ollama | openai | anthropic
+    ia_modo: str = os.getenv("IA_MODO", "").strip().lower()
+    ia_url: str = os.getenv("IA_URL", "").strip()
+    ia_modelo: str = os.getenv("IA_MODELO", "").strip()
+    ia_clave: str = os.getenv("IA_CLAVE", "").strip()
+    ia_timeout: int = int(os.getenv("IA_TIMEOUT_SEGUNDOS", "25"))
+
     # Cuanto tiempo un pedido recien llegado se marca como NUEVO en la tabla.
     nuevo_segundos: int = int(os.getenv("NUEVO_SEGUNDOS", "300"))
     # Modo demo: usa datos de ejemplo en vez de SQL (para probar sin conexión)

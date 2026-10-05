@@ -6,10 +6,11 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
-from . import servicio
+from . import asistente, servicio
 from .seguridad import CABECERAS
 
 log = logging.getLogger("dashboard")
@@ -70,6 +71,39 @@ async def api_dashboard(request: Request):
 def api_filtros():
     try:
         return servicio.opciones_filtros()
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+
+
+@app.get("/api/pedido/{sequence}")
+def api_pedido(sequence: str):
+    """Cabecera y lineas (codigo SAP, descripcion, cantidad, precio, monto) de un pedido, para el cajon de detalle."""
+    if not sequence.isdigit() or len(sequence) > 14:
+        return JSONResponse(status_code=400, content={"error": "Sequence invalido"})
+    try:
+        det = servicio.detalle_pedido(sequence)
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+    return det if det else JSONResponse(status_code=404, content={"error": "Pedido no encontrado"})
+
+
+@app.get("/api/chat/motor")
+def api_chat_motor():
+    return {**asistente.info_motor(), "ejemplos": asistente.EJEMPLOS}
+
+
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    """Pregunta en lenguaje natural -> plan validado -> cifra calculada por el servidor (ver asistente.py)."""
+    try:
+        cuerpo = await request.json()
+    except Exception:
+        cuerpo = {}
+    if not isinstance(cuerpo, dict):
+        cuerpo = {}
+    previo = cuerpo.get("previo") if isinstance(cuerpo.get("previo"), dict) else None
+    try:
+        return await run_in_threadpool(asistente.responder, cuerpo.get("pregunta", ""), previo)
     except Exception as e:  # noqa: BLE001
         return _error(e)
 

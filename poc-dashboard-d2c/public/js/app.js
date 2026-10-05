@@ -35,7 +35,7 @@ const lum=h=>{const n=parseInt(h.slice(1),16),f=c=>{c/=255;return c<=.03928?c/12
 const onClr=h=>lum(h)>.3?'#12171C':'#FFFFFF';
 
 /* ============ estado y marcadores (replican los bookmarks del Power BI) ============ */
-const BASE=['EC01','POS_Fechado'];
+const BASE=['EC01','POST_Fechado'];
 const INICIAL=()=>({alerta:null,tarjeta:null,bodega:[...BASE],sla_excluir:[],alcance:'abiertos'});
 const MARC={ // cada boton fija su propio alcance, igual que el marcador correspondiente
   bws:{alerta:'bws',tarjeta:null,bodega:['EC01'],sla_excluir:['Servicios'],alcance:'todos'},
@@ -46,10 +46,26 @@ const LIMPIAR={alerta:null,tarjeta:null,bodega:[...BASE],sla_excluir:[],alcance:
 const VISTAS=['pedidos','resumen','diagnostico'];
 const S={fa:false,u:1,orden:{det:null,crit:null,canal:null},data:null,version:'',view:VISTAS.includes(location.hash.slice(1))?location.hash.slice(1):(VISTAS.includes(leer('vista'))?leer('vista'):'pedidos'),poll:5,opts:null,req:0,err:null,mon:null,revisadoAt:null,
   vistos:new Set(),vistosInit:false,prevTarj:null,filtros:null,
-  tema:['light','dark'].includes(leer('tema'))?leer('tema'):'auto',tv:leer('tv')==='1',subs:{},pintada:null};
-const VACIO=()=>({canal:[],cliente:[],status:[],sla:[],buscar:'',
-  fecha_ini:S.opts?S.opts.fecha_min:null,fecha_fin:S.opts?S.opts.fecha_max:null,...INICIAL()});
+  tema:['light','dark'].includes(leer('tema'))?leer('tema'):'auto',tv:leer('tv')==='1',subs:{},pintada:null,per:'auto',mas:false,dr:null};
+const VACIO=()=>({canal:[],cliente:[],status:[],sla:[],buscar:'',fecha_ini:null,fecha_fin:null,...INICIAL()});
 S.filtros=VACIO();
+
+/* ============ período: al abrir, Pedidos VTEX muestra solo el mes en curso (se puede mirar hacia atrás) ============
+   'auto' = el período por defecto de cada pantalla (mes en curso en Pedidos VTEX, todo en las demás, que comparan meses).
+   Cualquier elección del usuario (selector, fechas o clic en un mes o día) lo fija para las tres pantallas. */
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const fechaDe=s=>new Date(s+'T12:00:00');
+const PER=[['mes','Mes en curso'],['mes_ant','Mes anterior'],['30','Últimos 30 días'],['todo','Todo el período'],['custom','Personalizado']];
+const perEf=()=>S.per!=='auto'?S.per:(S.view==='pedidos'?'mes':'todo');
+function rangoPer(p){
+  const o=S.opts;if(!o)return [null,null];
+  const h=fechaDe(o.hoy||o.fecha_max),y=h.getFullYear(),m=h.getMonth();
+  if(p==='mes')return [iso(new Date(y,m,1)),iso(h)];
+  if(p==='mes_ant')return [iso(new Date(y,m-1,1)),iso(new Date(y,m,0))];
+  if(p==='30')return [iso(new Date(y,m,h.getDate()-29)),iso(h)];
+  return [o.fecha_min,o.fecha_max];
+}
+function sincPer(){const p=perEf();if(p==='custom'||!S.opts)return;const r=rangoPer(p);S.filtros.fecha_ini=r[0];S.filtros.fecha_fin=r[1];}
 
 /* ============ redibujado por diferencias ============ */
 function morph(el,html){
@@ -63,9 +79,10 @@ function morph(el,html){
 
 /* ============ carga ============ */
 async function cargar(){
+  sincPer();
   const id=++S.req; $('#shell').classList.add('loading');
   const body={...S.filtros}; if(S.view!=='pedidos') body.alcance='todos';
-  if(body.buscar){body.alcance='todos';body.bodega=[];}   // una busqueda puntual ignora el alcance y la bodega
+  if(body.buscar){body.alcance='todos';body.bodega=[];body.fecha_ini=null;body.fecha_fin=null;}   // una busqueda puntual ignora el alcance, la bodega y el periodo
   body.orden_det=S.orden.det;body.orden_crit=S.orden.crit;   // el orden se aplica en el servidor sobre TODO el conjunto
   try{
     const r=await fetch('/api/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -141,6 +158,7 @@ function abrirPedidoNotif(seq){
   const x=S.notifs.find(n=>n.seq===seq);if(x)x.leida=true;guardarNotifs();cerrarNotif(true);
   S.filtros.buscar=seq;renderSlicers();   // el detalle se filtra por ese Sequence: la búsqueda ignora alcance y bodega
   if(S.view!=='pedidos')irA('pedidos');else cargar();
+  abrirPedido(seq);
 }
 function avisarLlegadas(j){
   const ll=j.llegadas||[]; const nuevas=ll.filter(x=>!S.vistos.has(x.seq));
@@ -154,34 +172,37 @@ function avisarLlegadas(j){
 
 /* ============ riel y filtros ============ */
 async function cargarOpts(){
-  try{S.opts=await(await fetch('/api/filtros')).json();S.filtros.fecha_ini=S.opts.fecha_min;S.filtros.fecha_fin=S.opts.fecha_max;}catch(e){S.opts=null;}
+  try{S.opts=await(await fetch('/api/filtros')).json();sincPer();}catch(e){S.opts=null;}
   renderSlicers();
 }
 function renderSlicers(){
   const el=$('#slicers');
   if(!S.opts||S.opts.error){morph(el,'');return;}
   const o=S.opts,f=S.filtros;
-  const sel=(k,l,arr)=>`<div class="sl"><label for="sl-${k}">${l}</label><select id="sl-${k}" name="${k}" autocomplete="off" data-sl="${k}"><option value="" ${f[k].length?'':'selected'}>Todas</option>${f[k].length>1?`<option value="__multi" selected>${f[k].length} seleccionados</option>`:''}${(arr||[]).map(v=>`<option value="${esc(v)}" ${f[k].length===1&&f[k][0]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
+  const sel=(k,l,arr)=>`<div class="sl"><label for="sl-${k}">${l}</label><select id="sl-${k}" name="${k}" autocomplete="off" data-sl="${k}"><option value="" ${f[k].length?'':'selected'}>Todos</option>${f[k].length>1?`<option value="__multi" selected>${f[k].length} seleccionados</option>`:''}${(arr||[]).map(v=>`<option value="${esc(v)}" ${f[k].length===1&&f[k][0]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
   const igual=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
   const bv=igual(f.bodega,BASE)?'__base':(f.bodega.length===0?'__todas':f.bodega[0]);
-  const bodega=`<div class="sl w"><label for="sl-bodega">Bodega</label><select id="sl-bodega" name="bodega" autocomplete="off" data-bodega>
-    <option value="__base" ${bv==='__base'?'selected':''}>EC01 + POS</option><option value="__todas" ${bv==='__todas'?'selected':''}>Todas</option>
-    ${(o.bodega||[]).map(v=>`<option value="${esc(v)}" ${bv===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
-  const alcance=S.view==='pedidos'?`<div class="sl w"><label for="sl-alcance">Alcance</label><select id="sl-alcance" name="alcance" autocomplete="off" data-alcance>
+  const ob=[['__base','EC01 + POST'],['EC01','EC01'],['POST_Fechado','POST_Fechado'],['__todas','Todas las bodegas']];
+  if(!ob.some(x=>x[0]===bv))ob.splice(3,0,[bv,bv]);   // una bodega elegida desde el gráfico (por ejemplo CD45) también se ve en el selector
+  const bodega=`<div class="sl"><label for="sl-bodega">Bodega</label><select id="sl-bodega" name="bodega" autocomplete="off" data-bodega>${ob.map(([v,t])=>`<option value="${esc(v)}" ${bv===v?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`;
+  const pe=perEf();
+  const periodo=`<div class="sl"><label for="sl-per">Período de creación</label><select id="sl-per" name="periodo" autocomplete="off" data-per>${PER.map(([v,t])=>`<option value="${v}" ${pe===v?'selected':''}>${t}</option>`).join('')}</select></div>`;
+  const fechas=pe==='custom'?`<div class="sl d"><label for="sl-ini">Desde</label><input id="sl-ini" name="desde" autocomplete="off" type="date" data-fecha="ini" value="${f.fecha_ini||''}" min="${o.fecha_min}" max="${o.fecha_max}"></div><div class="sl d"><label for="sl-fin">Hasta</label><input id="sl-fin" name="hasta" autocomplete="off" type="date" data-fecha="fin" value="${f.fecha_fin||''}" min="${o.fecha_min}" max="${o.fecha_max}"></div>`:'';
+  const alcance=S.view==='pedidos'?`<div class="sl"><label for="sl-alcance">Alcance</label><select id="sl-alcance" name="alcance" autocomplete="off" data-alcance>
     <option value="abiertos" ${f.alcance==='abiertos'?'selected':''}>En seguimiento</option><option value="todos" ${f.alcance==='todos'?'selected':''}>Todos (con cerrados)</option></select></div>`:'';
+  const nMas=(f.status.length?1:0)+(f.sla.length?1:0)+(S.view==='pedidos'&&f.alcance==='todos'&&!f.alerta&&!f.buscar?1:0);
+  const mas=`<div class="mas"><button class="btn" data-mas aria-expanded="${S.mas}" aria-haspopup="dialog"${S.mas?' aria-controls="panel-mas"':''}>${ico('filtro',16)}Más filtros${nMas?`<span class="cnt">${nMas}</span>`:''}</button>${S.mas?`<div class="panel-mas" id="panel-mas" role="dialog" aria-label="Más filtros" tabindex="-1">${sel('status','Status',o.status)}${sel('sla','SLA Type',o.sla)}${alcance}</div>`:''}</div>`;
   const act=[];
-  if(f.alerta)act.push({bws:'Atención BWS',pos:'POS Fechado',mkp:'Atención MKP',fac:'Integración'}[f.alerta]);
+  if(f.alerta)act.push({bws:'Atención BWS',pos:'POST Fechado',mkp:'Atención MKP',fac:'Integración'}[f.alerta]);
   if(f.tarjeta)act.push({ing:'Órdenes Integradas',noing:'Órdenes Sin PV',canc:'Órdenes Canceladas'}[f.tarjeta]);
   ['canal','cliente','status','sla'].forEach(k=>{if(f[k][0])act.push(({canal:'Canal',cliente:'Cliente',status:'Status',sla:'SLA'})[k]+' '+f[k][0]);});
   if(!igual(f.bodega,BASE))act.push('Bodega '+(f.bodega.length?f.bodega.join(', '):'todas'));
-  if(f.fecha_ini&&f.fecha_ini!==o.fecha_min||f.fecha_fin&&f.fecha_fin!==o.fecha_max)act.push('Creación '+fd(f.fecha_ini)+' a '+fd(f.fecha_fin));
   if(f.buscar)act.push('Búsqueda “'+f.buscar+'”');
-  const fsum=`<div class="fsum"><span class="cap">Filtros</span> ${act.length?act.map(esc).join(', '):'ninguno, '+(S.view==='pedidos'&&f.alcance==='abiertos'?'pedidos en seguimiento':'todos los pedidos')}</div>`;
-  morph(el,`<button class="btn fbtn" data-ftoggle aria-expanded="${!!S.fa}">Filtros${act.length?` (${act.length})`:''}${ico(S.fa?'arriba':'abajo',14)}</button>`+fsum+`<div class="fgrid ${S.fa?'open':''}">`+sel('canal','Canal',o.canal)+sel('cliente','Cliente',o.cliente)+sel('status','Status',o.status)+sel('sla','SLA Type',o.sla)+bodega+alcance
-   +`<div class="sl d"><label for="sl-ini">Creación desde</label><input id="sl-ini" name="desde" autocomplete="off" type="date" data-fecha="ini" value="${f.fecha_ini||''}" min="${o.fecha_min}" max="${o.fecha_max}"></div>`
-   +`<div class="sl d"><label for="sl-fin">Creación hasta</label><input id="sl-fin" name="hasta" autocomplete="off" type="date" data-fecha="fin" value="${f.fecha_fin||''}" min="${o.fecha_min}" max="${o.fecha_max}"></div>`
+  const etqPer=pe==='mes'?'mes en curso':pe==='mes_ant'?'mes anterior':pe==='30'?'últimos 30 días':pe==='todo'?'todo el período':(f.fecha_ini===f.fecha_fin?fd(f.fecha_ini):fd(f.fecha_ini)+' a '+fd(f.fecha_fin));
+  const fsum=`<div class="fsum"><span class="cap">Filtros</span> ${['Creación: '+etqPer,...act].map(esc).join(', ')}${!act.length&&S.view==='pedidos'&&f.alcance==='abiertos'?', pedidos en seguimiento':''}</div>`;
+  morph(el,`<button class="btn fbtn" data-ftoggle aria-expanded="${!!S.fa}">Filtros${act.length?` (${act.length})`:''}${ico(S.fa?'arriba':'abajo',14)}</button>`+fsum+`<div class="fgrid ${S.fa?'open':''}">`+sel('canal','Canal',o.canal)+sel('cliente','Cliente',o.cliente)+bodega+periodo+fechas
    +`<div class="sl q"><label for="sl-q">Buscar pedido</label><input id="sl-q" name="buscar" autocomplete="off" spellcheck="false" type="search" data-buscar placeholder="Sequence o SAP…" value="${esc(f.buscar)}"></div>`
-   +`<button class="btn" data-limpiar-sl title="Vuelve a la vista inicial">Restablecer</button></div>`);
+   +mas+`<button class="btn" data-limpiar-sl title="Vuelve a la vista inicial">Restablecer</button></div>`);
 }
 function renderNav(){
   const it=[['pedidos','Pedidos VTEX'],['resumen','Resumen ejecutivo'],['diagnostico','Diagnóstico']];
@@ -195,7 +216,7 @@ function renderTools(){
 
 /* ============ piezas ============ */
 function kpiCard(lab,val,d,mejor,risk,nota){
-  let dH=`<div class="dlt flat" ${nota?'':'title="Sin mes anterior para comparar"'}>${nota||'-'}</div>`;
+  let dH=`<div class="dlt flat" ${nota?'':'title="Sin mes anterior para comparar"'}>${nota||''}</div>`;
   if(d!=null){const b=mejor==='arriba'?d>=0:d<=0;const c=d===0?'flat':(b?'up':'down');dH=`<div class="dlt ${c}">${ico(d>0?'up':d<0?'down':'flat',14)}${pctD(Math.abs(d))} vs mes ant.</div>`;}
   return `<div class="kpi ${risk?'risk':''}"><div class="lab cap" title="${esc(lab)}">${esc(lab)}</div><div class="val">${val}</div>${dH}</div>`;
 }
@@ -211,7 +232,7 @@ function tablaDetalle(){
   if(!rows.length)return vacio('Sin pedidos','Ningún pedido cumple los filtros actuales.');
   return `<table class="t"><thead><tr>${thOrd('det','sequence','Sequence')}${thOrd('det','pedido_sap','Pedido SAP')}${thOrd('det','estado','Estado')}${thOrd('det','canal','Canal')}${thOrd('det','sla','SLA Type','c-sla')}${thOrd('det','fecha','Creación','c-crea')}${thOrd('det','sed','Entrega est.')}${thOrd('det','monto','Monto','n c-monto')}</tr></thead><tbody>
   ${rows.map(r=>{const v=r.sed&&r.sed<d.hoy&&r.estado.includes('Pendiente');
-   return `<tr id="r${esc(r.sequence)}" class="${r.nuevo?'nw':''}" title="Monto: ${money(r.monto)} · ${esc(r.warehouse)}"><td class="num" translate="no">${esc(r.sequence)}${r.nuevo?'<span class="tag tagnew">NUEVO</span>':''}</td><td class="num">${esc(r.pedido_sap||'-')}</td><td>${pill(r.estado)}</td><td>${esc(r.canal)}</td><td class="ell c-sla" title="${esc(r.sla)}">${esc(r.sla)}</td><td class="c-crea">${fd(r.fecha)}</td><td class="${v?'venc':''}">${fd(r.sed)}</td><td class="n c-monto">${money(r.monto)}</td></tr>`;}).join('')}
+   return `<tr id="r${esc(r.sequence)}" class="clic ${r.nuevo?'nw':''} ${S.dr&&S.dr.seq===r.sequence?'sel':''}" data-pv="${esc(r.sequence)}" tabindex="0" aria-haspopup="dialog" title="Clic: ver las líneas del pedido. ${esc(r.warehouse)}"><td class="num" translate="no">${esc(r.sequence)}${r.nuevo?'<span class="tag tagnew">NUEVO</span>':''}</td><td class="num">${esc(r.pedido_sap||'-')}</td><td>${pill(r.estado)}</td><td>${esc(r.canal)}</td><td class="ell c-sla" title="${esc(r.sla)}">${esc(r.sla)}</td><td class="c-crea">${fd(r.fecha)}</td><td class="${v?'venc':''}">${fd(r.sed)}</td><td class="n c-monto">${money(r.monto)}</td></tr>`;}).join('')}
 </tbody></table>`;
 }
 function tablaEntrega(){
@@ -240,7 +261,7 @@ function tablaCriticos(){
   const t=S.data.tabla_criticos;
   if(!t.length)return vacio('Nada facturado sin despacho','Ningún pedido pendiente tiene factura en SAP.');
   return `<table class="t"><thead><tr>${thOrd('crit','sequence','Sequence')}${thOrd('crit','canal','Canal')}${thOrd('crit','dias','Días facturado pendiente','n')}${thOrd('crit','monto','Monto','n')}</tr></thead><tbody>
-  ${t.map(r=>`<tr id="c${esc(r.sequence)}"><td class="num">${esc(r.sequence)}</td><td>${esc(r.canal)}</td><td class="n ${r.dias>3?'down':''}">${r.dias??'-'}</td><td class="n">${money(r.monto)}</td></tr>`).join('')}
+  ${t.map(r=>`<tr id="c${esc(r.sequence)}" class="clic ${S.dr&&S.dr.seq===r.sequence?'sel':''}" data-pv="${esc(r.sequence)}" tabindex="0" aria-haspopup="dialog" title="Clic: ver las líneas del pedido"><td class="num">${esc(r.sequence)}</td><td>${esc(r.canal)}</td><td class="n ${r.dias>3?'down':''}">${r.dias??'-'}</td><td class="n">${money(r.monto)}</td></tr>`).join('')}
 </tbody></table>`;
 }
 function tablaCanal(){
@@ -262,7 +283,7 @@ function vistaPedidos(){
   const d=S.data,t=d.tarjetas,a=d.alertas,F=S.filtros;
   const btn=(k,l,n,tip,crit)=>`<button class="mbtn ${crit?'crit':''}" data-alerta="${k}" aria-pressed="${F.alerta===k}" title="${esc(tip)}">${l}<b>${fmt(n)}</b></button>`;
   const botones=btn('bws','Atención BWS',a.bws,'BWS · listo para preparar · entrega estimada vencida (bodega EC01, sin SLA Servicios)')
-    +btn('pos','POS Fechado',a.pos,'Bodega POS Fechado · listo para preparar')
+    +btn('pos','POST Fechado',a.pos,'Bodega POST Fechado · listo para preparar')
     +btn('mkp','Atención MKP',a.mkp,'Marketplace · listo para preparar · creado hace 5 días o más')
     +btn('fac','Integración',a.fac,'Facturado en SAP y todavía pendiente en VTEX',true)
     +`<button class="mbtn limpiar" data-limpiar-vista title="Muestra todos los pedidos (igual que tu marcador Pedidos VTEX)">${ico('x',14)}Limpiar</button>`;
@@ -332,19 +353,19 @@ function alternar(campo,v,multi){
   const cur=S.filtros[campo]||[];let nuevo;
   if(multi)nuevo=cur.includes(v)?cur.filter(x=>x!==v):[...cur,v];
   else nuevo=(cur.length===1&&cur[0]===v)?[]:[v];
-  if(campo==='bodega'&&!nuevo.length)nuevo=[...BASE];   // sin bodega elegida vuelve a la base (EC01 + POS)
+  if(campo==='bodega'&&!nuevo.length)nuevo=[...BASE];   // sin bodega elegida vuelve a la base (EC01 + POST)
   S.filtros[campo]=nuevo;aplicarCruzado();
 }
-function sinFechas(){S.filtros.fecha_ini=S.opts?S.opts.fecha_min:null;S.filtros.fecha_fin=S.opts?S.opts.fecha_max:null;}
+function sinFechas(){S.per='auto';sincPer();}
 function alternarMes(m){   // 'AAAA-MM' -> del día 1 al último día del mes (o al último dato)
   if(mesSel()===m){sinFechas();return aplicarCruzado();}
   const ult=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate();
   const max=S.opts&&S.opts.fecha_max;
-  S.filtros.fecha_ini=m+'-01';S.filtros.fecha_fin=(max&&max.slice(0,7)===m)?max:m+'-'+String(ult).padStart(2,'0');aplicarCruzado();
+  S.per='custom';S.filtros.fecha_ini=m+'-01';S.filtros.fecha_fin=(max&&max.slice(0,7)===m)?max:m+'-'+String(ult).padStart(2,'0');aplicarCruzado();
 }
 function alternarDia(d){
   if(diaSel()===d){sinFechas();return aplicarCruzado();}
-  S.filtros.fecha_ini=d;S.filtros.fecha_fin=d;aplicarCruzado();
+  S.per='custom';S.filtros.fecha_ini=d;S.filtros.fecha_fin=d;aplicarCruzado();
 }
 const multiClic=ev=>!!(ev&&ev.native&&(ev.native.ctrlKey||ev.native.metaKey||ev.native.shiftKey));
 const manito=(ev,els)=>{if(ev&&ev.native&&ev.native.target)ev.native.target.style.cursor=els.length?'pointer':'default';};
@@ -391,7 +412,7 @@ function miniBar(id,data,color,campo){
   o.plugins.tooltip={callbacks:{title:i=>L[i[0].dataIndex]}};
   const sel=campo?seleccion(campo):[];
   o.onClick=(ev,els)=>{if(campo&&els.length)alternar(campo,L[els[0].index],multiClic(ev));};o.onHover=manito;
-  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:sel.length?L.map(l=>sel.includes(l)?color:alfa(color,.28)):color,borderRadius:2,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20)}]},options:o,plugins:[valueLabels]});
+  grafico(id,{type:'bar',data:{labels:L,datasets:[{data:V,backgroundColor:sel.length?L.map(l=>sel.includes(l)?color:alfa(color,.28)):color,borderRadius:4,barPercentage:.74,categoryPercentage:.92,maxBarThickness:fz(20)}]},options:o,plugins:[valueLabels]});
 }
 function pintar(){
   const d=S.data;if(!d)return;
@@ -495,14 +516,17 @@ function aplicarTV(){
   document.documentElement.classList.toggle('tv',S.tv);guardar('tv',S.tv?'1':'0');
   ajustarEscala();
 }
-function irA(v){S.view=v;guardar('vista',v);if(location.hash!=='#'+v)history.replaceState(null,'','#'+v);S.pintada=null;renderNav();renderSlicers();if(S.data)render();cargar();}
+function irA(v){S.view=v;guardar('vista',v);if(location.hash!=='#'+v)history.replaceState(null,'','#'+v);S.pintada=null;S.mas=false;sincPer();renderNav();renderSlicers();if(S.data)render();cargar();}
 
 /* ============ eventos ============ */
 document.addEventListener('click',ev=>{
   if(S.np&&!ev.target.closest('#notif'))cerrarNotif(false);   // clic fuera del panel: se cierra
-  if(ev.target.closest('[data-notif]')){S.np=!S.np;if(S.np)$('#avisos').replaceChildren();renderNotif();if(S.np){const pn=$('#panel-notif');if(pn)pn.focus();}return;}
+  if(S.mas&&!ev.target.closest('.mas')){S.mas=false;renderSlicers();}
+  if(ev.target.closest('[data-mas]')){S.mas=!S.mas;renderSlicers();if(S.mas){const pm=$('#panel-mas');if(pm)pm.focus();}return;}
+  if(ev.target.closest('[data-notif]')){if(!S.np){cerrarPedido(false);cerrarChat(false);}S.np=!S.np;if(S.np)$('#avisos').replaceChildren();renderNotif();if(S.np){const pn=$('#panel-notif');if(pn)pn.focus();}return;}
   if(ev.target.closest('[data-leer-todas]')){S.notifs.forEach(n=>{n.leida=true;});guardarNotifs();renderNotif();return;}
   const ni=ev.target.closest('[data-notif-item]');if(ni){abrirPedidoNotif(ni.dataset.notifItem);return;}
+  const pv=ev.target.closest('[data-pv]');if(pv){abrirPedido(pv.dataset.pv,pv);return;}
   const fcan=ev.target.closest('[data-fcanal]');if(fcan){alternar('canal',fcan.dataset.fcanal,ev.ctrlKey||ev.metaKey||ev.shiftKey);return;}
   const fdia=ev.target.closest('[data-fdia]');if(fdia){alternarDia(fdia.dataset.fdia);return;}
   const g=ev.target.closest('[data-go]');if(g){irA(g.dataset.go);return;}
@@ -516,7 +540,7 @@ document.addEventListener('click',ev=>{
   if(tr){const k=tr.dataset.tarjeta||null;S.filtros.tarjeta=(k&&S.filtros.tarjeta!==k)?k:null;if(S.data)render();cargar();return;}
   const th=ev.target.closest('[data-ord]');
   if(th){ordenar(th);return;}
-  if(ev.target.closest('[data-limpiar-sl]')){S.filtros=VACIO();S.orden={det:null,crit:null,canal:null};renderSlicers();cargar();return;}
+  if(ev.target.closest('[data-limpiar-sl]')){S.filtros=VACIO();S.per='auto';S.mas=false;sincPer();S.orden={det:null,crit:null,canal:null};renderSlicers();cargar();return;}
   if(ev.target.closest('#demoSim')){fetch('/api/demo/pedido',{method:'POST'}).then(r=>r.json()).then(p=>toast('Pedido simulado enviado','Aparecerá en unos segundos (Sequence '+p.sequence+')')).catch(()=>{});return;}
 });
 function ordenar(th){
@@ -526,8 +550,11 @@ function ordenar(th){
 }
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'&&S.np){cerrarNotif(true);return;}
+  if(ev.key==='Escape'&&S.mas){S.mas=false;renderSlicers();const b=$('[data-mas]');if(b)b.focus();return;}
   const th=ev.target.closest&&ev.target.closest('th[data-ord]');
   if(th&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();ordenar(th);}
+  const pvk=ev.target.closest&&ev.target.closest('tr[data-pv]');
+  if(pvk&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();abrirPedido(pvk.dataset.pv,pvk);return;}
   const fr=ev.target.closest&&ev.target.closest('tr[data-fcanal],tr[data-fdia]');
   if(fr&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault();if(fr.dataset.fcanal)alternar('canal',fr.dataset.fcanal,ev.ctrlKey||ev.metaKey||ev.shiftKey);else alternarDia(fr.dataset.fdia);}
 });
@@ -535,7 +562,8 @@ document.addEventListener('change',ev=>{
   const sl=ev.target.closest('[data-sl]');if(sl){if(sl.value==='__multi')return;S.filtros[sl.dataset.sl]=sl.value?[sl.value]:[];cargar();return;}
   const bo=ev.target.closest('[data-bodega]');if(bo){S.filtros.bodega=bo.value==='__base'?[...BASE]:bo.value==='__todas'?[]:[bo.value];cargar();return;}
   const ac=ev.target.closest('[data-alcance]');if(ac){S.filtros.alcance=ac.value;cargar();return;}
-  const fe=ev.target.closest('[data-fecha]');if(fe){S.filtros[fe.dataset.fecha==='ini'?'fecha_ini':'fecha_fin']=fe.value||null;cargar();}
+  const pr=ev.target.closest('[data-per]');if(pr){S.per=pr.value;sincPer();renderSlicers();cargar();return;}
+  const fe=ev.target.closest('[data-fecha]');if(fe){S.per='custom';S.filtros[fe.dataset.fecha==='ini'?'fecha_ini':'fecha_fin']=fe.value||null;cargar();}
 });
 let _t=null;
 document.addEventListener('input',ev=>{

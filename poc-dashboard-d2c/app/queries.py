@@ -72,9 +72,9 @@ def q_orders() -> pd.DataFrame:
                 WHEN oi.[SLA_Type]='vtex:fob_167f2ea' THEN 'Falabella MKP'
                 ELSE oi.[SLA_Type] END) AS SLA_Type,
             COUNT(DISTINCT CASE WHEN oi.[warehouse]='1_1' THEN 'EC01'
-                WHEN oi.[warehouse]='1533f30' THEN 'POS_Fechado' ELSE oi.[warehouse] END) AS nWh,
+                WHEN oi.[warehouse]='1533f30' THEN 'POST_Fechado' ELSE oi.[warehouse] END) AS nWh,
             MIN(CASE WHEN oi.[warehouse]='1_1' THEN 'EC01'
-                WHEN oi.[warehouse]='1533f30' THEN 'POS_Fechado' ELSE oi.[warehouse] END) AS warehouse,
+                WHEN oi.[warehouse]='1533f30' THEN 'POST_Fechado' ELSE oi.[warehouse] END) AS warehouse,
             SUM(oi.[Quantity_SKU]) AS Unidades, COUNT(*) AS Lineas,
             MIN(CAST(oi.[Shipping_Estimate_Date] AS DATE)) AS Shipping_Estimate_Date
         FROM OrderItems oi
@@ -107,6 +107,35 @@ def q_order_items() -> pd.DataFrame:
     WHERE oi.[Country]='CH' AND o.[Status] IN ('invoiced','canceled','ready-for-handling')
       AND CAST(o.Creation_CL AS DATE) >= CAST('{fv}' AS DATE)
       AND o.[SalesChannel] IN {CANALES_IN}
+    """
+    return leer_vtex(sql)
+
+
+def q_items_pedido(sequence: str) -> pd.DataFrame:
+    """Todas las columnas de las lineas de UN pedido (para el cajon de detalle). Parametrizada: sin SQL armado a mano."""
+    return leer_vtex("SELECT oi.* FROM OrderItems oi WHERE oi.[Sequence]=? AND oi.[Country]='CH'", (str(sequence),))
+
+
+def q_items_por_secuencias(secuencias: list) -> pd.DataFrame:
+    """Lineas de algunos pedidos (los que llegaron despues de la ultima carga completa). Parametrizada, de a 500."""
+    partes = []
+    for i in range(0, len(secuencias), 500):
+        lote = [str(x) for x in secuencias[i:i + 500]]
+        marcas = ",".join("?" * len(lote))
+        partes.append(leer_vtex(f"SELECT oi.* FROM OrderItems oi WHERE oi.[Country]='CH' AND oi.[Sequence] IN ({marcas})", tuple(lote)))
+    return pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()
+
+
+def q_items_todos() -> pd.DataFrame:
+    """Lineas de todos los pedidos del periodo validado, con todas las columnas (las usa el asistente de consultas)."""
+    fv = _fv()
+    sql = f"""
+    SELECT oi.* FROM OrderItems oi
+    INNER JOIN (SELECT [Sequence] FROM Orders
+                WHERE [Country]='CH' AND [Status] IN ('invoiced','canceled','ready-for-handling')
+                  AND [SalesChannel] IN {CANALES_IN}
+                  AND [Creation_Date] >= DATEADD(day,-1,CAST('{fv}' AS DATE))) o ON o.[Sequence]=oi.[Sequence]
+    WHERE oi.[Country]='CH'
     """
     return leer_vtex(sql)
 

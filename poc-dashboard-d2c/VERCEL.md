@@ -37,11 +37,12 @@ con login corporativo delante. Mientras tanto, el dashboard real sigue corriendo
 - La campana de notificaciones no recibe avisos (en demo sobre Vercel no entran pedidos nuevos); cuando haya datos reales, cada notificación se guarda solo en el navegador de cada persona (no se comparte entre analistas).
 - Sin botón «Simular pedido» (el pedido simulado viviría en la memoria de una sola instancia).
 - No se publican `/docs`, `/openapi.json`, `/api/diagnostico` ni `/api/demo/pedido`.
+- El detalle de un pedido y el asistente de consultas funcionan con los datos de ejemplo (el asistente solo con reglas). No configures `IA_MODO` ni claves en un despliegue público: no tiene usuario ni clave, y el tope de 40 preguntas por minuto es por instancia, no global.
 - Los errores devuelven un mensaje genérico (en el PC del analista siguen mostrando el detalle: VPN, driver, credenciales).
 
 ## Auditoría
 
-Se corre con `python verificar_vercel.py` (32 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
+Se corre con `python verificar_vercel.py` (39 comprobaciones; sale con código 1 si algo falla). Resultado actual: **todo en orden**.
 
 | Área | Qué se comprobó | Resultado |
 |---|---|---|
