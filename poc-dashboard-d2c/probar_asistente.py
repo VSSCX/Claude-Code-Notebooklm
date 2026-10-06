@@ -121,6 +121,7 @@ esp = lv.groupby("C2")["Monto"].sum().sort_values(ascending=False)
 f_mes = {"alcance": "todos", "fecha_ini": hoy.replace(day=1).strftime("%Y-%m-%d"), "fecha_fin": hoy.strftime("%Y-%m-%d")}
 v = ventas.ventas(f_mes)
 prueba("ventas por Clasif2 coinciden con el calculo a mano", v["ok"] and [c["nombre"] for c in v["clasif"]] == list(esp.index) and cerca(v["total"], esp.sum()))
+prueba("la venta total es el monto de los pedidos (el mismo del tablero)", cerca(v["total"], nc["Total_Value"].sum()))
 v2 = ventas.ventas({**f_mes, "cliente": ["MELI"]})
 e2 = lv[lv["SalesChannelName"] == "MELI"].groupby("C2")["Monto"].sum()
 prueba("respeta el filtro de cliente (clic en MELI)", cerca(v2["total"], e2.sum()) and v2["total"] < v["total"])
@@ -160,6 +161,40 @@ memoria.valorar(r3["id"], True)
 prueba("un seguimiento validado tampoco se reutiliza (depende del contexto)", memoria.exacta("y ayer") is None)
 p("cuantas unidades del med165b hoy")
 prueba("las preguntas repetidas pasan a ser frecuentes", "cuantas unidades del med165b hoy" in memoria.frecuentes() or "cuantas unidades del MED165B hoy?" in memoria.frecuentes())
+
+print("Maestra: deteccion automatica y venta repartida por pedido")
+from app import maestra  # noqa: E402
+from app.config import settings  # noqa: E402
+
+object.__setattr__(settings, "demo", False)
+llamadas = []
+
+
+def falso(sql):
+    llamadas.append(sql)
+    if "INFORMATION_SCHEMA" in sql:
+        return pd.DataFrame({"TABLE_SCHEMA": ["dbo"] * 4, "TABLE_NAME": ["bi_forecast_clasif3", "bi_vtex_producto", "bi_maestra_producto_temp", "bi_maestra_producto"]})
+    if "bi_maestra_producto]" in sql and "temp" not in sql:
+        return pd.DataFrame({"codigoSap": ["910016501", "920008501"], "Descripcion": ["Refri", "Lavadora"], "ClasificacionPrd2": [3, 4], "DescClasif2": ["Refrigeradores", "Lavadoras"]})
+    return pd.DataFrame({"x": [1]})
+
+
+maestra._leer = falso
+maestra._CACHE.update(t=0.0, df=None)
+mm, err, _ = maestra.cargar()
+prueba("encuentra sola la maestra entre las tablas parecidas y prefiere el nombre de Clasif2", err is None and mm.attrs["tabla"] == "dbo.bi_maestra_producto" and set(mm["Clasif2"]) == {"Refrigeradores", "Lavadoras"})
+prueba("no lee tablas temporales ni de forecast antes que la maestra", not any("temp" in q or "forecast" in q for q in llamadas if "INFORMATION" not in q))
+object.__setattr__(settings, "demo", True)
+ped = pd.DataFrame({"Sequence": ["1", "2"], "Status": ["invoiced", "invoiced"], "Total_Value": [1000.0, 500.0]})   # el pedido 2 no tiene lineas
+ln = pd.DataFrame({"Sequence": ["1", "1"], "SKU": ["910016501", "920008501"], "Qty": [1.0, 1.0], "Monto": [100.0, 300.0], "Descripcion": ["a", "b"]})
+servicio_lineas, servicio_filtrar = servicio.lineas_todas, servicio.filtrar_pedidos
+servicio.lineas_todas = lambda: (dim, hoy, ln, {"mapa": {}, "columnas": []})
+servicio.filtrar_pedidos = lambda f: ped
+mb, _, _ = ventas._base({})
+servicio.lineas_todas, servicio.filtrar_pedidos = servicio_lineas, servicio_filtrar
+rep = mb.groupby("Clasif2")["Venta"].sum().round().to_dict()
+prueba("el monto del pedido se reparte por el valor de sus lineas y no se pierde el de un pedido sin lineas",
+       rep == {"Refrigeradores": 250.0, "Lavadoras": 750.0, ventas.SIN_LINEAS: 500.0} and cerca(mb["Venta"].sum(), ped["Total_Value"].sum()), str(rep))
 
 print()
 if fallos:

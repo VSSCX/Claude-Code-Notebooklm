@@ -14,7 +14,7 @@ Este camino es el más simple porque `clws0156` solo se alcanza desde la red de 
 
 1. **Elige el equipo.** Un PC o servidor de la empresa, con Windows, que quede encendido y conectado a la red (y a la VPN si las bases
    la necesitan). Idealmente no el PC personal de alguien que lo apaga o duerme.
-2. **Instala o actualiza** en ese equipo: doble clic en `POC_Dashboard.py` (v3.1). Pone tus usuarios y claves de Azure y del ODS la
+2. **Instala o actualiza** en ese equipo: doble clic en `POC_Dashboard.py` (v3.2). Pone tus usuarios y claves de Azure y del ODS la
    primera vez; quedan solo en el `.env` de ese equipo. En un servidor conviene poner también el usuario y la clave del ODS
    (`SAP_USER` y `SAP_PASS`) en vez de usar la cuenta de Windows de quien lo abre.
 3. **Quita el modo demo:** en el `.env` deja `DEMO=` vacío.

@@ -1,6 +1,6 @@
 """Ventas por clasificacion 2 de la maestra de productos, y por producto dentro de una clasificacion (el "zoom").
 
-Las ventas salen de las lineas de los pedidos (cantidad x precio, sin pedidos cancelados) y respetan los mismos filtros
+La venta es el monto de cada pedido (sin cancelados), repartido entre las clasificaciones de sus lineas; y respetan los mismos filtros
 que el resto del tablero. Se piden aparte de /api/dashboard porque leer las lineas puede tardar la primera vez.
 """
 from __future__ import annotations
@@ -14,24 +14,33 @@ from . import maestra, servicio
 _LOCK = threading.Lock()
 _CACHE: dict = {"version": None, "items": {}}      # resultados ya calculados por filtros, validos mientras no cambien los datos
 SIN_CLASIFICAR = "Sin clasificar"
+SIN_LINEAS = "Sin detalle de líneas"
 
 
 def _base(filtros: dict):
-    """-> (lineas de las ventas con Clasif2 y Producto, mensaje de error, tablas candidatas)."""
-    dim, _hoy, lin, info = servicio.lineas_todas()
+    """-> (una fila por linea con la venta que le toca, mensaje de error, tablas candidatas).
+
+    La venta es el MONTO DEL PEDIDO (el mismo que suma el resto del tablero). Un pedido con lineas de varias clasificaciones se reparte
+    en proporcion al valor de cada linea (o a sus unidades si no hay precio), asi la suma por clasificacion siempre es el monto de los pedidos."""
+    dim, _hoy, lin, _info = servicio.lineas_todas()
     mae, err, cand = maestra.cargar()
     if mae is None:
         return None, err, cand
-    if not info["mapa"]["precio_unitario"] and not info["mapa"]["monto"]:
-        return None, ("No encontré la columna de precio en OrderItems, así que no puedo calcular ventas. Indica su nombre en el .env "
-                      "(ITEM_COL_PRECIO). Columnas disponibles: " + ", ".join(info["columnas"]) + "."), []
     pedidos = servicio.filtrar_pedidos(filtros)
-    pedidos = pedidos[pedidos["Status"] != "canceled"]
-    m = lin.merge(pedidos[["Sequence"]], on="Sequence", how="inner").merge(mae, on="SKU", how="left")
+    pedidos = pedidos[pedidos["Status"] != "canceled"][["Sequence", "Total_Value"]]
+    m = lin.merge(pedidos, on="Sequence", how="inner").merge(mae, on="SKU", how="left")
     m["Clasif2"] = m["Clasif2"].fillna(SIN_CLASIFICAR)
     prod = m["Producto"].where(m["Producto"].fillna("").astype(bool), m["Descripcion"])
     m["Producto"] = prod.where(prod.fillna("").astype(bool), m["SKU"])
-    m["Monto"] = m["Monto"].fillna(0.0)
+    peso = pd.to_numeric(m["Monto"], errors="coerce").fillna(0.0)
+    peso = peso.where(peso.groupby(m["Sequence"]).transform("sum") > 0, m["Qty"].astype(float))     # sin precio: se reparte por unidades
+    tot = peso.groupby(m["Sequence"]).transform("sum").replace(0, pd.NA)
+    m["Venta"] = (m["Total_Value"].astype(float) * peso / tot).fillna(0.0)
+    sin = pedidos[~pedidos["Sequence"].isin(m["Sequence"])]                                          # pedidos sin lineas: su monto no se pierde
+    if len(sin):
+        m = pd.concat([m, pd.DataFrame({"Sequence": sin["Sequence"], "Qty": 0.0, "SKU": "", "Clasif2": SIN_LINEAS,
+                                        "Producto": "Pedidos sin detalle de líneas", "Venta": sin["Total_Value"].astype(float)})], ignore_index=True)
+    m.attrs["maestra"] = mae.attrs.get("tabla")
     return m, None, []
 
 
@@ -48,13 +57,13 @@ def ventas(filtros: dict, clasif: str | None = None) -> dict:
     m, err, cand = _base(filtros)
     if m is None:
         return {"ok": False, "motivo": err, "tablas": cand}
-    g = m.groupby("Clasif2").agg(venta=("Monto", "sum"), unidades=("Qty", "sum"), pedidos=("Sequence", "nunique")).reset_index()
+    g = m.groupby("Clasif2").agg(venta=("Venta", "sum"), unidades=("Qty", "sum"), pedidos=("Sequence", "nunique")).reset_index()
     g = g.sort_values("venta", ascending=False)
-    res = {"ok": True, "total": float(m["Monto"].sum()), "unidades": float(m["Qty"].sum()),
+    res = {"ok": True, "total": float(m["Venta"].sum()), "unidades": float(m["Qty"].sum()),
            "clasif": [{"nombre": r.Clasif2, "venta": float(r.venta), "unidades": float(r.unidades), "pedidos": int(r.pedidos)} for r in g.itertuples()],
-           "sin_clasificar": float(m.loc[m["Clasif2"] == SIN_CLASIFICAR, "Monto"].sum()), "productos": None, "clasif_sel": clasif}
+           "sin_clasificar": float(m.loc[m["Clasif2"] == SIN_CLASIFICAR, "Venta"].sum()), "productos": None, "clasif_sel": clasif, "fuente": m.attrs.get("maestra")}
     if clasif:
-        p = m[m["Clasif2"] == clasif].groupby(["SKU", "Producto"]).agg(venta=("Monto", "sum"), unidades=("Qty", "sum")).reset_index()
+        p = m[m["Clasif2"] == clasif].groupby(["SKU", "Producto"]).agg(venta=("Venta", "sum"), unidades=("Qty", "sum")).reset_index()
         p = p.sort_values("venta", ascending=False)
         res["productos"] = [{"sku": r.SKU, "producto": r.Producto, "venta": float(r.venta), "unidades": float(r.unidades)} for r in p.head(200).itertuples()]
         res["n_productos"] = int(len(p))
@@ -73,7 +82,7 @@ def exportar_csv(filtros: dict, clasif: str | None = None) -> str:
         raise ValueError(err)
     if clasif:
         m = m[m["Clasif2"] == clasif]
-    t = m.groupby(["Clasif2", "Producto"])["Monto"].sum().reset_index().sort_values(["Clasif2", "Monto"], ascending=[True, False])
+    t = m.groupby(["Clasif2", "Producto"])["Venta"].sum().reset_index().sort_values(["Clasif2", "Venta"], ascending=[True, False])
     c = lambda v: ('"' + str(v).replace('"', '""') + '"') if any(x in str(v) for x in ';"\n') else str(v)  # noqa: E731
-    filas = ["Clasif2;Producto;Venta"] + [f"{c(r.Clasif2)};{c(r.Producto)};{r.Monto:.0f}" for r in t.itertuples()]
+    filas = ["Clasif2;Producto;Venta"] + [f"{c(r.Clasif2)};{c(r.Producto)};{r.Venta:.0f}" for r in t.itertuples()]
     return "\ufeff" + "\r\n".join(filas) + "\r\n"

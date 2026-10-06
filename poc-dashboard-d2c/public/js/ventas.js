@@ -75,7 +75,7 @@ function renderZoom(abrir){
   const subDer=v.sel&&v.prods?`${v.prods.n_productos>prods.length?`primeros ${prods.length} de ${v.prods.n_productos}, `:''}${ventaTxt(v.prods.total)}`:'';
   const html=`<div class="zoom-scrim" data-zoom-cerrar></div>
     <div class="zoom-d" id="zoom-d" role="dialog" aria-modal="true" aria-labelledby="zoom-tit" tabindex="-1">
-      <div class="zoom-h"><div><h2 id="zoom-tit">Ventas por clasificación 2 y producto</h2><p>Sin pedidos cancelados. Respeta los filtros y los clics del tablero.</p></div>
+      <div class="zoom-h"><div><h2 id="zoom-tit">Ventas por clasificación 2 y producto</h2><p>Monto de los pedidos, sin cancelados. Respeta los filtros y los clics del tablero.${d.fuente?` Maestra: ${esc(d.fuente)}.`:''}</p></div>
         <div class="zoom-acc"><button class="btn sm" data-vt-exp="sel" ${v.sel?'':'disabled'} title="Exporta Clasif2, producto y venta de la clasificación elegida">${ico('descarga',14)}Exportar la elegida</button>
           <button class="btn sm" data-vt-exp="todo" title="Exporta Clasif2, producto y venta de todas las clasificaciones">${ico('descarga',14)}Exportar todo</button>
           <button class="dr-x" data-zoom-cerrar aria-label="Cerrar el zoom" title="Cerrar (Esc)">${ico('x',18)}</button></div></div>

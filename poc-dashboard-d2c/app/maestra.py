@@ -36,6 +36,12 @@ def _col(df: pd.DataFrame, rol: str, forzada: str):
     cols = {_n(c): c for c in df.columns}
     if forzada and _n(forzada) in cols:
         return cols[_n(forzada)]
+    if rol == "clasif2":     # Clasif2, ClasificacionPrd2, DescClasif2...: se prefiere la que trae el nombre y no el codigo
+        hay = [(n, c) for n, c in cols.items() if re.search(r"clasif\w*?0?2(?!\d)", n)]
+        hay.sort(key=lambda x: not re.search(r"desc|nombre|nom", x[0]))
+        return hay[0][1] if hay else None
+    if rol == "producto":
+        return next((cols[c] for c in CAND[rol] if c in cols and "clasif" not in c), None)
     return next((cols[c] for c in CAND[rol] if c in cols), None)
 
 
@@ -44,13 +50,39 @@ def _leer(sql: str) -> pd.DataFrame:
 
 
 def candidatas() -> list[str]:
-    """Tablas del servidor cuyo nombre sugiere una maestra de productos (ayuda para completar el .env)."""
+    """Tablas del servidor cuyo nombre sugiere una maestra de productos, las mas probables primero."""
     try:
         t = _leer("SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%maestr%' "
                   "OR TABLE_NAME LIKE '%producto%' OR TABLE_NAME LIKE '%material%' OR TABLE_NAME LIKE '%clasif%'")
-        return [f"{a}.{b}" for a, b in zip(t["TABLE_SCHEMA"], t["TABLE_NAME"])][:25]
     except Exception:  # noqa: BLE001
         return []
+    nombres = [f"{a}.{b}" for a, b in zip(t["TABLE_SCHEMA"], t["TABLE_NAME"])]
+
+    def prioridad(n: str):
+        m = n.lower()
+        malo = any(x in m for x in ("temp", "tmp", "histor", "forecast", "almacen", "tienda", "exclusiv"))
+        return (malo, not ("maestr" in m and "producto" in m), "vtex" in m, "dim_producto" not in m and "maestr" not in m, m)
+    return sorted(nombres, key=prioridad)
+
+
+def _mapear(raw: pd.DataFrame):
+    return (_col(raw, "sku", settings.maestra_col_sku), _col(raw, "clasif2", settings.maestra_col_clasif2),
+            _col(raw, "producto", settings.maestra_col_producto))
+
+
+def _detectar() -> tuple[str | None, pd.DataFrame | None, str]:
+    """Prueba las tablas candidatas y se queda con la primera que trae codigo SAP y Clasif2. -> (tabla, datos, detalle de lo probado)."""
+    probadas = []
+    for nombre in candidatas()[:14]:
+        try:
+            raw = _leer(f"SELECT * FROM {_ident(nombre)}")
+        except Exception:  # noqa: BLE001
+            continue
+        c_sku, c_cl, _ = _mapear(raw)
+        if c_sku and c_cl:
+            return nombre, raw, ""
+        probadas.append(f"{nombre} ({', '.join(map(str, raw.columns[:12]))})")
+    return None, None, "; ".join(probadas[:5])
 
 
 def cargar() -> tuple[pd.DataFrame | None, str | None, list[str]]:
@@ -61,21 +93,25 @@ def cargar() -> tuple[pd.DataFrame | None, str | None, list[str]]:
     with _LOCK:
         if _CACHE["df"] is not None and time.time() - _CACHE["t"] < TTL:
             return _CACHE["df"], None, []
-        if not settings.maestra_tabla:
-            return None, ("Falta indicar la maestra de productos: define MAESTRA_TABLA en el .env (por ejemplo dbo.maestra_productos) "
-                          "y, si no está en el ODS, MAESTRA_ORIGEN=vtex."), candidatas()
+        tabla, raw = settings.maestra_tabla, None
         try:
-            raw = _leer(f"SELECT * FROM {_ident(settings.maestra_tabla)}")
+            if tabla:
+                raw = _leer(f"SELECT * FROM {_ident(tabla)}")
+            else:                                          # sin MAESTRA_TABLA: se busca sola entre las tablas parecidas
+                tabla, raw, probadas = _detectar()
+                if raw is None:
+                    return None, ("No encontré sola la maestra de productos (una tabla con código SAP y Clasif2). Indica su nombre en el .env "
+                                  "(MAESTRA_TABLA)." + (f" Probé: {probadas}." if probadas else "")), candidatas()
         except Exception as e:  # noqa: BLE001
-            return None, f"No pude leer la maestra {settings.maestra_tabla}: {str(e)[:200]}", candidatas()
-        c_sku, c_cl = _col(raw, "sku", settings.maestra_col_sku), _col(raw, "clasif2", settings.maestra_col_clasif2)
-        c_pr = _col(raw, "producto", settings.maestra_col_producto)
+            return None, f"No pude leer la maestra {tabla or ''}: {str(e)[:200]}", candidatas()
+        c_sku, c_cl, c_pr = _mapear(raw)
         if not c_sku or not c_cl:
             faltan = [n for n, c in (("código SAP", c_sku), ("Clasif2", c_cl)) if not c]
-            return None, (f"En {settings.maestra_tabla} no encontré la columna de {' ni de '.join(faltan)}. Indícalas en el .env "
+            return None, (f"En {tabla} no encontré la columna de {' ni de '.join(faltan)}. Indícalas en el .env "
                           f"(MAESTRA_COL_SKU, MAESTRA_COL_CLASIF2). Columnas disponibles: {', '.join(map(str, raw.columns))}."), []
         df = pd.DataFrame({"SKU": raw[c_sku].astype(str).str.strip(),
                            "Clasif2": raw[c_cl].astype(str).str.strip().replace({"": "Sin clasificar", "None": "Sin clasificar", "nan": "Sin clasificar"}),
                            "Producto": raw[c_pr].astype(str).str.strip() if c_pr else ""}).drop_duplicates("SKU")
+        df.attrs["tabla"] = tabla
         _CACHE.update(t=time.time(), df=df)
         return df, None, []

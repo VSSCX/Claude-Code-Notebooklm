@@ -111,5 +111,7 @@ líneas con el total del pedido). Si otra base usa otros nombres, **no inventa n
 (`ITEM_COL_DESC`, `ITEM_COL_PRECIO`, `ITEM_PRECIO_CENTAVOS`). La primera consulta por producto después de arrancar descarga las líneas de todos los pedidos del
 período (tarda algo más); luego solo se piden las de los pedidos que van llegando.
 
-La **maestra de productos** (código SAP, Clasif2, producto) no se conoce: se indica la tabla en el `.env` (`MAESTRA_TABLA`, y `MAESTRA_ORIGEN=vtex` si no está
-en el ODS). Mientras falte, el gráfico de ventas por Clasif2 lo explica y lista las tablas del servidor con nombres parecidos a una maestra.
+La **maestra de productos** (código SAP, Clasif2, producto) se busca sola: el programa prueba las tablas del ODS con nombres parecidos (`bi_maestra_producto`,
+`dim_producto`...), deja de lado las temporales, y usa la primera que trae código SAP y Clasif2 (el zoom dice cuál usó). Si elige mal, se fija con
+`MAESTRA_TABLA` (y `MAESTRA_ORIGEN=vtex` si está en Azure). **La venta es el monto del pedido** (el mismo que suma el resto del tablero, sin cancelados);
+un pedido con productos de varias clasificaciones se reparte en proporción al valor de sus líneas.
