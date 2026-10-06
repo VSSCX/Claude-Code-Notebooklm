@@ -13,7 +13,7 @@ import threading
 
 import pandas as pd
 
-from . import queries
+from . import queries, skus
 from .config import settings
 
 CAND = {
@@ -53,7 +53,7 @@ def normalizar(raw: pd.DataFrame, totales: pd.Series | None = None) -> tuple[pd.
     if raw.empty or c_seq is None:
         return pd.DataFrame(columns=["Sequence", "SKU", "Descripcion", "Qty", "PrecioUnit", "Monto"]), info
     out = pd.DataFrame({"Sequence": raw[c_seq].astype(str).str.strip()})
-    out["SKU"] = raw[c_sku].astype(str).str.strip() if c_sku else ""
+    out["SKU"] = skus.limpiar(raw[c_sku]) if c_sku else ""
     out["Descripcion"] = raw[c_desc].astype(str).str.strip() if c_desc else ""
     out["Qty"] = pd.to_numeric(raw[c_qty], errors="coerce").fillna(0) if c_qty else 0
     pre = pd.to_numeric(raw[c_pre], errors="coerce") if c_pre else None

@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
-from . import items as lineas, modelo, queries
+from . import items as lineas, modelo, queries, skus
 from .config import settings
 from .demo import datos_demo, firma_demo
 
@@ -576,13 +576,20 @@ def filtrar_pedidos(filtros: dict) -> pd.DataFrame:
     return _aplicar_filtros(dim, dict(filtros or {}))
 
 
+def estado_stock() -> dict:
+    """Por que no hay stock (o cuanto hay) para explicarlo en pantalla."""
+    s = _CACHE.get("stock")
+    return {"filas": 0 if s is None else int(len(s)), "error": queries.ERROR_STOCK[0] if queries.ERROR_STOCK else None,
+            "ejemplo_codigos": [] if s is None or not len(s) else [str(x) for x in s["codigoSap"].head(3)]}
+
+
 def stock_vtex():
     """Stock por codigo SAP (disponible = VTEX - Reservado), o None si no hay datos de stock."""
     _cargar_dim()
     s = _CACHE.get("stock")
     if s is None or len(s) == 0:
         return None
-    out = pd.DataFrame({"SKU": s["codigoSap"].astype(str).str.strip(),
+    out = pd.DataFrame({"SKU": skus.limpiar(s["codigoSap"]),
                         "VTEX": pd.to_numeric(s["VTEX"], errors="coerce").fillna(0),
                         "Reservado": pd.to_numeric(s["Reservado"], errors="coerce").fillna(0)}).groupby("SKU", as_index=False).sum()
     out["Disponible"] = out["VTEX"] - out["Reservado"]
@@ -614,4 +621,4 @@ def diagnostico() -> dict:
                              "modelo_seg": _PROG["modelo"]},
             "datos_de_las": _CACHE["consulta"], "pedidos_en_memoria": None if _CACHE["dim"] is None else int(len(_CACHE["dim"])),
             "deteccion_rapida": {"error": _MON["error"], "revisado_hace_seg": int(time.time() - _MON["ultima_ok"]) if _MON["ultima_ok"] else None},
-            "recargas_completas": _MON["cargas"]}
+            "recargas_completas": _MON["cargas"], "stock": estado_stock()}

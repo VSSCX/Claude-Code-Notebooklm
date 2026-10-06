@@ -12,6 +12,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from . import skus
+
 
 # ---------------------------------------------------------------------------
 # Construccion de Dim Pedidos con todas las columnas calculadas (VECTORIZADO)
@@ -123,11 +125,11 @@ def construir(orders: pd.DataFrame, order_items: pd.DataFrame, sap: pd.DataFrame
 def _motivo_stock(dim, order_items, stock_vtex, hoy):
     oi = order_items.copy()
     oi["Sequence"] = oi["Sequence"].astype(str).str.strip()
-    oi["SKU"] = oi["Reference_Code"].astype(str).str.strip()
+    oi["SKU"] = skus.limpiar(oi["Reference_Code"])
 
     sv = stock_vtex.copy()
     if len(sv):
-        sv["codigoSap"] = sv["codigoSap"].astype(str).str.strip()
+        sv["codigoSap"] = skus.limpiar(sv["codigoSap"])
         sv["disp"] = pd.to_numeric(sv.get("VTEX", 0), errors="coerce").fillna(0) \
             - pd.to_numeric(sv.get("Reservado", 0), errors="coerce").fillna(0)
         disp_map = sv.groupby("codigoSap")["disp"].sum()

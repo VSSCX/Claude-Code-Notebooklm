@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pandas as pd
 
-from app import modelo
+from app import maestra, modelo, servicio
 
 from . import catalogo
 from .texto import lista_es
@@ -173,7 +173,7 @@ def _preparar_lineas(plan, d, lin_fn, notas):
             return None, [], ("No puedo buscar por nombre de producto: no encontré la columna de descripción en OrderItems. "
                               "Indica su nombre en el .env (ITEM_COL_DESC). Mientras tanto puedes usar el código SAP (9 dígitos). "
                               "Columnas disponibles: " + ", ".join(info["columnas"]) + ".")
-        cat = catalogo.de(lin)
+        cat = catalogo.de_union(lin, maestra.cargar()[0])
         skus, aprox, sug = cat.buscar(plan["producto"], plan["sku"])
         if not skus:
             t = f"No encontré productos que coincidan con «{plan['producto'] or plan['sku']}»."
@@ -322,14 +322,17 @@ def _comparar(plan, dim, hoy, lin_fn, res):
 
 # ------------------------------------------------------------------ stock
 def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) -> dict:
+    """Stock VTEX (VTEX - Reservado) por codigo SAP. Con producto: se busca en el catalogo (lineas de pedidos + maestra), se toman sus
+    codigos SAP y se cruza con la tabla de stock, igual que las ventas. Sin producto: lo que esta sin stock y tiene pedidos pendientes."""
     notas: list[str] = []
     st = stock_fn()
     if st is None or st.empty:
-        return {"ok": False, "texto": "No tengo datos de stock VTEX cargados (tabla bi_stock_vtex del ODS).", "chips": [], "notas": []}
+        e = servicio.estado_stock()
+        return {"ok": False, "chips": [], "notas": [], "texto": "No tengo datos de stock VTEX cargados (tabla bi_stock_vtex del ODS)."
+                + (f" Error al leerla: {e['error']}" if e["error"] else " La tabla vino vacía.")}
     lin, _ = lin_fn()
-    cat = catalogo.de(lin)
+    cat = catalogo.de_union(lin, maestra.cargar()[0])
     pend = lin.merge(dim.loc[dim["Status"] == "ready-for-handling", ["Sequence"]], on="Sequence").groupby("SKU")["Qty"].sum()
-    s = st.assign(Pend=st["SKU"].map(pend).fillna(0.0), Producto=st["SKU"].map(cat.desc).fillna(""))
     chips = ["Stock VTEX = VTEX − Reservado"]
     productos: list[dict] = []
     if plan["producto"] or plan["sku"]:
@@ -340,25 +343,29 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
         productos = [{"sku": k, "descripcion": cat.desc[k]} for k in skus[:8]]
         if aprox:
             notas.append("Coincidencia aproximada: no todas las palabras calzan con un producto.")
-        s = s[s["SKU"].isin(skus)]
+        s = pd.DataFrame({"SKU": skus}).merge(st, on="SKU", how="left")           # un renglon por producto, haya o no stock cargado
+        s["Producto"], s["Pend"] = s["SKU"].map(cat.desc).fillna(""), s["SKU"].map(pend).fillna(0.0)
         chips.append(productos[0]["descripcion"] + (f" y {len(productos) - 1} más" if len(productos) > 1 else ""))
-        faltan = [k for k in skus if k not in set(st["SKU"])]
-        if faltan:
-            notas.append(f"{len(faltan)} producto(s) sin dato de stock en el ODS.")
-        titulo, valor = "unidades disponibles", float(s["Disponible"].sum())
+        sin_dato = s[s["Disponible"].isna()]
+        if len(sin_dato):
+            ej = ", ".join(map(str, st["SKU"].head(3)))
+            notas.append(f"{len(sin_dato)} producto(s) no aparecen en la tabla de stock con su código SAP ({', '.join(sin_dato['SKU'].head(3))}). "
+                         f"Códigos de ejemplo de esa tabla: {ej}. Si el formato difiere, avísame.")
+        titulo, valor = "unidades disponibles", float(s["Disponible"].sum(skipna=True))
+        s = s.sort_values("Disponible", na_position="last")
     else:
+        s = st.assign(Pend=st["SKU"].map(pend).fillna(0.0), Producto=st["SKU"].map(cat.desc).fillna(""))
         sin = s[(s["Disponible"] <= 0)]
         con_demanda = sin[sin["Pend"] > 0]
         s = (con_demanda if len(con_demanda) else sin).sort_values("Pend", ascending=False)
         chips.append("Sin stock disponible")
         titulo, valor = "productos sin stock disponible" + (" con pedidos pendientes" if len(con_demanda) else ""), float(len(s))
-    top = plan["top"] or 30
     total = len(s)
-    s = s.sort_values("Disponible").head(top) if productos else s.head(top)
+    s = s.head(plan["top"] or 30)
+    num = lambda v: None if pd.isna(v) else float(v)  # noqa: E731
     cols = [{"n": "Código SAP", "f": "t"}, {"n": "Producto", "f": "t"}, {"n": "Stock VTEX", "f": "n"}, {"n": "Reservado", "f": "n"},
             {"n": "Disponible", "f": "n"}, {"n": "Unid. en pedidos pendientes", "f": "n"}]
-    filas = [[a, b, float(c), float(d), float(e), float(f)] for a, b, c, d, e, f in
-             zip(s["SKU"], s["Producto"], s["VTEX"], s["Reservado"], s["Disponible"], s["Pend"])]
+    filas = [[a, b, num(c), num(d), num(e), float(f)] for a, b, c, d, e, f in zip(s["SKU"], s["Producto"], s["VTEX"], s["Reservado"], s["Disponible"], s["Pend"])]
     if total > len(filas):
         notas.append(f"Se muestran {len(filas)} de {total}.")
     return {"ok": True, "tipo": "stock", "valor": valor, "formato": "n", "unidad": titulo, "tabla": {"cols": cols, "filas": filas},

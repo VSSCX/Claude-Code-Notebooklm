@@ -47,9 +47,15 @@ def frase(res: dict, plan: dict, dim) -> str:
     if res["tipo"] == "stock":
         base = f"{num(v)} {res['unidad']}"
         if res["productos"] and len(res["productos"]) == 1:
-            return f"{base} de {res['productos'][0]['descripcion']}."
-        sin = [f[1] for f in res["tabla"]["filas"] if f[4] <= 0] if res["productos"] else []
-        return base + (f" entre {len(res['productos'])} productos" if res["productos"] else "") + "." + (f" Sin stock: {lista_es(sin)}." if sin else "")
+            f0 = res["tabla"]["filas"][0]
+            if f0[4] is None:
+                return f"{res['productos'][0]['descripcion']} (código SAP {f0[0]}) no aparece en la tabla de stock VTEX."
+            return f"{base} de {res['productos'][0]['descripcion']} (código SAP {f0[0]})."
+        filas = res["tabla"]["filas"] if res["productos"] else []
+        sin = [f[1] for f in filas if f[4] is not None and f[4] <= 0]
+        sd = [f[1] for f in filas if f[4] is None]
+        return (base + (f" entre {len(res['productos'])} productos" if res["productos"] else "") + "." + (f" Sin stock: {lista_es(sin)}." if sin else "")
+                + (f" Sin dato en la tabla de stock: {lista_es(sd)}." if sd else ""))
     if res["tipo"] == "lista":
         n = res.get("total_filas", 0)
         if not res["resumen"]["pedidos"]:

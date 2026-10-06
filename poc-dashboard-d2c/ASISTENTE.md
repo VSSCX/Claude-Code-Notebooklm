@@ -13,7 +13,7 @@ Pregunta en español, con tus palabras. Responde con cifras calculadas por el se
 | Rankings | «Top 5 clientes por monto este mes» · «qué cliente compró más» · «cuál fue el día con más pedidos» · «los 3 productos más vendidos hoy» |
 | Comparaciones | «compara las ventas de esta semana con la anterior» |
 | Indicadores del tablero | «porcentaje de integración por cliente» · «antigüedad promedio de los pendientes» · «monto en riesgo por canal» · «ticket promedio de MELI» |
-| Stock | «¿hay stock del MED165B?» · «¿qué productos están sin stock?» (stock disponible = VTEX − Reservado, con las unidades que hay en pedidos pendientes) |
+| Stock | «¿cuál es el stock del MED165B?» · «¿qué productos están sin stock?»: busca el producto (en las líneas de pedidos y en la maestra), toma sus códigos SAP y los cruza con la tabla de stock VTEX, igual que las ventas. Stock disponible = VTEX − Reservado, con las unidades que hay en pedidos pendientes. Si un código no aparece en la tabla, lo dice y muestra códigos de ejemplo; si la tabla no se pudo leer, dice el error |
 | Un pedido | «pedido 3506611» o su número SAP: estado, cliente, bodega, fechas, causa de pendiente y líneas |
 | Seguimientos | después de una respuesta: «¿y ayer?», «¿y de MELI?», «por día», «ver los pedidos» (hereda lo que no cambias) |
 | Datos y ayuda | «¿hasta cuándo hay datos?» · «¿qué puedes hacer?» |

@@ -12,7 +12,7 @@ import time
 
 import pandas as pd
 
-from . import db
+from . import db, skus
 from .config import settings
 from .items import _n
 
@@ -21,7 +21,8 @@ CAND = {"sku": ["codigosap", "codsap", "sku", "material", "codigo", "codigoprodu
         "producto": ["descripcion", "producto", "nombre", "nombreproducto", "denominacion", "descripcionmaterial", "maktx", "skuname"]}
 TTL = 6 * 3600                     # la maestra casi no cambia: se vuelve a leer cada 6 horas
 _LOCK = threading.Lock()
-_CACHE: dict = {"t": 0.0, "df": None, "error": None}
+_CACHE: dict = {"t": 0.0, "df": None, "error": None, "falla": None}      # falla = (cuando, mensaje, tablas): no se reintenta por 5 minutos
+ESPERA_FALLA = 300
 
 
 def _ident(nombre: str) -> str:
@@ -93,25 +94,33 @@ def cargar() -> tuple[pd.DataFrame | None, str | None, list[str]]:
     with _LOCK:
         if _CACHE["df"] is not None and time.time() - _CACHE["t"] < TTL:
             return _CACHE["df"], None, []
-        tabla, raw = settings.maestra_tabla, None
-        try:
-            if tabla:
-                raw = _leer(f"SELECT * FROM {_ident(tabla)}")
-            else:                                          # sin MAESTRA_TABLA: se busca sola entre las tablas parecidas
-                tabla, raw, probadas = _detectar()
-                if raw is None:
-                    return None, ("No encontré sola la maestra de productos (una tabla con código SAP y Clasif2). Indica su nombre en el .env "
-                                  "(MAESTRA_TABLA)." + (f" Probé: {probadas}." if probadas else "")), candidatas()
-        except Exception as e:  # noqa: BLE001
-            return None, f"No pude leer la maestra {tabla or ''}: {str(e)[:200]}", candidatas()
-        c_sku, c_cl, c_pr = _mapear(raw)
-        if not c_sku or not c_cl:
-            faltan = [n for n, c in (("código SAP", c_sku), ("Clasif2", c_cl)) if not c]
-            return None, (f"En {tabla} no encontré la columna de {' ni de '.join(faltan)}. Indícalas en el .env "
-                          f"(MAESTRA_COL_SKU, MAESTRA_COL_CLASIF2). Columnas disponibles: {', '.join(map(str, raw.columns))}."), []
-        df = pd.DataFrame({"SKU": raw[c_sku].astype(str).str.strip(),
-                           "Clasif2": raw[c_cl].astype(str).str.strip().replace({"": "Sin clasificar", "None": "Sin clasificar", "nan": "Sin clasificar"}),
-                           "Producto": raw[c_pr].astype(str).str.strip() if c_pr else ""}).drop_duplicates("SKU")
-        df.attrs["tabla"] = tabla
-        _CACHE.update(t=time.time(), df=df)
-        return df, None, []
+        if _CACHE["falla"] and time.time() - _CACHE["falla"][0] < ESPERA_FALLA:
+            return None, _CACHE["falla"][1], _CACHE["falla"][2]
+        res = _cargar_real()
+        _CACHE["falla"] = (time.time(), res[1], res[2]) if res[0] is None else None
+        return res
+
+
+def _cargar_real() -> tuple[pd.DataFrame | None, str | None, list[str]]:
+    tabla, raw = settings.maestra_tabla, None
+    try:
+        if tabla:
+            raw = _leer(f"SELECT * FROM {_ident(tabla)}")
+        else:                                          # sin MAESTRA_TABLA: se busca sola entre las tablas parecidas
+            tabla, raw, probadas = _detectar()
+            if raw is None:
+                return None, ("No encontré sola la maestra de productos (una tabla con código SAP y Clasif2). Indica su nombre en el .env "
+                              "(MAESTRA_TABLA)." + (f" Probé: {probadas}." if probadas else "")), candidatas()
+    except Exception as e:  # noqa: BLE001
+        return None, f"No pude leer la maestra {tabla or ''}: {str(e)[:200]}", candidatas()
+    c_sku, c_cl, c_pr = _mapear(raw)
+    if not c_sku or not c_cl:
+        faltan = [n for n, c in (("código SAP", c_sku), ("Clasif2", c_cl)) if not c]
+        return None, (f"En {tabla} no encontré la columna de {' ni de '.join(faltan)}. Indícalas en el .env "
+                      f"(MAESTRA_COL_SKU, MAESTRA_COL_CLASIF2). Columnas disponibles: {', '.join(map(str, raw.columns))}."), []
+    df = pd.DataFrame({"SKU": skus.limpiar(raw[c_sku]),
+                       "Clasif2": raw[c_cl].astype(str).str.strip().replace({"": "Sin clasificar", "None": "Sin clasificar", "nan": "Sin clasificar"}),
+                       "Producto": raw[c_pr].astype(str).str.strip() if c_pr else ""}).drop_duplicates("SKU")
+    df.attrs["tabla"] = tabla
+    _CACHE.update(t=time.time(), df=df)
+    return df, None, []

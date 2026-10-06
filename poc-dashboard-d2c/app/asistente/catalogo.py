@@ -22,10 +22,11 @@ def es_modelo(t: str) -> bool:
 
 class Catalogo:
     def __init__(self, lin: pd.DataFrame):
-        cat = lin.drop_duplicates("SKU")[["SKU", "Descripcion"]]
+        cat = lin.drop_duplicates("SKU")
         self.desc = dict(zip(cat["SKU"], cat["Descripcion"]))
-        self.comp = {s: compacto(f"{d} {s}") for s, d in self.desc.items()}
-        self.palabras = {s: set(tokens(d)) for s, d in self.desc.items()}
+        busca = dict(zip(cat["SKU"], cat["Busqueda"] if "Busqueda" in cat else cat["Descripcion"]))     # texto donde se busca (nombre de la maestra y de las lineas)
+        self.comp = {s: compacto(f"{b} {s}") for s, b in busca.items()}
+        self.palabras = {s: set(tokens(b)) for s, b in busca.items()}
         self.vocab = sorted(set().union(*self.palabras.values())) if self.palabras else []
         self._vset = set(self.vocab)
 
@@ -67,6 +68,26 @@ class Catalogo:
                 return cand, True, []
         sug = difflib.get_close_matches(" ".join(toks), [d for d in self.desc.values() if d], n=4, cutoff=.3)
         return [], False, sug
+
+
+_UNION: dict = {"k": None, "cat": None}
+
+
+def de_union(lin: pd.DataFrame, mae: pd.DataFrame | None) -> Catalogo:
+    """Catalogo con los productos de las lineas de pedidos Y los de la maestra (hay productos con stock que aun no se venden).
+    Se muestra el nombre de la maestra y se busca en los dos nombres."""
+    k = (id(lin), id(mae))
+    if _UNION["k"] != k:
+        a = lin.drop_duplicates("SKU")[["SKU", "Descripcion"]].rename(columns={"Descripcion": "Linea"})
+        if mae is not None and len(mae):
+            b = mae[["SKU", "Producto"]].rename(columns={"Producto": "Maestra"})
+            u = a.merge(b, on="SKU", how="outer").fillna("")
+            u["Descripcion"] = u["Maestra"].where(u["Maestra"] != "", u["Linea"])
+            u["Busqueda"] = (u["Maestra"] + " " + u["Linea"]).str.strip()
+        else:
+            u = a.assign(Descripcion=a["Linea"], Busqueda=a["Linea"])
+        _UNION.update(k=k, cat=Catalogo(u[["SKU", "Descripcion", "Busqueda"]]))
+    return _UNION["cat"]
 
 
 def de(lin: pd.DataFrame) -> Catalogo:

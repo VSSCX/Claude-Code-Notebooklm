@@ -161,12 +161,17 @@ def q_facturacion() -> pd.DataFrame:
     return leer_sap(sql)
 
 
+ERROR_STOCK: list = []
+
+
 def q_stock_vtex() -> pd.DataFrame:
     """Stock VTEX (disponible = VTEX - Reservado), del ODS."""
     sql = "SELECT codigoSap, VTEX, Reservado FROM bi_stock_vtex"
     try:
+        ERROR_STOCK.clear()
         return leer_sap(sql)
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        ERROR_STOCK.append(str(e)[:200])            # el tablero sigue sin stock, pero el asistente puede decir por que
         return pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado"])
 
 

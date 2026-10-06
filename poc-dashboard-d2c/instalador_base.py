@@ -10,6 +10,8 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v3.3: el stock se cruza por codigo SAP (producto -> codigo -> stock VTEX) con codigos normalizados (ceros a la izquierda),
+tambien para productos de la maestra sin ventas; si falta, el asistente explica por que.
 Novedades v3.2: "Ventas por Clasif2" encuentra sola la maestra de productos y la venta es el monto del pedido.
 Novedades v3.1: el detalle de pedido ya muestra precio y monto (columnas SKU_Selling_Price); el grafico "Pedidos por
 Warehouse" se reemplaza por "Ventas por Clasif2" con zoom por producto y exportacion a CSV (requiere MAESTRA_TABLA en el
@@ -42,7 +44,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "3.2"
+VERSION = "3.3"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

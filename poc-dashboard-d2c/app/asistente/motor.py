@@ -36,9 +36,11 @@ def _lineas():
 
 def _catalogo():
     """Catalogo para entender nombres de producto; None si las lineas no se pueden leer (se pide solo si hace falta)."""
+    from app import maestra
+
     from . import catalogo
     try:
-        return catalogo.de(_lineas()[0])
+        return catalogo.de_union(_lineas()[0], maestra.cargar()[0])
     except Exception:  # noqa: BLE001
         return None
 

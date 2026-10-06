@@ -196,6 +196,30 @@ rep = mb.groupby("Clasif2")["Venta"].sum().round().to_dict()
 prueba("el monto del pedido se reparte por el valor de sus lineas y no se pierde el de un pedido sin lineas",
        rep == {"Refrigeradores": 250.0, "Lavadoras": 750.0, ventas.SIN_LINEAS: 500.0} and cerca(mb["Venta"].sum(), ped["Total_Value"].sum()), str(rep))
 
+print("Stock: cruce producto -> codigo SAP -> stock VTEX")
+from app import skus as skus_mod  # noqa: E402
+
+prueba("el codigo SAP se normaliza (ceros a la izquierda, .0)", list(skus_mod.limpiar(pd.Series(["000240096077", " 240096077.0", "240096077"]))) == ["240096077"] * 3)
+stock_orig = servicio._CACHE["stock"]
+mae_orig = maestra.cargar
+servicio._CACHE["stock"] = pd.DataFrame({"codigoSap": ["000000910016501", "00910016502", "0000999000001"], "VTEX": [50, 4, 12], "Reservado": [8, 4, 2]})
+mae_demo = maestra.cargar()[0]
+extra = pd.DataFrame([{"SKU": "999000001", "Clasif2": "Cocinas", "Producto": "Cocina Prueba XZ100 4 Quemadores"}])
+maestra.cargar = lambda: (pd.concat([mae_demo, extra], ignore_index=True), None, [])
+r = p("cual es el stock de med165b")
+filas = {f[0]: f for f in r["tabla"]["filas"]}
+prueba("stock del MED165B: busca el codigo SAP del producto y lo cruza con la tabla aunque venga con ceros",
+       r["tipo"] == "stock" and cerca(filas["910016501"][4], 42) and cerca(filas["910016502"][4], 0) and "Sin stock" in r["texto"], r["texto"])
+r = p("stock de la cocina xz100")
+prueba("encuentra por la maestra un producto que aun no tiene ventas en las lineas", r["ok"] and r["tabla"]["filas"][0][0] == "999000001" and cerca(r["tabla"]["filas"][0][4], 10), r["texto"])
+servicio._CACHE["stock"] = pd.DataFrame({"codigoSap": ["1"], "VTEX": [1], "Reservado": [0]})
+r = p("cual es el stock de med165b")
+prueba("si el codigo no esta en la tabla de stock, lo dice y muestra codigos de ejemplo", r["ok"] and "Sin dato en la tabla de stock" in r["texto"] and any("ejemplo" in n for n in r["notas"]), r["texto"])
+servicio._CACHE["stock"] = pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado"])
+prueba("sin datos de stock, explica por que", p("stock del med165b")["ok"] is False)
+servicio._CACHE["stock"] = stock_orig
+maestra.cargar = mae_orig
+
 print()
 if fallos:
     print(f"RESULTADO: {len(fallos)} falla(s): " + "; ".join(fallos))
