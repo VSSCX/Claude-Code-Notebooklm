@@ -52,6 +52,10 @@ class Settings:
     # Log en archivo (una línea JSON por petición y por error): para quien administra el servidor
     logs_dir: str = os.getenv("LOGS_DIR", str(BASE_DIR / "data" / "logs"))
 
+    # Carpeta donde SAP deja la exportación de ZSD001_03. Debe ser una ruta del PC donde corre SAP GUI,
+    # corta y sin tildes. Vacío: data\sap dentro de la instalación (con respaldo automático si no sirve).
+    sap_export_dir: str = os.getenv("SAP_EXPORT_DIR", "")
+
     # Carpeta con la plantilla del visor y sus librerías (three, jspdf, gltf, scania)
     visor_assets: str = os.getenv(
         "VISOR_ASSETS",

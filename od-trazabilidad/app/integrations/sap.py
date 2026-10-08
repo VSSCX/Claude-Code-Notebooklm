@@ -417,6 +417,32 @@ def _sumar_meses(d, meses: int):
     return d.replace(year=y, month=m, day=min(d.day, calendar.monthrange(y, m)[1]))
 
 
+def carpeta_export(base=None) -> "Path":
+    """Carpeta donde SAP deja la exportación. Siempre la misma por instalación (SAP_EXPORT_DIR, o data\\sap),
+    y se comprueba ANTES de abrir SAP que se puede escribir ahí y que la ruta le sirve a SAP (corta, sin tildes).
+    Si no sirve, cae a una carpeta fija y simple del equipo en vez de fallar al final del análisis."""
+    import tempfile
+    from pathlib import Path
+    from ..config import BASE_DIR, settings
+    candidatas = [Path(settings.sap_export_dir)] if settings.sap_export_dir.strip() else []
+    candidatas += [Path(base) if base else BASE_DIR / "data" / "sap", Path(tempfile.gettempdir()) / "OrderDesk" / "sap"]
+    for c in candidatas:
+        ruta = str(c)
+        if not ruta.isascii() or len(ruta) > 100:
+            log.warning("Carpeta de exportación descartada (tildes o ruta larga): %s", ruta)
+            continue
+        try:
+            c.mkdir(parents=True, exist_ok=True)
+            prueba = c / ".escritura"
+            prueba.write_text("ok")
+            prueba.unlink()
+            return c
+        except OSError as e:
+            log.warning("Carpeta de exportación sin permiso de escritura: %s (%s)", ruta, e)
+    raise ErrorSap("No hay una carpeta donde guardar la exportación de ZSD001_03. Define SAP_EXPORT_DIR en el .env "
+                   "con una ruta corta y sin tildes (ej. C:\\OrderDesk\\sap).")
+
+
 def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str, avisar=None) -> list[dict]:
     """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios."""
     import datetime as dt
@@ -512,6 +538,14 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     _limpiar_exportaciones(Path(carpeta), conservar=destino)
     _texto(ses, "wnd[1]/usr/ctxtDY_PATH", str(carpeta))
     _texto(ses, "wnd[1]/usr/ctxtDY_FILENAME", nombre)
+    campo = _por_id(ses, "wnd[1]/usr/ctxtDY_PATH")
+    try:
+        puesto = str(campo.Text).strip().rstrip("\\/") if campo is not None else ""
+    except Exception:  # noqa: BLE001
+        puesto = ""
+    if puesto and puesto.lower() != str(carpeta).rstrip("\\/").lower():
+        raise ErrorSap(f"SAP cambió la carpeta de guardado: pedí «{carpeta}» y quedó «{puesto}». "
+                       "Define SAP_EXPORT_DIR con una ruta corta y sin tildes.")
     _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar / guardar
 
     _esperar_archivo(ses, destino)

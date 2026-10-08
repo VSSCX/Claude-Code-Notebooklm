@@ -114,6 +114,7 @@ def analizar(numero: str, body: dict):
         # Primero lo que puede fallar sin tocar SAP (cliente, SQL Server, Base de Medidas): antes todo eso se
         # descubría DESPUÉS de leer VL01N y exportar ZSD001_03, y el análisis moría justo al terminar la exportación.
         avance("0/4 Revisando conexiones")
+        carpeta = sap.carpeta_export()                         # la misma de siempre, y comprobada antes de abrir SAP
         with SessionLocal() as ses:
             grupo, codigo = _sop_de(cliente, ses)
             # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
@@ -145,7 +146,6 @@ def analizar(numero: str, body: dict):
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
         avance("2/4 Consultando Qty en entrega en ZSD001_03")
-        carpeta = BASE_DIR / "data" / "sap"
         avisos_zsd: list[str] = []
         # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
         nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"

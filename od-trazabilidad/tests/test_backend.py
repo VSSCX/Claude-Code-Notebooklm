@@ -1356,3 +1356,18 @@ def test_si_sap_no_guarda_el_archivo_se_nombra_la_ventana_en_vez_de_esperar_en_v
     with pytest.raises(sap.ErrorSap, match="Seguridad de SAP GUI"):
         sap._esperar_archivo(SesionConAviso(), tmp_path / "no_llega.xlsx", maximo=30)
     assert time.time() - t0 < 12
+
+
+def test_carpeta_de_exportacion_es_fija_y_se_comprueba_antes_de_abrir_sap(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.integrations import sap
+    buena = tmp_path / "sap"
+    assert sap.carpeta_export(buena) == buena and buena.is_dir() and not (buena / ".escritura").exists()
+    assert sap.carpeta_export(buena) == buena                                # siempre la misma
+    larga = tmp_path / ("x" * 120)                                           # ruta que SAP maneja mal: cae a la de respaldo
+    assert sap.carpeta_export(larga) != larga
+    object.__setattr__(settings, "sap_export_dir", str(tmp_path / "fija"))
+    try:
+        assert sap.carpeta_export(buena) == tmp_path / "fija"                # la configurada manda
+    finally:
+        object.__setattr__(settings, "sap_export_dir", "")
