@@ -164,7 +164,7 @@ def q_facturacion() -> pd.DataFrame:
 
 
 ERROR_STOCK: list = []
-INFO_STOCK: dict = {"tabla": None, "columnas": {}, "candidatas": []}          # que tabla se uso (para el diagnostico)
+INFO_STOCK: dict = {"tabla": None, "columnas": {}, "candidatas": [], "fecha": None}          # que tabla se uso (para el diagnostico)
 _STK = {"sku": ["codigosap", "codsap", "sku", "material", "codigo", "idsku", "referencecode", "matnr"],
         "vtex": ["vtex", "stockvtex", "stock", "totalquantity", "cantidad", "qty", "disponible"],
         "reservado": ["reservado", "reservada", "reserved", "reservedquantity", "comprometido"]}
@@ -197,42 +197,60 @@ def _ident_stock(nombre: str) -> str:
     return ".".join(f"[{p}]" for p in partes)
 
 
-def _candidatas_stock() -> list[str]:
-    t = _leer_stock("SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%stock%' "
-                    "OR TABLE_NAME LIKE '%invent%' OR TABLE_NAME LIKE '%existenc%'")
-    nombres = [f"{a}.{b}" for a, b in zip(t["TABLE_SCHEMA"], t["TABLE_NAME"])]
-    return sorted(nombres, key=lambda n: (any(x in n.lower() for x in ("temp", "tmp", "histor", "forecast", "log")), "vtex" not in n.lower(), n.lower()))
+SQL_STOCK = """
+SET NOCOUNT ON;
+DECLARE @f   NVARCHAR(10), @h NVARCHAR(20), @mpf NVARCHAR(10);
+SET @mpf = (SELECT MAX(fechaActualizacion) FROM bi_vtex_maestra_producto);
+SET @f   = (SELECT MAX(fecha) FROM bi_vtex_stock);
+SET @h   = (SELECT MAX(horario) FROM bi_vtex_stock WHERE fecha = @f);
+
+SELECT vt.FECHA, vt.warehouseId AS LOTE, mp.codigoSap,
+       SUM(vt.totalQuantity) AS VTEX, SUM(vt.reservedQuantity) AS Reservado
+FROM bi_vtex_stock vt
+LEFT JOIN bi_vtex_maestra_producto mp ON vt.skuId = mp.id
+WHERE vt.fecha = @f
+  AND vt.horario = @h
+  AND mp.fechaActualizacion = @mpf
+  AND vt.warehouseId = '1_1'
+  AND vt.totalQuantity NOT LIKE '10000%'
+  AND NULLIF(LTRIM(RTRIM(mp.codigoSap)), '') IS NOT NULL
+GROUP BY vt.FECHA, vt.warehouseId, mp.codigoSap;
+"""
 
 
 def q_stock_vtex() -> pd.DataFrame:
-    """Stock VTEX (disponible = VTEX - Reservado), del ODS. Usa STOCK_TABLA o bi_stock_vtex; si no sirve, prueba las tablas parecidas."""
+    """Stock VTEX (disponible = VTEX - Reservado) del ODS: ultima foto de bi_vtex_stock (bodega 1_1) cruzada con la maestra por codigo SAP.
+    Si en el .env se fija STOCK_TABLA, se lee esa tabla en su lugar (y se mapean sus columnas por nombre)."""
     ERROR_STOCK.clear()
     vacio = pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado"])
-    pruebas = [settings.stock_tabla or INFO_STOCK["tabla"] or "bi_stock_vtex"]
-    errores, probadas = [], []
-    for intento in range(2):                      # 1) la tabla conocida  2) si falla, todas las que parecen de stock
-        for tabla in pruebas:
-            try:
-                raw = _leer_stock(f"SELECT * FROM {_ident_stock(tabla)}")
-            except Exception as e:  # noqa: BLE001
-                errores.append(f"{tabla}: {str(e)[:120]}")
-                continue
-            m = _mapear_stock(raw)
-            if m["sku"] and m["vtex"]:
-                INFO_STOCK.update(tabla=tabla, columnas={k: str(v) for k, v in m.items() if v}, candidatas=probadas)
-                return pd.DataFrame({"codigoSap": raw[m["sku"]], "VTEX": raw[m["vtex"]],
-                                     "Reservado": raw[m["reservado"]] if m["reservado"] else 0})
-            probadas.append(f"{tabla} ({', '.join(map(str, raw.columns[:10]))})")
-        if intento == 0:
-            try:
-                pruebas = [t for t in _candidatas_stock() if t not in pruebas][:10]
-            except Exception as e:  # noqa: BLE001
-                errores.append(f"busqueda de tablas: {str(e)[:100]}")
-                break
-    INFO_STOCK.update(tabla=None, columnas={}, candidatas=probadas)
-    ERROR_STOCK.append(("; ".join(errores) or "ninguna tabla trae codigo SAP y stock")[:400]
-                       + (f". Tablas vistas: {'; '.join(probadas[:4])}. Indica la correcta en el .env (STOCK_TABLA)." if probadas else ""))
-    return vacio
+    if not settings.stock_tabla:
+        try:
+            df = _leer_stock(SQL_STOCK)
+        except Exception as e:  # noqa: BLE001
+            ERROR_STOCK.append(str(e)[:300])            # el tablero sigue sin stock, pero el asistente puede decir por que
+            INFO_STOCK.update(tabla=None, columnas={}, candidatas=[], fecha=None)
+            return vacio
+        faltan = [c for c in ("codigoSap", "VTEX", "Reservado") if c not in df.columns]
+        if faltan:
+            ERROR_STOCK.append(f"La consulta de stock no devolvió las columnas {', '.join(faltan)}.")
+            return vacio
+        f = pd.to_datetime(df["FECHA"], errors="coerce").max() if "FECHA" in df.columns and len(df) else None
+        INFO_STOCK.update(tabla="bi_vtex_stock + bi_vtex_maestra_producto (bodega 1_1)", columnas={}, candidatas=[],
+                          fecha=None if f is None or pd.isna(f) else f.strftime("%d-%m-%Y"))
+        if not len(df):
+            ERROR_STOCK.append("La consulta de stock no devolvió filas (¿hoy no hay foto en bi_vtex_stock o la maestra no está al día?).")
+        return df[["codigoSap", "VTEX", "Reservado"]]
+    try:
+        raw = _leer_stock(f"SELECT * FROM {_ident_stock(settings.stock_tabla)}")
+    except Exception as e:  # noqa: BLE001
+        ERROR_STOCK.append(f"{settings.stock_tabla}: {str(e)[:200]}")
+        return vacio
+    m = _mapear_stock(raw)
+    if not (m["sku"] and m["vtex"]):
+        ERROR_STOCK.append(f"{settings.stock_tabla} no trae columnas de código SAP y stock (tiene: {', '.join(map(str, raw.columns[:10]))}). Fíjalas con STOCK_COL_*.")
+        return vacio
+    INFO_STOCK.update(tabla=settings.stock_tabla, columnas={k: str(v) for k, v in m.items() if v}, candidatas=[], fecha=None)
+    return pd.DataFrame({"codigoSap": raw[m["sku"]], "VTEX": raw[m["vtex"]], "Reservado": raw[m["reservado"]] if m["reservado"] else 0})
 
 
 def q_hoy_cl() -> pd.Timestamp:

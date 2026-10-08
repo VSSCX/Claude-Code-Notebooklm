@@ -264,16 +264,19 @@ datos = asistente.ia.datos_para_redactar("x", r)
 prueba("a la IA solo salen cifras agregadas (sin pedidos)", "Sequence" not in datos and "Order" not in datos)
 prueba("el informe de aprendizaje funciona", "no_entendidas" in asistente.memoria.informe())
 from app import queries as _q
-_orig = _q.leer_sap
+_orig, _vistas = _q.leer_sap, []
 def _falso(sql):
-    if "bi_stock_vtex" in sql:
-        raise RuntimeError("Invalid object name")
-    if "INFORMATION_SCHEMA" in sql:
-        return pd.DataFrame({"TABLE_SCHEMA": ["dbo"], "TABLE_NAME": ["stk_vtex_actual"]})
-    return pd.DataFrame({"Material": ["0000123"], "StockVTEX": [5], "Reservado": [2]})
+    _vistas.append(sql)
+    return pd.DataFrame({"FECHA": ["2026-08-11"], "LOTE": ["1_1"], "codigoSap": ["0000123"], "VTEX": [5], "Reservado": [2]})
 _q.leer_sap = _falso
 _st = _q.q_stock_vtex()
-prueba("encuentra sola la tabla de stock si la conocida falla", len(_st) == 1 and _q.INFO_STOCK["tabla"] == "dbo.stk_vtex_actual")
+prueba("el stock usa la consulta de bi_vtex_stock (ultima foto, bodega 1_1, maestra al dia)",
+       len(_st) == 1 and "bi_vtex_stock" in _vistas[0] and "'1_1'" in _vistas[0] and "MAX(fechaActualizacion)" in _vistas[0] and "SET NOCOUNT ON" in _vistas[0])
+prueba("guarda la fecha de la foto de stock", _q.INFO_STOCK["fecha"] == "11-08-2026")
+def _roto(sql):
+    raise RuntimeError("Invalid object name 'bi_vtex_stock'")
+_q.leer_sap = _roto
+prueba("si la consulta falla, el error queda para explicarlo", len(_q.q_stock_vtex()) == 0 and "bi_vtex_stock" in _q.ERROR_STOCK[0])
 _q.leer_sap = _orig
 
 print()

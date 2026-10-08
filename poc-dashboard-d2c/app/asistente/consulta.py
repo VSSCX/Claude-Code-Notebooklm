@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pandas as pd
 
-from app import maestra, modelo, servicio
+from app import maestra, modelo, queries, servicio
 
 from . import catalogo
 from .texto import lista_es
@@ -335,7 +335,7 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
     pend = lin.merge(dim.loc[dim["Status"] == "ready-for-handling", ["Sequence"]], on="Sequence").groupby("SKU")["Qty"].sum()
     rec = lin.merge(dim.loc[(dim["Status"] != "canceled") & (dim["Creation_Date"] >= hoy - timedelta(days=13)), ["Sequence"]], on="Sequence")
     diaria = rec.groupby("SKU")["Qty"].sum() / 14                       # venta diaria promedio de los ultimos 14 dias
-    chips = ["Stock VTEX = VTEX − Reservado"]
+    chips = ["Stock VTEX = VTEX − Reservado"] + ([f"Stock al {queries.INFO_STOCK['fecha']}"] if queries.INFO_STOCK.get("fecha") else [])
     productos: list[dict] = []
     if plan["producto"] or plan["sku"]:
         skus, aprox, sug = cat.buscar(plan["producto"], plan["sku"])
