@@ -1476,3 +1476,16 @@ def test_conectar_elige_la_sesion_con_usuario_y_respeta_sap_sistema(monkeypatch)
             sap.conectar()
     finally:
         object.__setattr__(settings, "sap_sistema", "")
+
+
+def test_la_limpieza_no_toca_la_ultima_exportacion_ni_las_recientes(tmp_path):
+    import os
+    from app.integrations import sap
+    vieja, reciente, fija = (tmp_path / n for n in ("Qty En Entrega 1 viejo.xlsx", "Qty En Entrega 2 nuevo.xlsx", "Qty En Entrega.xlsx"))
+    for f in (vieja, reciente, fija):
+        f.write_bytes(b"x")
+    antes = time.time() - 3 * 86400
+    os.utime(vieja, (antes, antes))
+    os.utime(fija, (antes, antes))
+    sap._limpiar_exportaciones(tmp_path)
+    assert not vieja.exists() and reciente.exists() and fija.exists()

@@ -731,10 +731,7 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
         log.info("ZSD001_03 exportado (%s filas); local: %s; copia: %s", len(filas), local, red)
         return filas
     finally:
-        try:
-            destino.unlink()                 # ya se leyó: no queda un archivo suelto que se pueda abrir o bloquear
-        except OSError:
-            pass
+        pass     # el archivo NO se borra aquí: SAP lo abre en Excel apenas lo guarda y, si ya no existe, Excel dice «no hemos encontrado…»
 
 
 def _ventana_inesperada(ses) -> str:
@@ -753,7 +750,7 @@ def _limpiar_exportaciones(carpeta, conservar=None, dias: float = 1.0) -> None:
     limite = time.time() - dias * 86400
     for f in carpeta.glob("Qty En Entrega*.xls*"):
         try:
-            if f != conservar and f.stat().st_mtime < limite:
+            if f != conservar and f.name != NOMBRE_PUBLICADO and f.stat().st_mtime < limite:
                 f.unlink()
         except OSError:
             pass
