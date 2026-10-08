@@ -73,6 +73,11 @@ class Settings:
     stock_col_sku: str = os.getenv("STOCK_COL_SKU", "").strip()
     stock_col_vtex: str = os.getenv("STOCK_COL_VTEX", "").strip()
     stock_col_reservado: str = os.getenv("STOCK_COL_RESERVADO", "").strip()
+    # El stock se carga APARTE del resto (no frena el tablero): se espera hasta STOCK_ESPERA_SEGUNDOS la primera vez, se reutiliza
+    # STOCK_TTL_SEGUNDOS y la consulta se corta a los STOCK_TIMEOUT_SEGUNDOS.
+    stock_espera: int = int(os.getenv("STOCK_ESPERA_SEGUNDOS", "20"))
+    stock_ttl: int = int(os.getenv("STOCK_TTL_SEGUNDOS", "600"))
+    stock_timeout: int = int(os.getenv("STOCK_TIMEOUT_SEGUNDOS", "180"))
 
     # --- Asistente de consultas (chat) ---
     # Sin configurar usa reglas (funciona sin internet ni IA). Con IA_MODO la IA solo traduce la pregunta

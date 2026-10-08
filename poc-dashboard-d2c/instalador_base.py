@@ -10,6 +10,8 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v3.8: el stock VTEX se consulta aparte (ya no frena el tablero; se reutiliza 10 min y se corta a los 180 s) y
+diagnostico_stock.py mide por que tarda la consulta.
 Novedades v3.7: el stock VTEX usa la consulta oficial (ultima foto de bi_vtex_stock, bodega 1_1, cruzada con la maestra por codigo SAP).
 Novedades v3.6: seguridad y auditoria para publicar en Vercel: acceso con usuarios y roles, bitacora con cadena de hashes,
 controles de calidad en el pipeline, paquete de datos cifrado y versionado (las bases no se exponen), linaje y auditar_seguridad.py.
@@ -53,7 +55,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "3.7"
+VERSION = "3.8"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

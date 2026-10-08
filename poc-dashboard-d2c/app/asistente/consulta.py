@@ -328,7 +328,10 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
     st = stock_fn()
     if st is None or st.empty:
         e = servicio.estado_stock()
-        return {"ok": False, "chips": [], "notas": [], "texto": "No tengo datos de stock VTEX cargados (tabla bi_stock_vtex del ODS)."
+        if e.get("cargando"):
+            return {"ok": False, "chips": [], "notas": [], "texto": f"El stock VTEX todavía se está consultando a la base (lleva {e['segundos_corriendo'] or 0} s; "
+                    f"se corta a los {e['timeout_seg']} s). Vuelve a preguntar en un momento."}
+        return {"ok": False, "chips": [], "notas": [], "texto": "No tengo datos de stock VTEX cargados (consulta de bi_vtex_stock del ODS)."
                 + (f" Error al leerla: {e['error']}" if e["error"] else " La tabla vino vacía.")}
     lin, _ = lin_fn()
     cat = catalogo.de_union(lin, maestra.cargar()[0])

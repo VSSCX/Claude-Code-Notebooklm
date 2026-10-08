@@ -279,6 +279,41 @@ _q.leer_sap = _roto
 prueba("si la consulta falla, el error queda para explicarlo", len(_q.q_stock_vtex()) == 0 and "bi_vtex_stock" in _q.ERROR_STOCK[0])
 _q.leer_sap = _orig
 
+# --- el stock se carga aparte: una consulta lenta no frena el tablero y no se repite
+import time as _t
+from app import queries as _qq
+_ST = {"n": 0}
+def _lento():
+    _ST["n"] += 1
+    _t.sleep(2)
+    _qq.ERROR_STOCK.clear()
+    return servicio._CACHE.get("stock_demo") if False else __import__("app.demo", fromlist=["x"]).datos_demo()[4]
+_o = {k: getattr(_qq, k) for k in ("q_orders", "q_order_items", "q_sap_ingresos", "q_facturacion", "q_hoy_cl", "q_stock_vtex")}
+_d = __import__("app.demo", fromlist=["x"]).datos_demo()
+for _k, _v in zip(("q_orders", "q_order_items", "q_sap_ingresos", "q_facturacion"), _d[:4]):
+    setattr(_qq, _k, (lambda v=_v: v))
+_qq.q_hoy_cl, _qq.q_stock_vtex = (lambda: _d[5]), _lento
+_demo0, _esp0, _dim0, _stk0 = settings.demo, settings.stock_espera, servicio._CACHE["dim"], dict(servicio._STK)
+object.__setattr__(settings, "demo", False)
+object.__setattr__(settings, "stock_espera", 0)
+servicio._STK.update(df=None, t=0.0, hilo=None, huella=None)
+servicio._STK["listo"].clear()
+servicio._CACHE["dim"] = None
+_t0 = _t.time()
+servicio._cargar_dim()
+prueba("el tablero no espera a un stock lento", _t.time() - _t0 < 1.5, f"{_t.time() - _t0:.1f} s")
+prueba("mientras carga, el chat lo explica", "se está consultando" in p("stock de med165b")["texto"])
+_t.sleep(3)
+servicio._recargar(forzar=True)
+servicio._recargar(forzar=True)
+prueba("el stock se consulta una sola vez y se reutiliza", _ST["n"] == 1, _ST["n"])
+for _k, _v in _o.items():
+    setattr(_qq, _k, _v)
+object.__setattr__(settings, "demo", _demo0)
+object.__setattr__(settings, "stock_espera", _esp0)
+servicio._STK.update(_stk0)
+servicio._CACHE["dim"] = _dim0
+
 print()
 if fallos:
     print(f"RESULTADO: {len(fallos)} falla(s): " + "; ".join(fallos))

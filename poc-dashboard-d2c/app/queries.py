@@ -187,7 +187,11 @@ def _mapear_stock(raw: pd.DataFrame):
 
 
 def _leer_stock(sql: str) -> pd.DataFrame:
-    return leer_vtex(sql) if settings.stock_origen == "vtex" else leer_sap(sql)
+    t = settings.stock_timeout
+    try:
+        return leer_vtex(sql, timeout=t) if settings.stock_origen == "vtex" else leer_sap(sql, timeout=t)
+    except TypeError:                       # lectores de prueba sin el parametro
+        return leer_vtex(sql) if settings.stock_origen == "vtex" else leer_sap(sql)
 
 
 def _ident_stock(nombre: str) -> str:

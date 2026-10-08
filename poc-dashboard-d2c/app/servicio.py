@@ -31,6 +31,8 @@ _CACHE: dict = {"ts": 0.0, "dim": None, "hoy": None, "ref": None, "version": "0"
                 "error": None, "consulta": None, "ultimo_pedido": None}
 _MON: dict = {"firma": None, "ultima_ok": 0.0, "error": None, "cargas": 0}
 _PROG: dict = {"inicio": None, "pasos": {}, "total": None, "modelo": None}   # avance y tiempos de la carga
+_STK: dict = {"df": None, "t": 0.0, "hilo": None, "listo": threading.Event(), "seg": None, "error": None, "inicio": None, "huella": None}
+_STK_LOCK = threading.Lock()
 _PRIMERA_VEZ: dict = {}        # Sequence -> instante en que se vio por primera vez (tras la 1a carga)
 
 ORDEN_ESTADO = ["Integrado · Pendiente", "No integrado · Pendiente",
@@ -95,8 +97,9 @@ def _cargar_crudo():
         return fr["orders"], fr["items"], fr["sap"], fr["fact"], fr["stock"], pd.Timestamp(man["hoy"])
     tareas = {"Pedidos VTEX": queries.q_orders, "Líneas VTEX": queries.q_order_items,
               "Ingresos SAP": queries.q_sap_ingresos, "Facturación SAP": queries.q_facturacion,
-              "Stock VTEX": queries.q_stock_vtex, "Fecha de hoy": queries.q_hoy_cl}
+              "Fecha de hoy": queries.q_hoy_cl}
     _PROG.update(inicio=time.time(), total=None, pasos={k: {"estado": "cargando"} for k in tareas})
+    _pedir_stock()                                  # arranca en paralelo, sin frenar al resto
 
     def correr(nombre, fn):
         t0 = time.time()
@@ -113,10 +116,64 @@ def _cargar_crudo():
     with ThreadPoolExecutor(max_workers=len(tareas)) as ex:
         fut = {k: ex.submit(correr, k, fn) for k, fn in tareas.items()}
         res = {k: f.result() for k, f in fut.items()}
+    stock = _esperar_stock()
     _PROG["total"] = round(time.time() - _PROG["inicio"], 1)
     print(f"  [carga] consultas listas en {_PROG['total']} s (en paralelo)", flush=True)
     return (res["Pedidos VTEX"], res["Líneas VTEX"], res["Ingresos SAP"],
-            res["Facturación SAP"], res["Stock VTEX"], res["Fecha de hoy"])
+            res["Facturación SAP"], stock, res["Fecha de hoy"])
+
+
+# --------------------------------------------------------------------------- stock aparte
+def _cargar_stock_hilo():
+    t0 = time.time()
+    _STK.update(inicio=t0, error=None)
+    _PROG["pasos"]["Stock VTEX"] = {"estado": "cargando"}
+    try:
+        df = queries.q_stock_vtex()
+        err = queries.ERROR_STOCK[0] if queries.ERROR_STOCK else None
+    except Exception as e:  # noqa: BLE001
+        df, err = pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado"]), str(e)[:300]
+    seg = round(time.time() - t0, 1)
+    huella = (len(df), float(pd.to_numeric(df["VTEX"], errors="coerce").sum()) if len(df) else 0.0)
+    cambio = _STK["huella"] != huella
+    with _STK_LOCK:
+        if err and _STK["df"] is not None and len(_STK["df"]):
+            pass                                       # si falla una actualizacion, se conserva el ultimo stock bueno
+        else:
+            _STK["df"] = df
+        _STK.update(t=time.time(), seg=seg, error=err, huella=huella if not err else _STK["huella"])
+    _PROG["pasos"]["Stock VTEX"] = {"estado": "error" if err else "ok", "seg": seg, "filas": len(df)}
+    print(f"  [carga] Stock VTEX: {seg:.1f} s, {len(df)} filas" + (f" (ERROR: {err[:80]})" if err else ""), flush=True)
+    _STK["listo"].set()
+    if cambio and not err and _CACHE["dim"] is not None:   # llego despues del tablero: se reconstruye con el stock (no vuelve a consultar el stock)
+        try:
+            _recargar(forzar=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _pedir_stock() -> None:
+    """Lanza la consulta de stock en su propio hilo si no hay una corriendo y el stock guardado ya caduco (o no hay)."""
+    with _STK_LOCK:
+        h = _STK["hilo"]
+        fresco = _STK["df"] is not None and time.time() - _STK["t"] < settings.stock_ttl
+        if fresco or (h is not None and h.is_alive()):
+            return
+        _STK["listo"].clear()
+        _STK["hilo"] = threading.Thread(target=_cargar_stock_hilo, daemon=True, name="stock-vtex")
+        _STK["hilo"].start()
+
+
+def _esperar_stock() -> pd.DataFrame:
+    """Stock para esta carga: el guardado (aunque este viejo) o, la primera vez, lo que llegue en STOCK_ESPERA_SEGUNDOS."""
+    if _STK["df"] is None:
+        _STK["listo"].wait(settings.stock_espera)
+    with _STK_LOCK:
+        df = _STK["df"]
+    if df is None:
+        _PROG["pasos"]["Stock VTEX"] = {"estado": "cargando", "seg": None}
+        return pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado"])      # el tablero sale sin stock; se completa solo al llegar
+    return df
 
 
 # --------------------------------------------------------------------------- carga y monitor
@@ -631,6 +688,9 @@ def estado_stock() -> dict:
     s = _CACHE.get("stock")
     return {"filas": 0 if s is None else int(len(s)), "error": queries.ERROR_STOCK[0] if queries.ERROR_STOCK else None,
             "ejemplo_codigos": [] if s is None or not len(s) else [str(x) for x in s["codigoSap"].head(3)],
+            "cargando": bool(_STK["hilo"] is not None and _STK["hilo"].is_alive()),
+            "segundos_corriendo": None if not (_STK["hilo"] is not None and _STK["hilo"].is_alive()) or not _STK["inicio"] else round(time.time() - _STK["inicio"]),
+            "ultima_duracion_seg": _STK["seg"], "timeout_seg": settings.stock_timeout, "ttl_seg": settings.stock_ttl,
             "tabla": queries.INFO_STOCK["tabla"], "columnas": queries.INFO_STOCK["columnas"], "tablas_vistas": queries.INFO_STOCK["candidatas"][:5]}
 
 
@@ -665,7 +725,9 @@ def exportar_pedidos(filtros: dict, criticos: bool = False) -> tuple[str, int]:
 def stock_vtex():
     """Stock por codigo SAP (disponible = VTEX - Reservado), o None si no hay datos de stock."""
     _cargar_dim()
-    s = _CACHE.get("stock")
+    if not (settings.demo or settings.fuente_snapshot):
+        _pedir_stock()                                           # renueva en segundo plano si caduco
+    s = _STK["df"] if (_STK["df"] is not None and len(_STK["df"])) else _CACHE.get("stock")
     if s is None or len(s) == 0:
         return None
     out = pd.DataFrame({"SKU": skus.limpiar(s["codigoSap"]),

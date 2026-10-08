@@ -42,7 +42,7 @@ def _cadena(server: str, db: str, user: str, pwd: str) -> str:
     return ";".join(partes)
 
 
-def _leer(server: str, db: str, user: str, pwd: str, sql: str, params: tuple = ()) -> pd.DataFrame:
+def _leer(server: str, db: str, user: str, pwd: str, sql: str, params: tuple = (), timeout: int = 0) -> pd.DataFrame:
     if not _HAY_PYODBC:
         raise ErrorConexion(
             "No está instalado pyodbc. Instálalo con: pip install pyodbc")
@@ -53,6 +53,8 @@ def _leer(server: str, db: str, user: str, pwd: str, sql: str, params: tuple = (
             f"No se pudo conectar a {server}/{db}. "
             f"Revisa VPN, driver ODBC y credenciales. Detalle: {str(e)[:200]}") from e
     try:
+        if timeout:
+            cn.timeout = timeout                      # tiempo maximo de la consulta (segundos); el de arriba es solo el de conexion
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return pd.read_sql(sql, cn, params=list(params) if params else None)
@@ -60,11 +62,11 @@ def _leer(server: str, db: str, user: str, pwd: str, sql: str, params: tuple = (
         cn.close()
 
 
-def leer_vtex(sql: str, params: tuple = ()) -> pd.DataFrame:
+def leer_vtex(sql: str, params: tuple = (), timeout: int = 0) -> pd.DataFrame:
     return _leer(settings.vtex_server, settings.vtex_db,
-                 settings.vtex_user, settings.vtex_pass, sql, params)
+                 settings.vtex_user, settings.vtex_pass, sql, params, timeout)
 
 
-def leer_sap(sql: str, params: tuple = ()) -> pd.DataFrame:
+def leer_sap(sql: str, params: tuple = (), timeout: int = 0) -> pd.DataFrame:
     return _leer(settings.sap_server, settings.sap_db,
-                 settings.sap_user, settings.sap_pass, sql, params)
+                 settings.sap_user, settings.sap_pass, sql, params, timeout)
