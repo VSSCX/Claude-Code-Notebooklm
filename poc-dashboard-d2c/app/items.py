@@ -83,9 +83,13 @@ def _totales(dim: pd.DataFrame) -> pd.Series:
 
 def lineas_pedido(sequence: str, dim: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Lineas de un pedido. En demo salen de la carga de ejemplo; en real, de OrderItems (consulta parametrizada)."""
-    if settings.demo:
-        from .demo import lineas_demo
-        raw = lineas_demo()
+    if settings.demo or settings.fuente_snapshot:
+        if settings.demo:
+            from .demo import lineas_demo
+            raw = lineas_demo()
+        else:
+            from . import snapshot
+            raw = snapshot.tabla("items_todos")
         raw = raw[raw["Sequence"].astype(str) == str(sequence)] if len(raw) else raw
     else:
         raw = queries.q_items_pedido(sequence)
@@ -102,6 +106,9 @@ def todas(version: str, dim: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         if settings.demo:
             from .demo import lineas_demo
             df, info = normalizar(lineas_demo(), _totales(dim))
+        elif settings.fuente_snapshot:
+            from . import snapshot
+            df, info = normalizar(snapshot.tabla("items_todos"), _totales(dim))
         elif _BULK["df"] is None:
             df, info = normalizar(queries.q_items_todos(), _totales(dim))
         else:

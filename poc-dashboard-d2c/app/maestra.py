@@ -91,6 +91,15 @@ def cargar() -> tuple[pd.DataFrame | None, str | None, list[str]]:
     if settings.demo:
         from .demo import maestra_demo
         return maestra_demo(), None, []
+    if settings.fuente_snapshot:
+        from . import snapshot
+        try:
+            m = snapshot.tabla("maestra")
+        except Exception as e:  # noqa: BLE001
+            return None, str(e)[:200], []
+        if m is None or m.empty:
+            return None, "El paquete de datos publicado no trae la maestra de productos.", []
+        return m, None, []
     with _LOCK:
         if _CACHE["df"] is not None and time.time() - _CACHE["t"] < TTL:
             return _CACHE["df"], None, []

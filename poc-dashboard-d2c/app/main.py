@@ -12,7 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR, settings
-from . import asistente, servicio, ventas
+from . import asistente, auditoria, auth, servicio, ventas
 from .seguridad import CABECERAS
 
 log = logging.getLogger("dashboard")
@@ -50,6 +50,115 @@ async def cabeceras_de_seguridad(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"      # los datos nunca se guardan en cache intermedia
     return resp
+
+
+@app.middleware("http")
+async def control_de_acceso(request: Request, call_next):
+    """Todo /api/* exige sesion (cuando el acceso esta activo), el rol de la ruta, origen valido y un limite de uso. Lo demas es estatico, sin datos."""
+    ruta = request.url.path
+    request.state.usuario, request.state.rol = None, "admin"
+    if ruta.startswith("/api/") and ruta not in auth.PUBLICAS and auth.requerida():
+        falla = auth.problema_de_configuracion()
+        if falla:
+            return JSONResponse(status_code=503, content={"error": falla})
+        ses = auth.leer_sesion(request.cookies.get(auth.COOKIE))
+        if not ses:
+            return JSONResponse(status_code=401, content={"error": "Inicia sesión para continuar."})
+        request.state.usuario, request.state.rol = ses["usuario"], ses["rol"]
+        if not auth.origen_valido(request.method, request.headers.get("origin"), request.headers.get("host")):
+            auditoria.registrar("origen_rechazado", ses["usuario"], ruta=ruta)
+            return JSONResponse(status_code=403, content={"error": "Origen no permitido."})
+        if not auth.permitido(ses["rol"], ruta):
+            auditoria.registrar("acceso_denegado", ses["usuario"], ruta=ruta, rol=ses["rol"])
+            return JSONResponse(status_code=403, content={"error": "Tu rol no permite esta acción."})
+        if auth.excede_limite(ses["usuario"], ruta):
+            return JSONResponse(status_code=429, content={"error": "Demasiadas solicitudes. Espera un minuto."})
+    return await call_next(request)
+
+
+def _quien(request: Request) -> str:
+    return getattr(request.state, "usuario", None) or "local"
+
+
+@app.post("/api/login")
+async def api_login(request: Request):
+    """Usuario y clave -> cookie de sesion. Con bloqueo temporal tras 5 intentos fallidos (por usuario y por IP)."""
+    c = await _cuerpo(request)
+    usuario = str(c.get("usuario", ""))[:120].strip().lower()
+    ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
+    falla = auth.problema_de_configuracion()
+    if falla:
+        return JSONResponse(status_code=503, content={"error": falla})
+    if not auth.requerida():
+        return {"ok": True, "auth": False, "rol": "admin"}
+    if not auth.origen_valido("POST", request.headers.get("origin"), request.headers.get("host")):
+        return JSONResponse(status_code=403, content={"error": "Origen no permitido."})
+    claves = (f"u:{usuario}", f"ip:{ip}")
+    if any(auth.bloqueado(k) for k in claves):
+        auditoria.registrar("login_bloqueado", usuario, ip=ip)
+        return JSONResponse(status_code=429, content={"error": "Demasiados intentos. Espera 15 minutos."})
+    ses = auth.iniciar_sesion(usuario, str(c.get("clave", ""))[:200])
+    if not ses:
+        for k in claves:
+            auth.anotar_fallo(k)
+        auditoria.registrar("login_fallido", usuario, ip=ip)
+        return JSONResponse(status_code=401, content={"error": "Usuario o clave incorrectos."})
+    for k in claves:
+        auth.limpiar_fallos(k)
+    auditoria.registrar("login_ok", ses["usuario"], ip=ip, rol=ses["rol"])
+    resp = JSONResponse({"ok": True, "auth": True, "usuario": ses["usuario"], "rol": ses["rol"]})
+    resp.set_cookie(auth.COOKIE, auth.crear_sesion(ses["usuario"], ses["rol"]), max_age=settings.sesion_horas * 3600, httponly=True,
+                    samesite="strict", secure=settings.serverless or request.url.scheme == "https", path="/")
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout(request: Request):
+    auditoria.registrar("logout", _quien(request))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/yo")
+def api_yo(request: Request):
+    """Quien soy y que puedo hacer (la pantalla oculta lo que el rol no permite; el servidor lo hace cumplir igual)."""
+    if not auth.requerida():
+        return {"auth": False, "usuario": None, "rol": "admin"}
+    ses = auth.leer_sesion(request.cookies.get(auth.COOKIE))
+    if not ses:
+        return JSONResponse(status_code=401, content={"error": "Inicia sesión para continuar."})
+    return {"auth": True, **ses}
+
+
+@app.get("/api/salud")
+def api_salud():
+    """Publica y sin datos: para saber si el servicio esta arriba."""
+    return {"ok": True}
+
+
+@app.get("/api/auditoria")
+def api_auditoria(n: int = 100):
+    """Ultimos registros de la bitacora y si la cadena de hashes sigue integra (solo admin)."""
+    return {"verificacion": auditoria.verificar(), "registros": auditoria.leer(max(1, min(n, 500)))}
+
+
+@app.get("/api/calidad")
+def api_calidad():
+    """Resultado de los controles de calidad de la ultima carga (exactitud, completitud, consistencia, actualizacion, unicidad...)."""
+    try:
+        return servicio.informe_calidad()
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+
+
+@app.get("/api/linaje")
+def api_linaje():
+    """Linaje y procedencia de los datos: fuentes, version, huellas, columnas incluidas y excluidas, responsable."""
+    try:
+        return servicio.linaje()
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
 
 
 def _error(e: Exception) -> JSONResponse:
@@ -115,6 +224,7 @@ async def api_ventas_exportar(request: Request):
     """CSV Clasif2 | Producto | Venta de una clasificacion (clasif2) o de todas (sin clasif2), respetando los filtros."""
     c = await _cuerpo(request)
     cl = c.get("zoom_clasif") if isinstance(c.get("zoom_clasif"), str) else None
+    auditoria.registrar("exporta_ventas", _quien(request), clasif2=cl, filtros=sorted(k for k, v in c.items() if v))
     try:
         csv = await run_in_threadpool(ventas.exportar_csv, c, cl)
     except ValueError as e:
@@ -133,6 +243,7 @@ async def api_pedidos_exportar(request: Request):
     crit = c.pop("criticos", False) is True
     try:
         csv, n = await run_in_threadpool(servicio.exportar_pedidos, c, crit)
+        auditoria.registrar("exporta_pedidos", _quien(request), filas=n, criticos=crit, filtros=sorted(k for k, v in c.items() if v))
     except Exception as e:  # noqa: BLE001
         return _error(e)
     nombre = "pedidos-facturados-pendientes.csv" if crit else "pedidos.csv"
@@ -155,8 +266,9 @@ async def api_chat_valorar(request: Request):
 
 
 @app.get("/api/chat/historial")
-def api_chat_historial():
+def api_chat_historial(request: Request):
     """Para quien mantiene el programa: uso del asistente y las preguntas que no entendio (sin datos de pedidos)."""
+    auditoria.registrar("consulta_historial_asistente", _quien(request))
     if settings.serverless:
         return JSONResponse(status_code=404, content={"error": "No disponible"})
     return asistente.memoria.estadisticas()
@@ -181,7 +293,9 @@ async def api_chat(request: Request):
         cuerpo = {}
     previo = cuerpo.get("previo") if isinstance(cuerpo.get("previo"), dict) else None
     try:
-        return await run_in_threadpool(asistente.responder, cuerpo.get("pregunta", ""), previo)
+        res = await run_in_threadpool(asistente.responder, cuerpo.get("pregunta", ""), previo)
+        auditoria.registrar("pregunta_asistente", _quien(request), pregunta=str(cuerpo.get("pregunta", ""))[:200], via=res.get("via"), ok=res.get("ok"))
+        return res
     except Exception as e:  # noqa: BLE001
         return _error(e)
 
@@ -200,8 +314,9 @@ def api_config():
 
 
 @app.get("/api/diagnostico")
-def api_diagnostico():
+def api_diagnostico(request: Request):
     """Cuanto tardo cada consulta en la ultima carga (para optimizar con datos reales)."""
+    auditoria.registrar("consulta_diagnostico", _quien(request))
     if settings.serverless:
         return JSONResponse(status_code=404, content={"error": "No disponible"})
     return servicio.diagnostico()
@@ -219,6 +334,11 @@ def api_demo_pedido():
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(PUBLIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/login.html", include_in_schema=False)
+def login_html():
+    return FileResponse(PUBLIC / "login.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)

@@ -9,6 +9,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+def _txt(nombre: str, defecto: str = "") -> str:
+    return os.getenv(nombre, defecto).strip()
+
+
+# Fuente "snapshot": en vez de consultar las bases (que Vercel no alcanza ni debe guardar), el tablero lee una copia cifrada y
+# firmada que un agente dentro de la red publica (publicar_snapshot.py). Ver SEGURIDAD.md.
+_SNAP_OK = bool(_txt("SNAPSHOT_KEYS")) and bool(_txt("SNAPSHOT_DIR") or _txt("BLOB_READ_WRITE_TOKEN"))
+
+
 @dataclass(frozen=True)
 class Settings:
     # Servidor Azure de VTEX (Orders / OrderItems). Mismo del .pbix.
@@ -77,13 +86,29 @@ class Settings:
     # Donde se guarda el historial de preguntas del asistente (vacio = data/historial_asistente.jsonl; en Vercel solo en memoria)
     asistente_historial: str = os.getenv("ASISTENTE_HISTORIAL", "").strip()
 
+    # --- Seguridad (ver SEGURIDAD.md) ---
+    # Usuarios: "correo:hash:rol;correo2:hash2:rol2" (rol = lector | analista | admin). Los hashes se crean con seguridad_admin.py.
+    dash_usuarios: str = _txt("DASH_USUARIOS")
+    session_secret: str = _txt("SESSION_SECRET")                         # firma de las sesiones (obligatorio si hay usuarios en un servidor publico)
+    auth_requerida: str = _txt("AUTH_REQUERIDA", "auto").lower()         # auto | 1 | 0
+    sesion_horas: int = int(_txt("SESION_HORAS", "8"))
+    auditoria_archivo: str = _txt("AUDITORIA_ARCHIVO")                   # vacio = data/auditoria.jsonl (en Vercel solo en los logs)
+    alerta_webhook: str = _txt("ALERTA_WEBHOOK")                         # Teams/Slack: avisa si falla la publicacion de datos
+    # Snapshot cifrado (AES + firma, Fernet). SNAPSHOT_KEYS admite varias claves separadas por coma: la primera cifra, todas descifran (rotacion).
+    snapshot_keys: str = _txt("SNAPSHOT_KEYS")
+    snapshot_dir: str = _txt("SNAPSHOT_DIR")                             # carpeta local o compartida (alternativa a Vercel Blob)
+    blob_token: str = _txt("BLOB_READ_WRITE_TOKEN")                      # Vercel Blob
+    snapshot_prefijo: str = _txt("SNAPSHOT_PREFIJO", "d2c")
+    snapshot_ttl: int = int(_txt("SNAPSHOT_TTL_SEGUNDOS", "60"))
+    fuente_snapshot: bool = _SNAP_OK and (bool(os.getenv("VERCEL")) or _txt("FUENTE").lower() == "snapshot")
+
     # Cuanto tiempo un pedido recien llegado se marca como NUEVO en la tabla.
     nuevo_segundos: int = int(os.getenv("NUEVO_SEGUNDOS", "300"))
     # Modo demo: usa datos de ejemplo en vez de SQL (para probar sin conexión)
     # En Vercel (funciones sin servidor) NUNCA se consultan las bases: ahi solo corre el modo DEMO
     # (ver VERCEL.md). Vercel define la variable VERCEL=1 en cada despliegue.
     serverless: bool = bool(os.getenv("VERCEL"))
-    demo: bool = bool(os.getenv("VERCEL")) or os.getenv("DEMO", "").strip().lower() in ("1", "true", "si", "sí", "yes")
+    demo: bool = (bool(os.getenv("VERCEL")) and not _SNAP_OK) or os.getenv("DEMO", "").strip().lower() in ("1", "true", "si", "sí", "yes")
 
 
 settings = Settings()

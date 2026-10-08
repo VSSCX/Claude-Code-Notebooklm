@@ -7,10 +7,12 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F5F5F5">
 <script src="/js/tema.js"></script>
+<script src="/js/sesion.js"></script>
 <link rel="icon" href="data:,">
 <link rel="preload" as="font" type="font/woff2" href="/fonts/plus-jakarta-sans-latin.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="/fonts/jetbrains-mono-latin.woff2" crossorigin>
 <link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/login.css">
 <script src="/vendor/chart.umd.min.js"></script>
 <script src="/vendor/morphdom.min.js"></script>
 </head>
@@ -29,6 +31,7 @@
         <span class="tag a" title="Los datos que ves son de ejemplo, no son reales">Demo</span>
         <button class="btn sm" id="demoSim" title="Simula la llegada de un pedido nuevo para ver la actualización en vivo"></button>
       </div>
+      <div class="sesion" id="sesion" hidden></div>
       <div class="tools" id="tools"></div>
       <button class="campana" id="chatBtn" data-chat aria-label="Preguntar al asistente" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat" title="Preguntar al asistente"></button>
       <div class="notif" id="notif"></div>

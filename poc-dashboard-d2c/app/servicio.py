@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
-from . import items as lineas, modelo, queries, skus
+from . import calidad, snapshot, items as lineas, modelo, queries, skus
 from .config import settings
 from .demo import datos_demo, firma_demo
 
@@ -85,6 +85,14 @@ def _cargar_crudo():
         _PROG.update(inicio=t0, total=round(time.time() - t0, 1),
                      pasos={"Datos de ejemplo": {"estado": "ok", "seg": round(time.time() - t0, 1), "filas": len(r[0])}})
         return r
+    if settings.fuente_snapshot:
+        from . import snapshot
+        t0 = time.time()
+        fr, man = snapshot.cargar()
+        _CACHE["manifiesto"] = man
+        _PROG.update(inicio=t0, total=round(time.time() - t0, 1),
+                     pasos={"Paquete de datos " + man["id"]: {"estado": "ok", "seg": round(time.time() - t0, 1), "filas": len(fr["orders"])}})
+        return fr["orders"], fr["items"], fr["sap"], fr["fact"], fr["stock"], pd.Timestamp(man["hoy"])
     tareas = {"Pedidos VTEX": queries.q_orders, "Líneas VTEX": queries.q_order_items,
               "Ingresos SAP": queries.q_sap_ingresos, "Facturación SAP": queries.q_facturacion,
               "Stock VTEX": queries.q_stock_vtex, "Fecha de hoy": queries.q_hoy_cl}
@@ -118,6 +126,11 @@ def _recargar(forzar: bool = False):
         if not forzar and _CACHE["dim"] is not None:
             return
         orders, items, sap, fact, stock, hoy = _cargar_crudo()
+        try:                                                    # controles de calidad del pipeline (ver calidad.py)
+            _CACHE["calidad"] = ((_CACHE.get("manifiesto") or {}).get("calidad") if settings.fuente_snapshot
+                                 else calidad.evaluar(orders, items, sap, fact, stock, hoy, settings.fecha_validada))
+        except Exception as e:  # noqa: BLE001
+            _CACHE["calidad"] = {"controles": [], "ok": 0, "alertas": 0, "fallas": 1, "puntaje": 0, "error": str(e)[:150]}
         tm = time.time()
         m = modelo.construir(orders, items, sap, fact, stock, hoy)
         _PROG["modelo"] = round(time.time() - tm, 1)
@@ -142,6 +155,9 @@ def _recargar(forzar: bool = False):
             _PRIMERA_VEZ.pop(s, None)
         _CACHE.update(ts=ahora, dim=dim, hoy=hoy, ref=ref, version=ver, error=None, stock=stock,
                       consulta=time.strftime("%H:%M:%S"), ultimo_pedido=ultimo)
+        if settings.fuente_snapshot:
+            _CACHE["firma"] = _firma()
+            _CACHE["consulta"] = "paquete " + str((_CACHE.get("manifiesto") or {}).get("creado_utc", ""))
         _MON["cargas"] += 1
 
 
@@ -158,6 +174,10 @@ def _cargar_dim():
 
 
 def _firma() -> str:
+    if settings.fuente_snapshot:
+        from . import snapshot
+        p = snapshot.puntero()
+        return p["id"] if p else "sin-datos"
     return str(firma_demo()) if settings.demo else queries.q_firma()
 
 
@@ -197,6 +217,14 @@ def detener_monitor():
 def estado_version() -> dict:
     """Respuesta barata para el navegador: version actual + hace cuanto se reviso por ultima vez."""
     ahora = time.time()
+    if settings.fuente_snapshot and _CACHE["dim"] is not None:       # sin hilo vigilante en Vercel: se mira el puntero (barato) en cada consulta
+        try:
+            if _firma() != _CACHE.get("firma"):
+                _recargar(forzar=True)
+                _CACHE["firma"] = _firma()
+            _MON.update(ultima_ok=ahora, error=None)
+        except Exception as e:  # noqa: BLE001
+            _MON["error"] = str(e)[:200]
     rev = int(ahora - _MON["ultima_ok"]) if _MON["ultima_ok"] else None
     # 'lento': falla la deteccion rapida pero los datos se siguen recargando (respaldo)
     estado = "ok"
@@ -645,6 +673,22 @@ def stock_vtex():
                         "Reservado": pd.to_numeric(s["Reservado"], errors="coerce").fillna(0)}).groupby("SKU", as_index=False).sum()
     out["Disponible"] = out["VTEX"] - out["Reservado"]
     return out
+
+
+def informe_calidad() -> dict:
+    _cargar_dim()
+    return _CACHE.get("calidad") or {"controles": [], "ok": 0, "alertas": 0, "fallas": 0, "puntaje": None}
+
+
+def linaje() -> dict:
+    """De donde salen los datos y que les paso (documentado para auditoria). Sin servidores ni credenciales."""
+    _cargar_dim()
+    man = _CACHE.get("manifiesto")
+    if settings.fuente_snapshot and man:
+        return {"modo": "snapshot", **snapshot.manifiesto_publico(man)}
+    from .snapshot import LINAJE, ORIGEN
+    return {"modo": "demo" if settings.demo else "directo", "linaje": LINAJE[:3] + LINAJE[6:], "tablas": {k: {"origen": v} for k, v in ORIGEN.items()},
+            "calidad": _CACHE.get("calidad"), "uso_de_ia": "Los datos no se usan para entrenar modelos. La IA opcional solo traduce preguntas a planes."}
 
 
 def resumen_datos() -> dict:

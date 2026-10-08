@@ -75,3 +75,6 @@ axe-core **0 violaciones** en las 15 combinaciones, sin errores de consola ni de
 - **No verificado en Vercel:** el build real, el tiempo de arranque en frío (pandas ≈ 120 MB instalados; el límite de la función es 500 MB), `maxDuration` según tu plan, y que la redirección `/api/*` se comporte igual que en local.
 - **Pandas 2.x no se probó aquí** (se probó con pandas 3.0, numpy 2.4, FastAPI 0.142); `requirements.txt` permite ambas.
 - **Gráfico de cierre con 2+ meses** (segunda serie en gris `--muted`): no se pudo ver con los datos de ejemplo (solo hay un mes cerrado).
+
+## Seguridad y datos reales (v3.6)
+Vercel no alcanza las bases ni debe guardar sus claves. Para ver datos reales publicados, un agente dentro de la red sube un paquete **cifrado** (`publicar_snapshot.py`) y el tablero solo lo lee, con login por roles y bitácora de auditoría. Pasos, matriz riesgo-control y límites: ver **SEGURIDAD.md**.
