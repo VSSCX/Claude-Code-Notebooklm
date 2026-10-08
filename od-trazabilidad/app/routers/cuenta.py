@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import domain, registro, seguridad
 from ..db import get_session
-from ..models import Actividad, Usuario, ahora
+from ..models import Actividad, Usuario
 
 router = APIRouter()
 _ultimos_reportes: dict[str, list[float]] = {}

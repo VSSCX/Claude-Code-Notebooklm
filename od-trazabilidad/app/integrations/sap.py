@@ -72,17 +72,61 @@ class Lectura:
     filas_tabla: int = 0                                  # filas que declara SAP en la tabla
 
 
+ultima_sesion: str = ""        # "SISTEMA/mandante · usuario" de la sesión de SAP que se usó (para el diagnóstico)
+
+
+def _info_sesion(ses) -> tuple[str, str, str]:
+    try:
+        i = ses.Info
+        return str(i.SystemName or ""), str(i.Client or ""), str(i.User or "")
+    except Exception:  # noqa: BLE001
+        return "", "", ""
+
+
 def conectar():
-    """Devuelve la primera sesión SAP abierta."""
+    """Devuelve la sesión SAP que se va a usar. Antes era siempre la primera de la primera conexión: a quien tiene
+    SAP abierto en dos sistemas (o una conexión sin iniciar sesión) le tomaba la equivocada y todo fallaba raro.
+    Ahora se prefiere una sesión con usuario iniciado, y SAP_SISTEMA permite fijar el sistema (PRD, QAS…)."""
+    global ultima_sesion
+    from ..config import settings
     try:
         import win32com.client
     except ImportError as e:
         raise ErrorSap("Leer SAP requiere Windows con pywin32 instalado.") from e
     try:
         gui = win32com.client.GetObject("SAPGUI").GetScriptingEngine
-        return gui.Children(0).Children(0)
     except Exception as e:  # noqa: BLE001
-        raise ErrorSap("No se encontró una sesión SAP activa. Abre SAP e inicia sesión.") from e
+        raise ErrorSap("No se encontró SAP abierto con scripting habilitado. Abre SAP Logon, inicia sesión "
+                       "y revisa que el scripting esté activado (SAP GUI → Opciones → Accesibilidad y scripting).") from e
+    sesiones = []
+    try:
+        for i in range(int(gui.Children.Count)):
+            con = gui.Children(i)
+            for j in range(int(con.Children.Count)):
+                sesiones.append(con.Children(j))
+    except Exception:  # noqa: BLE001
+        sesiones = []
+    if not sesiones:
+        try:
+            sesiones = [gui.Children(0).Children(0)]          # el comportamiento de siempre, si no se puede recorrer
+        except Exception as e:  # noqa: BLE001
+            raise ErrorSap("No se encontró una sesión SAP activa. Abre SAP e inicia sesión.") from e
+    info = [(s, *_info_sesion(s)) for s in sesiones]
+    pedido = settings.sap_sistema.strip().upper()
+    if pedido:
+        coinciden = [x for x in info if x[1].upper() == pedido]
+        if coinciden:
+            s, sis, cli, usu = next((x for x in coinciden if x[3]), coinciden[0])      # la que ya inició sesión
+            ultima_sesion = f"{sis}/{cli} · {usu}"
+            return s
+        vistos = ", ".join(sorted({f"{sis}/{cli}" for _, sis, cli, _ in info if sis})) or "ninguno"
+        raise ErrorSap(f"SAP_SISTEMA={pedido}, pero las sesiones abiertas son: {vistos}. Abre una sesión de {pedido}.")
+    con_usuario = [x for x in info if x[3]] or info
+    s, sis, cli, usu = con_usuario[0]
+    if len({(x[1], x[2]) for x in con_usuario}) > 1:
+        log.warning("Hay sesiones de SAP en más de un sistema; se usa %s/%s. Define SAP_SISTEMA para fijarlo.", sis, cli)
+    ultima_sesion = f"{sis}/{cli} · {usu}".strip(" ·/")
+    return s
 
 
 def _esperar(ses, timeout: float = ESPERA_OCUPADO):
@@ -365,23 +409,29 @@ def _multi_celda(fila: int) -> str:
     return f"{MULTI}/ctxtRSCSEL_255-SLOW_I[1,{fila}]"
 
 
-def _presionar(ses, ident: str, espera: float = 5):
+def _presionar(ses, ident: str, espera: float = 5, opcional: bool = False):
     obj = _por_id(ses, ident)
-    if obj is not None:
-        try:
-            obj.press()
-        except Exception:  # noqa: BLE001
-            pass
-        _esperar(ses, espera)
+    if obj is None:
+        if opcional:
+            return
+        anotar(f"No existe el botón {ident.rsplit('/', 1)[-1]}")
+        return
+    try:
+        obj.press()
+    except Exception as e:  # noqa: BLE001
+        anotar(f"No se pudo presionar {ident.rsplit('/', 1)[-1]}", e)
+    _esperar(ses, espera)
 
 
 def _texto(ses, ident: str, valor: str):
     obj = _por_id(ses, ident)
-    if obj is not None:
-        try:
-            obj.Text = valor
-        except Exception:  # noqa: BLE001
-            pass
+    if obj is None:
+        anotar(f"No existe el campo {ident.rsplit('/', 1)[-1]}")
+        return
+    try:
+        obj.Text = valor
+    except Exception as e:  # noqa: BLE001
+        anotar(f"No se pudo escribir {ident.rsplit('/', 1)[-1]} = {valor}", e)
 
 
 def _cargar_multiseleccion(ses, valores: list[str]) -> int:
@@ -444,6 +494,49 @@ def carpeta_export(base=None) -> "Path":
 
 
 NOMBRE_PUBLICADO = "Qty En Entrega.xlsx"
+FILA_LAYOUT = 43                   # el layout que elige la macro del Excel: es una POSICIÓN en la lista, distinta si el analista tiene layouts propios
+
+
+def _fila_layout(layout) -> int:
+    """Fila del layout a usar. Con ZSD_LAYOUT se busca por nombre; si no, la fila 43 de la macro, comprobando que exista
+    (con menos layouts en la lista, esa fila no existe y antes SAP quedaba con el layout que tuviera, sin avisar)."""
+    from ..config import settings
+    try:
+        n = int(layout.RowCount)
+    except Exception:  # noqa: BLE001
+        n = 0
+    nombre = settings.zsd_layout.strip().lower()
+    if nombre:
+        textos = []
+        for i in range(n):
+            try:
+                t = str(layout.GetCellValue(i, "TEXT") or "")
+            except Exception:  # noqa: BLE001
+                t = ""
+            textos.append(t)
+            if nombre in t.lower():
+                return i
+        raise ErrorSap(f"No hay un layout que contenga «{settings.zsd_layout}» en ZSD001_03. "
+                       f"Layouts de este usuario (primeros 8): {', '.join(x.strip() for x in textos[:8] if x.strip())}.")
+    if n and FILA_LAYOUT >= n:
+        raise ErrorSap(f"El layout de ZSD001_03 que usa la macro es el de la fila {FILA_LAYOUT}, pero este usuario solo tiene {n} layouts. "
+                       "Define ZSD_LAYOUT en el .env con el nombre del layout (el mismo que usa la macro).")
+    return FILA_LAYOUT
+
+
+def validar_columnas(filas: list[dict], layout: str = "") -> None:
+    """El análisis necesita el nombre del material y la Qty en entrega. Con otro layout esas columnas no vienen y la
+    Qty en entrega quedaba en 0 sin que nadie lo notara: ahora se detiene diciendo qué columnas llegaron."""
+    if not filas:
+        return
+    from ..analisis import _col
+    f0 = filas[0]
+    faltan = [n for n, alts in (("Nombre Codigo de Material", ("Nombre Codigo de Material", "Nombre Código de Material")),
+                                ("Qty. En Entrega", ("Qty. En Entrega", "Qty En Entrega"))) if _col(f0, *alts) is None]
+    if faltan:
+        raise ErrorSap(f"El archivo de ZSD001_03 no trae la columna {' ni '.join(faltan)}. Columnas recibidas: "
+                       f"{', '.join(list(f0)[:10])}. Layout elegido: «{layout or 'desconocido'}». "
+                       "Usa el mismo layout de la macro (ZSD_LAYOUT en el .env).")
 
 
 def revisar_publicacion() -> str:
@@ -508,18 +601,21 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     import datetime as dt
     from pathlib import Path
 
+    limpiar_incidencias()
     ses = conectar()
     try:
         ses.findById("wnd[0]").maximize()
     except Exception:  # noqa: BLE001
         pass
     okcd = _por_id(ses, "wnd[0]/tbar[0]/okcd")
+    if okcd is None:
+        raise ErrorSap("La ventana de SAP no responde al scripting.")
     okcd.Text = "/NZSD001_03"
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses, 30)
-    _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 10)
+    _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 10, opcional=True)      # el aviso inicial solo sale a veces
     if _por_id(ses, "wnd[0]/usr/ctxtSOSOCFAC-LOW") is None:
-        raise ErrorSap("No se pudo abrir ZSD001_03.")
+        raise ErrorSap("No se pudo abrir ZSD001_03" + (": " + "; ".join(incidencias()[:3]) if incidencias() else "") + ".")
 
     _texto(ses, "wnd[0]/usr/ctxtSOSOCFAC-LOW", "TC04")
     _texto(ses, "wnd[0]/usr/ctxtSOORGVEN-LOW", "VCT4")
@@ -573,15 +669,22 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     # Layout y exportación (mismos pasos que el Excel)
     _presionar(ses, "wnd[0]/tbar[1]/btn[33]", 5)
     layout = _por_id(ses, "wnd[1]/usr/ssubD0500_SUBSCREEN:SAPLSLVC_DIALOG:0501/cntlG51_CONTAINER/shellcont/shell")
+    elegido = ""
     if layout is not None:
+        fila = _fila_layout(layout)
         try:
-            layout.setCurrentCell(43, "TEXT")
-            layout.firstVisibleRow = 36
-            layout.selectedRows = "43"
+            elegido = str(layout.GetCellValue(fila, "TEXT") or "").strip()
+            layout.setCurrentCell(fila, "TEXT")
+            layout.firstVisibleRow = max(0, fila - 7)
+            layout.selectedRows = str(fila)
             layout.clickCurrentCell()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            anotar(f"No se pudo elegir el layout de la fila {fila}", e)
         _esperar(ses, 5)
+    else:
+        anotar("SAP no mostró la lista de layouts")
+    if publicado is not None:
+        publicado["layout"] = elegido
     menu = _por_id(ses, "wnd[0]/mbar/menu[0]/menu[3]/menu[1]")
     if menu is not None:
         menu.Select()
@@ -611,6 +714,9 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     _esperar_archivo(ses, destino)
     try:
         filas = leer_export(destino)
+        validar_columnas(filas, (publicado or {}).get("layout", ""))
+        if incidencias() and avisar:
+            avisar(f"{len(incidencias())} paso(s) de ZSD001_03 que SAP no aceptó: " + "; ".join(incidencias()[:3]))
         # solo se guarda lo que ya se pudo leer: la última exportación queda siempre en la carpeta local con nombre fijo
         local = publicar_export(destino, Path(carpeta))
         if publicado is not None:

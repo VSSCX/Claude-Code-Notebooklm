@@ -1,20 +1,11 @@
 """Ayudantes compartidos por los routers: claves de configuración y ajustes del motor."""
-import shutil
-import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import domain
-from ..db import get_session
-from ..integrations import acciones, bases, clientes as cli_mod, maestra, medidas as med_mod
-from sqlalchemy import select
+from ..integrations import bases, clientes as cli_mod
 
-from ..models import Archivo, Entrega
-from ..schemas import EntregaIn, PaqueteIn, PedidoIn
 
 
 

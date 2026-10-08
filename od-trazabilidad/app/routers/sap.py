@@ -1,21 +1,17 @@
 """SAP: leer, analizar, crear y borrar."""
 import math
-import shutil
-import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
 from ..db import get_session
-from ..integrations import acciones, bases, clientes as cli_mod, maestra, medidas as med_mod
+from ..integrations import acciones, bases
 from sqlalchemy import select
 
-from ..models import Archivo, Entrega
-from ..schemas import EntregaIn, PaqueteIn, PedidoIn
+from ..models import Entrega
+from ..schemas import PaqueteIn
 
 
 
@@ -27,8 +23,7 @@ def _commit(s: Session):
         s.rollback()
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
-                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje, _sop_de)
+from .comun import (_clave_analisis, _clave_cubicaje, _sop_de)
 
 router = APIRouter()
 
@@ -92,7 +87,6 @@ def analizar(numero: str, body: dict):
     import re as _re
     from datetime import date as _date, datetime
     from ..analisis import calcular, en_entrega_por_modelo, oc_de_zsd
-    from ..config import BASE_DIR
     from ..db import SessionLocal
     from ..integrations import base_medidas, sap
     from ..models import Config, Medida
@@ -206,7 +200,7 @@ def analizar(numero: str, body: dict):
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
-                "recubicado": recubicado,
+                "recubicado": recubicado, "sesion_sap": sap.ultima_sesion,
                 "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
                 "export_aviso": aviso_pub or ((publicado.get("copia") or {}).get("motivo", ""))}
 

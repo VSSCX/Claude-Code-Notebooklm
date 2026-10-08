@@ -56,6 +56,13 @@ class Settings:
     # corta y sin tildes. Vacío: data\sap dentro de la instalación (con respaldo automático si no sirve).
     sap_export_dir: str = os.getenv("SAP_EXPORT_DIR", "")
 
+    # Si el analista tiene SAP abierto en más de un sistema (PRD, QAS…), el nombre del que se usa (ej. PRD).
+    # Vacío: la primera sesión con usuario iniciado.
+    sap_sistema: str = os.getenv("SAP_SISTEMA", "")
+    # Layout de ZSD001_03 por nombre (parte del texto). Vacío: el de la fila 43, como la macro del Excel
+    # (esa fila cambia de un analista a otro si tienen layouts propios: ahí hay que definir el nombre).
+    zsd_layout: str = os.getenv("ZSD_LAYOUT", "")
+
     # Copia opcional de la exportación de ZSD001_03 en otra ruta (p. ej. la carpeta de red que usaba la macro del
     # Excel), con el nombre "Qty En Entrega.xlsx". Vacío (por defecto): no se copia; la plataforma trabaja con su
     # carpeta local data\sap, que es la que siempre llega bien.

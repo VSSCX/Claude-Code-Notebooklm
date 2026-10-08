@@ -21,7 +21,7 @@ from datetime import timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 
 from .config import settings
 from .db import SessionLocal

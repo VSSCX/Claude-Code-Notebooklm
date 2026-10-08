@@ -1,22 +1,15 @@
 """Clientes, sesión, respaldos y estado del sistema."""
 import json as _json
-import shutil
-import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
 from ..config import settings
 from ..db import get_session
-from ..integrations import acciones, bases, clientes as cli_mod, maestra, medidas as med_mod
-from sqlalchemy import select
+from ..integrations import bases, clientes as cli_mod, maestra, medidas as med_mod
 
-from ..models import Archivo, Entrega
-from ..schemas import EntregaIn, PaqueteIn, PedidoIn
 
 
 
@@ -28,8 +21,6 @@ def _commit(s: Session):
         s.rollback()
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
-                    _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
 
 router = APIRouter()
 

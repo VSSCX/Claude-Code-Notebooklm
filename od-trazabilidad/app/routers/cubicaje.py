@@ -1,20 +1,15 @@
 """Cubicaje, medidas y cubicador libre."""
-import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
 from ..db import get_session
-from ..integrations import acciones, bases, clientes as cli_mod, maestra, medidas as med_mod
-from sqlalchemy import select
+from ..integrations import clientes as cli_mod, maestra, medidas as med_mod
 
-from ..models import Archivo, Entrega
-from ..schemas import EntregaIn, PaqueteIn, PedidoIn
 
 
 def _commit(s: Session):
@@ -24,7 +19,7 @@ def _commit(s: Session):
         s.rollback()
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (AJUSTES_DEFECTO, CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
+from .comun import (CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
                     _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
 
 router = APIRouter()
@@ -260,7 +255,6 @@ def get_cubicaje(numero: str, s: Session = Depends(get_session)):
 def _faltantes_de(lineas: list[dict], conoce) -> list[dict]:
     """Productos de la carga que no están en la Base de Medidas: SKU, unidades (se suman si se repite)
     y el nombre que tienen en la maestra, para que el analista sepa cuáles son y los complete."""
-    from ..integrations import maestra
     nombres = maestra.descripciones()
     out: dict[str, dict] = {}
     for l in lineas:
@@ -348,7 +342,6 @@ def cubicar(numero: str, body: dict, s: Session = Depends(get_session)):
 
 def _cubicar(numero: str, body: dict, s: Session):
     """Cubica con la carga del análisis (incluidos los ajustes manuales)."""
-    import copy as _copy
     import json as _json
     from datetime import date as _date
     from ..cubicaje.datos import cargar_cache_dims, leer_camiones
@@ -623,8 +616,6 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
 
     Con reparto por sucursal (predistribuido), las unidades por SKU son el tope de carga.
     """
-    import copy as _copy
-    import json as _json
     from datetime import date as _date
     from ..cubicaje.datos import cargar_cache_dims, leer_camiones
     from ..cubicaje.mda import Posicion

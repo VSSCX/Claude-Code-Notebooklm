@@ -85,7 +85,7 @@ function cierreAnalisis(){
   const j = UI.job; if (!j) return;
   if (j.estado === 'ok' && j.datos){
     const d = j.datos;
-    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '');
+    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
     if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
     else if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;

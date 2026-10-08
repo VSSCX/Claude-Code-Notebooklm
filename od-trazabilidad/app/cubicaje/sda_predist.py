@@ -12,11 +12,10 @@ Reglas propias de este modo (además de todo lo de SDA Stock):
 """
 from __future__ import annotations
 
-from .core import Restric
 from .datos import Dims, get_dims_for
 from .mda import Camion, Fila03, NO_ENCONTRADO, Posicion, Resultado
 from .mda_predist import FilaPredist
-from .sda import (EPS_SDA, MAX_BLOQUES_PALLET, U_SDA, Bloque, Pallet, asignar_vehiculos,
+from .sda import (EPS_SDA, U_SDA, Bloque, Pallet, asignar_vehiculos,
                   calcular_capacidades, cargar_piso, restricciones_piso, restricciones_sda,
                   ubicar_pallets, validar_pallets)
 from .vb import clng, vb_int, vb_round

@@ -1409,3 +1409,70 @@ def test_si_no_se_puede_publicar_el_motivo_es_claro_y_no_se_pierde_el_analisis(t
         assert not r["ok"] and "No se pudo publicar" in r["motivo"] and "Qty En Entrega.xlsx" in r["motivo"]
     finally:
         object.__setattr__(settings, "zsd_publicar_dir", "")
+
+
+# ---------- lo que cambia de un analista a otro en SAP ----------
+class _Layout:
+    def __init__(self, textos):
+        self.t, self.RowCount = textos, len(textos)
+
+    def GetCellValue(self, i, col):
+        return self.t[i]
+
+
+def test_layout_se_busca_por_nombre_o_se_avisa_si_la_fila_43_no_existe():
+    from app.config import settings
+    from app.integrations import sap
+    pocos = _Layout([f"Layout {i}" for i in range(10)] + ["/QTY ENTREGA"])
+    with pytest.raises(sap.ErrorSap, match="fila 43.*11 layouts"):                 # el analista con pocos layouts
+        sap._fila_layout(pocos)
+    object.__setattr__(settings, "zsd_layout", "qty entrega")
+    try:
+        assert sap._fila_layout(pocos) == 10                                      # por nombre, sin depender de la posición
+        object.__setattr__(settings, "zsd_layout", "no existe")
+        with pytest.raises(sap.ErrorSap, match="No hay un layout"):
+            sap._fila_layout(pocos)
+    finally:
+        object.__setattr__(settings, "zsd_layout", "")
+    assert sap._fila_layout(_Layout(["x"] * 60)) == 43                            # con la lista completa, como la macro
+
+
+def test_un_export_sin_las_columnas_necesarias_no_deja_la_qty_en_cero_en_silencio():
+    from app.integrations import sap
+    sap.validar_columnas([{"Material": "9", "Nombre Código de Material": "X", "Qty. En Entrega": 1}])     # ok (con tilde)
+    sap.validar_columnas([])                                                                              # sin filas: nada que validar
+    with pytest.raises(sap.ErrorSap, match="Qty. En Entrega.*Layout elegido: «MI LAYOUT»"):
+        sap.validar_columnas([{"Material": "9", "Nombre Codigo de Material": "X", "Cantidad": 1}], "MI LAYOUT")
+
+
+def test_conectar_elige_la_sesion_con_usuario_y_respeta_sap_sistema(monkeypatch):
+    import sys
+    from types import SimpleNamespace as NS
+    from app.config import settings
+    from app.integrations import sap
+
+    def ses(sis, usu):
+        return NS(Info=NS(SystemName=sis, Client="300", User=usu))
+
+    class Lista:
+        def __init__(self, items):
+            self.items, self.Count = items, len(items)
+
+        def __call__(self, i):
+            return self.items[i]
+    sin_login, qas, prd = ses("PRD", ""), ses("QAS", "ANA"), ses("PRD", "ANA")
+    con1 = NS(Children=Lista([sin_login, qas]))
+    con2 = NS(Children=Lista([prd]))
+    gui = NS(Children=Lista([con1, con2]))
+    fake = NS(client=NS(GetObject=lambda n: NS(GetScriptingEngine=gui)))
+    monkeypatch.setitem(sys.modules, "win32com", fake)
+    monkeypatch.setitem(sys.modules, "win32com.client", fake.client)
+    assert sap.conectar() is qas                                   # la primera con usuario iniciado, no la de la conexión sin login
+    object.__setattr__(settings, "sap_sistema", "prd")
+    try:
+        assert sap.conectar() is prd and sap.ultima_sesion == "PRD/300 · ANA"
+        object.__setattr__(settings, "sap_sistema", "DEV")
+        with pytest.raises(sap.ErrorSap, match="SAP_SISTEMA=DEV"):
+            sap.conectar()
+    finally:
+        object.__setattr__(settings, "sap_sistema", "")

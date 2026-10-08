@@ -9,7 +9,6 @@ Se conservan los nombres del VBA en los comentarios para poder auditar línea a 
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
