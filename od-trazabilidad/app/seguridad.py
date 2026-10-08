@@ -124,6 +124,25 @@ def limpiar_fallos(usuario: str, ip: str) -> None:
     _fallos.pop(_clave_fallos(usuario, ip), None)
 
 
+def crear_usuarios_iniciales(s: Session) -> list[str]:
+    """USUARIOS_INICIALES=usuario:clave:Nombre;usuario2:clave2;… Crea los que no existan (analistas, con clave temporal)."""
+    creados = []
+    for item in settings.usuarios_iniciales.split(";"):
+        partes = item.strip().split(":", 2)
+        if len(partes) < 2:
+            continue
+        u, clave = nombre_usuario(partes[0]), partes[1]
+        if not u or validar_clave_nueva(clave, u) or s.scalar(select(Usuario).where(Usuario.usuario == u)):
+            continue
+        nombre = (partes[2] if len(partes) > 2 else partes[0]).strip()[:60] or u
+        s.add(Usuario(usuario=u, nombre=nombre, rol="analista", clave_hash=hashear(clave), debe_cambiar_clave=True))
+        creados.append(u)
+    if creados:
+        s.commit()
+        olvidar_modo()
+    return creados
+
+
 # ---------------------------------------------------------------- sesiones
 def _huella(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()

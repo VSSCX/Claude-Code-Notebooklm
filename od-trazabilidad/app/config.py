@@ -42,6 +42,9 @@ class Settings:
     autenticacion: str = os.getenv("AUTENTICACION", "").strip().lower()
     # Administrador de partida: usuario:clave:Nombre completo. Se crea solo si todavía no hay cuentas.
     admin_inicial: str = os.getenv("ADMIN_INICIAL", "")
+    # Analistas de partida: usuario:clave:Nombre separados por ";". Al arrancar se crean los que falten (los que ya
+    # existen no se tocan) y cada uno cambia su clave la primera vez que entra.
+    usuarios_iniciales: str = os.getenv("USUARIOS_INICIALES", "")
     # Poner en 1 cuando se sirve por HTTPS: la cookie de sesión viaja solo cifrada.
     cookie_segura: bool = os.getenv("COOKIE_SEGURA", "").strip().lower() in ("1", "true", "si", "sí", "yes")
     # Horas de inactividad tras las que se pide entrar de nuevo

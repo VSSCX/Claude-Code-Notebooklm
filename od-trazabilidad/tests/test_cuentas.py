@@ -196,3 +196,17 @@ def test_ping_publico_para_monitoreo(c):
     with TestClient(app, client=("10.0.0.9", 50000)) as otro:
         r = otro.get("/api/ping")
         assert r.status_code == 200 and r.json() == {"ok": True}
+
+
+def test_usuarios_iniciales_del_env_se_crean_una_vez_y_con_clave_temporal(c):
+    from app.config import settings
+    object.__setattr__(settings, "usuarios_iniciales", "EvelynP:Elux1234;JuanS:Elux1234:Juan S.;malo:corta;EvelynP:Otra12345")
+    try:
+        with SessionLocal() as s:
+            assert seguridad.crear_usuarios_iniciales(s) == ["evelynp", "juans"]       # la clave corta y el repetido se ignoran
+            assert seguridad.crear_usuarios_iniciales(s) == []                          # idempotente
+            u = s.scalar(select(Usuario).where(Usuario.usuario == "juans"))
+            assert u.nombre == "Juan S." and u.rol == "analista" and u.debe_cambiar_clave
+            assert seguridad.verificar("Elux1234", u.clave_hash)
+    finally:
+        object.__setattr__(settings, "usuarios_iniciales", "")

@@ -138,6 +138,9 @@ def _iniciar_cuentas_y_registro():
             u = seguridad.crear_admin_inicial(s)
             if u:
                 log.info("Cuenta administradora creada: %s", u)
+            nuevos = seguridad.crear_usuarios_iniciales(s)
+            if nuevos:
+                log.info("Cuentas creadas desde el .env: %s", ", ".join(nuevos))
         registro.purgar()
     except Exception as e:  # noqa: BLE001
         log.warning("No se pudo preparar el registro o la carpeta de exportación: %s", e)
