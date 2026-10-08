@@ -56,6 +56,12 @@ class Settings:
     # corta y sin tildes. Vacío: data\sap dentro de la instalación (con respaldo automático si no sirve).
     sap_export_dir: str = os.getenv("SAP_EXPORT_DIR", "")
 
+    # Ruta fija donde queda publicada la exportación de ZSD001_03 con el nombre "Qty En Entrega.xlsx": la misma
+    # que usaba la macro del Excel, para que todo lo que se conecta a ese archivo lo encuentre siempre ahí.
+    # Poner la variable VACÍA (ZSD_PUBLICAR_DIR=) para no publicar.
+    zsd_publicar_dir: str = os.getenv(
+        "ZSD_PUBLICAR_DIR", r"\\clws0088\userelux\SalesOP\Bases Order Desk\Script Pendiente")
+
     # Carpeta con la plantilla del visor y sus librerías (three, jspdf, gltf, scania)
     visor_assets: str = os.getenv(
         "VISOR_ASSETS",

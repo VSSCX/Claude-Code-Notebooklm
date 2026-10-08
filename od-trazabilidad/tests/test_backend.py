@@ -1371,3 +1371,41 @@ def test_carpeta_de_exportacion_es_fija_y_se_comprueba_antes_de_abrir_sap(tmp_pa
         assert sap.carpeta_export(buena) == tmp_path / "fija"                # la configurada manda
     finally:
         object.__setattr__(settings, "sap_export_dir", "")
+
+
+def test_el_export_se_publica_en_la_ruta_fija_con_el_nombre_fijo(tmp_path):
+    from app.config import settings
+    from app.integrations import sap
+    pub = tmp_path / "Script Pendiente"
+    pub.mkdir()
+    local = tmp_path / "local.xlsx"
+    local.write_bytes(b"contenido-del-export")
+    object.__setattr__(settings, "zsd_publicar_dir", str(pub))
+    try:
+        assert sap.revisar_publicacion() == ""
+        r = sap.publicar_export(local)
+        assert r["ok"] and r["ruta"] == str(pub / "Qty En Entrega.xlsx")
+        assert (pub / "Qty En Entrega.xlsx").read_bytes() == b"contenido-del-export"
+        assert [f.name for f in pub.iterdir()] == ["Qty En Entrega.xlsx"]        # sin temporales ni pruebas sueltas
+        local.write_bytes(b"segundo")                                           # un análisis nuevo reemplaza al anterior
+        assert sap.publicar_export(local)["ok"] and (pub / "Qty En Entrega.xlsx").read_bytes() == b"segundo"
+        object.__setattr__(settings, "zsd_publicar_dir", str(tmp_path / "no_existe"))
+        assert "No se llega" in sap.revisar_publicacion()
+        object.__setattr__(settings, "zsd_publicar_dir", "")
+        assert sap.revisar_publicacion() == "" and sap.publicar_export(local)["omitido"]   # vacío = no publicar
+    finally:
+        object.__setattr__(settings, "zsd_publicar_dir", r"\\clws0088\userelux\SalesOP\Bases Order Desk\Script Pendiente")
+
+
+def test_si_no_se_puede_publicar_el_motivo_es_claro_y_no_se_pierde_el_analisis(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.integrations import sap
+    monkeypatch.setattr(sap.time, "sleep", lambda s: None)
+    local = tmp_path / "local.xlsx"
+    local.write_bytes(b"x")
+    object.__setattr__(settings, "zsd_publicar_dir", str(tmp_path / "red_caida"))
+    try:
+        r = sap.publicar_export(local)
+        assert not r["ok"] and "No se pudo publicar" in r["motivo"] and "Qty En Entrega.xlsx" in r["motivo"]
+    finally:
+        object.__setattr__(settings, "zsd_publicar_dir", r"\\clws0088\userelux\SalesOP\Bases Order Desk\Script Pendiente")

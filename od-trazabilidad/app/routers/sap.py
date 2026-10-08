@@ -115,6 +115,7 @@ def analizar(numero: str, body: dict):
         # descubría DESPUÉS de leer VL01N y exportar ZSD001_03, y el análisis moría justo al terminar la exportación.
         avance("0/4 Revisando conexiones")
         carpeta = sap.carpeta_export()                         # la misma de siempre, y comprobada antes de abrir SAP
+        aviso_pub = sap.revisar_publicacion()                  # la ruta fija de publicación, también antes de abrir SAP
         with SessionLocal() as ses:
             grupo, codigo = _sop_de(cliente, ses)
             # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
@@ -149,8 +150,9 @@ def analizar(numero: str, body: dict):
         avisos_zsd: list[str] = []
         # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
         nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
+        publicado: dict = {}
         filas_zsd = sap.zsd001_03(codigo, [p["sku"] for p in posiciones],
-                                  str(carpeta), nombre_zsd, avisar=avisos_zsd.append)
+                                  str(carpeta), nombre_zsd, avisar=avisos_zsd.append, publicado=publicado)
 
         avance("3/4 Calculando saldos y alertas")
         # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
@@ -204,7 +206,9 @@ def analizar(numero: str, body: dict):
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
-                "recubicado": recubicado}
+                "recubicado": recubicado,
+                "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
+                "export_aviso": aviso_pub or ("" if publicado.get("ok") or publicado.get("omitido") else publicado.get("motivo", ""))}
 
     try:
         return acciones.lanzar_python("analizar_pedido", "Analizar pedido", [numero], correr)

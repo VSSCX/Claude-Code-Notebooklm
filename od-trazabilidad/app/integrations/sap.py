@@ -443,8 +443,68 @@ def carpeta_export(base=None) -> "Path":
                    "con una ruta corta y sin tildes (ej. C:\\OrderDesk\\sap).")
 
 
-def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str, avisar=None) -> list[dict]:
-    """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios."""
+NOMBRE_PUBLICADO = "Qty En Entrega.xlsx"
+
+
+def revisar_publicacion() -> str:
+    """Antes de abrir SAP: ¿se puede escribir en la ruta fija donde queda publicado el archivo? '' si sí (o si no se publica);
+    si no, el motivo. Igual que la macro, que verificaba la carpeta antes de empezar."""
+    from pathlib import Path
+    from ..config import settings
+    destino = settings.zsd_publicar_dir.strip()
+    if not destino:
+        return ""
+    try:
+        d = Path(destino)
+        if not d.is_dir():
+            return f"No se llega a la carpeta de publicación: {destino}"
+        prueba = d / f".escritura-{time.time_ns()}"
+        prueba.write_text("ok")
+        prueba.unlink()
+        return ""
+    except OSError as e:
+        return f"Sin permiso de escritura en {destino}: {e}"
+
+
+def publicar_export(origen) -> dict:
+    """Deja una copia del archivo exportado en la ruta fija con el nombre fijo, sin que nadie lea un archivo a medias:
+    se copia con un nombre temporal en la misma carpeta y se reemplaza de una vez. Luego se comprueba tamaño y que abre.
+    Devuelve {'ok', 'ruta', 'motivo'}."""
+    import os
+    import shutil
+    from pathlib import Path
+    from ..config import settings
+    carpeta = settings.zsd_publicar_dir.strip()
+    if not carpeta:
+        return {"ok": False, "ruta": "", "motivo": "", "omitido": True}
+    destino = Path(carpeta) / NOMBRE_PUBLICADO
+    tmp = Path(carpeta) / f".{NOMBRE_PUBLICADO}.{os.getpid()}.tmp"
+    ultimo = ""
+    for intento in range(4):
+        try:
+            shutil.copyfile(origen, tmp)
+            os.replace(tmp, destino)                     # atómico: quien lea ve el archivo anterior o el nuevo, nunca uno a medias
+            if destino.stat().st_size != Path(origen).stat().st_size:
+                raise OSError("el tamaño copiado no coincide con el exportado")
+            with open(destino, "rb"):
+                pass
+            return {"ok": True, "ruta": str(destino), "motivo": ""}
+        except OSError as e:
+            ultimo = str(e)
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            time.sleep(1.0 + intento)                    # lo más común: alguien tiene el archivo abierto en Excel
+    motivo = (f"No se pudo publicar en {destino}: {ultimo}. Si alguien lo tiene abierto en Excel, que lo cierre; "
+              "si la carpeta no responde, revisa la red o la VPN.")
+    return {"ok": False, "ruta": str(destino), "motivo": motivo}
+
+
+def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str, avisar=None, publicado=None) -> list[dict]:
+    """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios.
+    SAP guarda en una carpeta LOCAL (corta, sin tildes, sin permisos de red que pidan confirmación) y de ahí se publica
+    una copia en la ruta fija de la macro. `publicado` (dict) recibe el resultado de la publicación."""
     import datetime as dt
     from pathlib import Path
 
@@ -550,7 +610,14 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
 
     _esperar_archivo(ses, destino)
     try:
-        return leer_export(destino)
+        filas = leer_export(destino)
+        pub = publicar_export(destino)                    # solo se publica un archivo que ya se pudo leer
+        if publicado is not None:
+            publicado.update(pub)
+        if not pub["ok"] and pub.get("motivo") and avisar:
+            avisar(pub["motivo"])
+        log.info("ZSD001_03 exportado (%s filas); publicación: %s", len(filas), pub)
+        return filas
     finally:
         try:
             destino.unlink()                 # ya se leyó: no queda un archivo suelto que se pueda abrir o bloquear
