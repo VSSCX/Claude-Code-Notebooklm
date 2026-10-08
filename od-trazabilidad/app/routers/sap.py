@@ -208,7 +208,7 @@ def analizar(numero: str, body: dict):
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
                 "recubicado": recubicado,
                 "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
-                "export_aviso": aviso_pub or ("" if publicado.get("ok") or publicado.get("omitido") else publicado.get("motivo", ""))}
+                "export_aviso": aviso_pub or ((publicado.get("copia") or {}).get("motivo", ""))}
 
     try:
         return acciones.lanzar_python("analizar_pedido", "Analizar pedido", [numero], correr)

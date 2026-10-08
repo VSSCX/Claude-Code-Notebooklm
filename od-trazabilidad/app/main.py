@@ -132,13 +132,15 @@ def _iniciar_cuentas_y_registro():
     from .db import SessionLocal
     try:
         registro.configurar_logs()
+        from .integrations import sap
+        sap.carpeta_export()                    # la carpeta de la exportación de SAP se crea (y comprueba) al arrancar
         with SessionLocal() as s:
             u = seguridad.crear_admin_inicial(s)
             if u:
                 log.info("Cuenta administradora creada: %s", u)
         registro.purgar()
     except Exception as e:  # noqa: BLE001
-        log.warning("No se pudo preparar el registro: %s", e)
+        log.warning("No se pudo preparar el registro o la carpeta de exportación: %s", e)
 
 
 def _cargar_conexion_bases():

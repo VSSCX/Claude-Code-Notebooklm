@@ -85,8 +85,8 @@ function cierreAnalisis(){
   const j = UI.job; if (!j) return;
   if (j.estado === 'ok' && j.datos){
     const d = j.datos;
-    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · ZSD001_03 publicado en ${d.export_ruta}` : '');
-    if (d.export_aviso) Avisos.agregar('info', 'La Qty en entrega no quedó publicada en la ruta fija', d.export_aviso, ['El análisis sí terminó: usó el archivo exportado en tu equipo.']);
+    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '');
+    if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
     else if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
     UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos';

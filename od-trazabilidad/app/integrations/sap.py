@@ -466,7 +466,7 @@ def revisar_publicacion() -> str:
         return f"Sin permiso de escritura en {destino}: {e}"
 
 
-def publicar_export(origen) -> dict:
+def publicar_export(origen, carpeta=None) -> dict:
     """Deja una copia del archivo exportado en la ruta fija con el nombre fijo, sin que nadie lea un archivo a medias:
     se copia con un nombre temporal en la misma carpeta y se reemplaza de una vez. Luego se comprueba tamaño y que abre.
     Devuelve {'ok', 'ruta', 'motivo'}."""
@@ -474,7 +474,7 @@ def publicar_export(origen) -> dict:
     import shutil
     from pathlib import Path
     from ..config import settings
-    carpeta = settings.zsd_publicar_dir.strip()
+    carpeta = str(carpeta).strip() if carpeta is not None else settings.zsd_publicar_dir.strip()
     if not carpeta:
         return {"ok": False, "ruta": "", "motivo": "", "omitido": True}
     destino = Path(carpeta) / NOMBRE_PUBLICADO
@@ -611,12 +611,18 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     _esperar_archivo(ses, destino)
     try:
         filas = leer_export(destino)
-        pub = publicar_export(destino)                    # solo se publica un archivo que ya se pudo leer
+        # solo se guarda lo que ya se pudo leer: la última exportación queda siempre en la carpeta local con nombre fijo
+        local = publicar_export(destino, Path(carpeta))
         if publicado is not None:
-            publicado.update(pub)
-        if not pub["ok"] and pub.get("motivo") and avisar:
-            avisar(pub["motivo"])
-        log.info("ZSD001_03 exportado (%s filas); publicación: %s", len(filas), pub)
+            publicado.update(local)
+        if not local["ok"] and local.get("motivo") and avisar:
+            avisar(local["motivo"])
+        red = publicar_export(destino)                    # copia opcional en otra ruta (ZSD_PUBLICAR_DIR)
+        if not red["ok"] and red.get("motivo") and avisar:
+            avisar(red["motivo"])
+        if publicado is not None and not red.get("omitido"):
+            publicado["copia"] = red
+        log.info("ZSD001_03 exportado (%s filas); local: %s; copia: %s", len(filas), local, red)
         return filas
     finally:
         try:

@@ -1317,7 +1317,7 @@ def test_exportacion_de_zsd_se_lee_solo_cuando_esta_completa_y_no_devuelve_vacio
 
     def escribir_de_a_poco():                                  # SAP crea el archivo y lo termina de llenar después
         destino.write_bytes(b"PK")
-        _t.sleep(1.2)
+        _t.sleep(0.6)
         wb = Workbook()
         ws = wb.active
         ws.append(["Material", "Nombre Codigo de Material", "Qty. En Entrega"])
@@ -1394,7 +1394,7 @@ def test_el_export_se_publica_en_la_ruta_fija_con_el_nombre_fijo(tmp_path):
         object.__setattr__(settings, "zsd_publicar_dir", "")
         assert sap.revisar_publicacion() == "" and sap.publicar_export(local)["omitido"]   # vacío = no publicar
     finally:
-        object.__setattr__(settings, "zsd_publicar_dir", r"\\clws0088\userelux\SalesOP\Bases Order Desk\Script Pendiente")
+        object.__setattr__(settings, "zsd_publicar_dir", "")
 
 
 def test_si_no_se_puede_publicar_el_motivo_es_claro_y_no_se_pierde_el_analisis(tmp_path, monkeypatch):
@@ -1408,4 +1408,4 @@ def test_si_no_se_puede_publicar_el_motivo_es_claro_y_no_se_pierde_el_analisis(t
         r = sap.publicar_export(local)
         assert not r["ok"] and "No se pudo publicar" in r["motivo"] and "Qty En Entrega.xlsx" in r["motivo"]
     finally:
-        object.__setattr__(settings, "zsd_publicar_dir", r"\\clws0088\userelux\SalesOP\Bases Order Desk\Script Pendiente")
+        object.__setattr__(settings, "zsd_publicar_dir", "")
