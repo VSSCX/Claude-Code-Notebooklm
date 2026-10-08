@@ -12,7 +12,7 @@ const VISTAS=['pedidos','resumen','diagnostico'];
 const S={fa:false,u:1,orden:{det:null,crit:null,canal:null},data:null,version:'',view:VISTAS.includes(location.hash.slice(1))?location.hash.slice(1):(VISTAS.includes(leer('vista'))?leer('vista'):'pedidos'),poll:5,opts:null,req:0,err:null,mon:null,revisadoAt:null,
   vistos:new Set(),vistosInit:false,prevTarj:null,filtros:null,
   tema:['light','dark'].includes(leer('tema'))?leer('tema'):'auto',tv:leer('tv')==='1',subs:{},pintada:null,per:'auto',mas:false,dr:null};
-const VACIO=()=>({canal:[],cliente:[],status:[],sla:[],buscar:'',fecha_ini:null,fecha_fin:null,...INICIAL()});
+const VACIO=()=>({canal:[],cliente:[],clasif2:[],status:[],sla:[],buscar:'',fecha_ini:null,fecha_fin:null,...INICIAL()});
 S.filtros=VACIO();
 
 /* ============ período: al abrir, Pedidos VTEX muestra solo el mes en curso (se puede mirar hacia atrás) ============
@@ -43,6 +43,15 @@ function morph(el,html){
 }
 
 /* ============ carga ============ */
+async function bajarCSV(url,body,fallback){   // pide un CSV al servidor y lo descarga; avisa si falla
+  try{
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){const j=await r.json().catch(()=>({}));toast('No se pudo exportar',j.error||'Intenta de nuevo');return;}
+    const cd=r.headers.get('Content-Disposition')||'',nom=(cd.match(/filename="([^"]+)"/)||[])[1]||fallback;
+    const u=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=u;a.download=nom;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);
+    const n=r.headers.get('X-Filas');if(n)toast('Exportación lista',fmt(n)+' pedidos en '+nom);
+  }catch(e){toast('No se pudo exportar','No hay conexión con el servidor.');}
+}
 function cuerpoFiltros(){   // los filtros tal como se mandan al servidor (los usa el tablero y las ventas por clasificación)
   const body={...S.filtros}; if(S.view!=='pedidos') body.alcance='todos';
   if(body.buscar){body.alcance='todos';body.bodega=[];body.fecha_ini=null;body.fecha_fin=null;}   // una busqueda puntual ignora el alcance, la bodega y el periodo

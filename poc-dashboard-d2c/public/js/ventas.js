@@ -5,7 +5,7 @@ S.vt={estado:'cargando',data:null,zoom:false,sel:null,prods:null,req:0,opener:nu
 const ventaTxt=n=>money(n);
 
 async function pedirVentas(clasif){
-  const body={...cuerpoFiltros()};if(clasif)body.clasif2=clasif;
+  const body={...cuerpoFiltros()};if(clasif)body.zoom_clasif=clasif;
   const r=await fetch('/api/ventas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   return r.json();
 }
@@ -39,7 +39,7 @@ function pintarVentas(intento=0){
   const v=S.vt;if(v.estado!=='ok'||!v.data)return;
   const el=document.getElementById('cClas');   // la tarjeta se arma después de la carga: si aún no tiene alto, se espera al siguiente cuadro
   if(el&&!el.parentElement.clientHeight&&intento<6){requestAnimationFrame(()=>pintarVentas(intento+1));return;}
-  miniBar('cClas',{labels:v.data.clasif.map(c=>c.nombre),valores:v.data.clasif.map(c=>c.venta),total:v.data.clasif.length},css('--primary'),null,ventaTxt);
+  miniBar('cClas',{labels:v.data.clasif.map(c=>c.nombre),valores:v.data.clasif.map(c=>c.venta),total:v.data.clasif.length},css('--primary'),'clasif2',ventaTxt);   // clic en una barra: filtra todo el tablero por esa clasificación
 }
 
 /* ---------- zoom: clasificaciones a la izquierda, productos de la elegida a la derecha ---------- */
@@ -104,19 +104,20 @@ function pintarZoom(){
   if(document.getElementById('zClas')){const L=d.clasif.map(c=>c.nombre);barrasZoom('zClas',L,d.clasif.map(c=>c.venta),css('--primary'),L.indexOf(v.sel),elegirClasif);}
   if(document.getElementById('zProd')&&v.prods){const P=v.prods.productos.slice(0,30);barrasZoom('zProd',P.map(p=>p.producto),P.map(p=>p.venta),css('--primary'),-1,null);}
 }
-async function exportarVentas(cual){
-  const body={...cuerpoFiltros()};if(cual==='sel'&&S.vt.sel)body.clasif2=S.vt.sel;
-  try{
-    const r=await fetch('/api/ventas/exportar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok){const j=await r.json().catch(()=>({}));toast('No se pudo exportar',j.error||'Intenta de nuevo');return;}
-    const cd=r.headers.get('Content-Disposition')||'',nom=(cd.match(/filename="([^"]+)"/)||[])[1]||'ventas.csv';
-    const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download=nom;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
-  }catch(e){toast('No se pudo exportar','No hay conexión con el servidor.');}
+function exportarVentas(cual){
+  const body={...cuerpoFiltros()};if(cual==='sel'&&S.vt.sel)body.zoom_clasif=S.vt.sel;
+  return bajarCSV('/api/ventas/exportar',body,'ventas.csv');
+}
+function exportarPedidos(que){   // todos los pedidos que dejan los filtros (no solo las filas que se ven)
+  const body={...cuerpoFiltros()};
+  if(que==='crit'){body.criticos=true;body.orden_crit=S.orden.crit;}else body.orden_det=S.orden.det;
+  return bajarCSV('/api/pedidos/exportar',body,'pedidos.csv');
 }
 document.addEventListener('click',ev=>{
   const z=ev.target.closest('[data-zoom]');if(z){abrirZoom(z);return;}
   if(ev.target.closest('[data-zoom-cerrar]')){cerrarZoom(true);return;}
   const e=ev.target.closest('[data-vt-exp]');if(e){exportarVentas(e.dataset.vtExp);return;}
+  const p=ev.target.closest('[data-exp-ped]');if(p){exportarPedidos(p.dataset.expPed);return;}
 });
 document.addEventListener('change',ev=>{const s=ev.target.closest('[data-zoom-sel]');if(s){if(s.value)elegirClasif(s.value);else{S.vt.sel=null;S.vt.prods=null;renderZoom();}}});
 document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&S.vt.zoom){ev.preventDefault();cerrarZoom(true);}});

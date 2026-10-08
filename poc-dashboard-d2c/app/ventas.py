@@ -10,6 +10,7 @@ import threading
 import pandas as pd
 
 from . import maestra, servicio
+from .exportar import a_csv
 
 _LOCK = threading.Lock()
 _CACHE: dict = {"version": None, "items": {}}      # resultados ya calculados por filtros, validos mientras no cambien los datos
@@ -46,7 +47,7 @@ def _base(filtros: dict):
 
 def ventas(filtros: dict, clasif: str | None = None) -> dict:
     """Ventas por clasificacion 2 y, si se pide una, los productos de esa clasificacion."""
-    filtros = {k: v for k, v in (filtros or {}).items() if k not in ("clasif2", "orden_det", "orden_crit")}
+    filtros = {k: v for k, v in (filtros or {}).items() if k not in ("clasif2", "zoom_clasif", "orden_det", "orden_crit")}      # la propia seleccion no filtra su grafico
     llave = repr(sorted(filtros.items(), key=lambda kv: kv[0])) + "|" + str(clasif)
     version = servicio.version()
     with _LOCK:
@@ -76,13 +77,11 @@ def ventas(filtros: dict, clasif: str | None = None) -> dict:
 
 def exportar_csv(filtros: dict, clasif: str | None = None) -> str:
     """CSV (punto y coma, UTF-8 con BOM: abre bien en Excel en espanol) con Clasif2 | Producto | Venta; una sola clasificacion o todas."""
-    filtros = {k: v for k, v in (filtros or {}).items() if k not in ("clasif2", "orden_det", "orden_crit")}
+    filtros = {k: v for k, v in (filtros or {}).items() if k not in ("clasif2", "zoom_clasif", "orden_det", "orden_crit")}
     m, err, _ = _base(filtros)
     if m is None:
         raise ValueError(err)
     if clasif:
         m = m[m["Clasif2"] == clasif]
     t = m.groupby(["Clasif2", "Producto"])["Venta"].sum().reset_index().sort_values(["Clasif2", "Venta"], ascending=[True, False])
-    c = lambda v: ('"' + str(v).replace('"', '""') + '"') if any(x in str(v) for x in ';"\n') else str(v)  # noqa: E731
-    filas = ["Clasif2;Producto;Venta"] + [f"{c(r.Clasif2)};{c(r.Producto)};{r.Venta:.0f}" for r in t.itertuples()]
-    return "\ufeff" + "\r\n".join(filas) + "\r\n"
+    return a_csv(["Clasif2", "Producto", "Venta"], [(r.Clasif2, r.Producto, f"{r.Venta:.0f}") for r in t.itertuples()])

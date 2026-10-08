@@ -10,6 +10,9 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v3.4: se pueden exportar a CSV los pedidos segun los filtros (Resumen, Pedidos y Diagnostico); hacer clic en una
+clasificacion de "Ventas por Clasif2" filtra todo el tablero; el asistente entiende clasificaciones ("stock de refrigeradores"),
+mas formas de preguntar por stock, cobertura en dias y sugiere preguntas parecidas cuando no entiende.
 Novedades v3.3: el stock se cruza por codigo SAP (producto -> codigo -> stock VTEX) con codigos normalizados (ceros a la izquierda),
 tambien para productos de la maestra sin ventas; si falta, el asistente explica por que.
 Novedades v3.2: "Ventas por Clasif2" encuentra sola la maestra de productos y la venta es el monto del pedido.
@@ -44,7 +47,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "3.3"
+VERSION = "3.4"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

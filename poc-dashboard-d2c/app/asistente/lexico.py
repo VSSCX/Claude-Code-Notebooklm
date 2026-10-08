@@ -24,7 +24,7 @@ han habido algun alguno alguna distintos diferentes compraron tuvieron entrega e
 P_AYUDA = r"\b(ayuda|ayudame|que puedes|que sabes|que se puede|que preguntas|que datos|como funciona|que haces|para que sirves)\b"
 P_SALUDO = r"^\s*(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|saludos|gracias)\b"
 P_INFO = r"hasta cuando|ultima actualizacion|ultima carga|datos actualizados|desde cuando|cuando fue el ultimo pedido|ultimo pedido|hay datos"
-P_STOCK = r"\bstock\b|disponibilidad|disponible|inventario|existencias?|agotad\w*|quedan"
+P_STOCK = r"\bstock\b|disponibilidad|disponible|inventario|existencias?|agotad\w*|\bquedan?\b|cobertura|(?:cuant\w+\s+)?(?:hay|tenemos|tengo|quedan?)\s+(?:de|en bodega)\b|\bunidades en bodega"
 P_LISTAR = r"\b(list\w*|muestr\w*|mostrar|dam?e|dime|indi\w+|detall\w*|cuales|enumer\w*|ver)\b"
 P_CONTAR = r"\b(cuantos|cuantas|cuanto|total|cantidad|numero de)\b"
 P_ENTIDAD_LISTA = r"\b(pedidos?|ordenes|orden|pvs?|lineas|productos)\b"

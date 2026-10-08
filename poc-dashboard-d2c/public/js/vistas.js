@@ -24,7 +24,7 @@ function renderSlicers(){
   const act=[];
   if(f.alerta)act.push({bws:'Atención BWS',pos:'POST Fechado',mkp:'Atención MKP',fac:'Integración'}[f.alerta]);
   if(f.tarjeta)act.push({ing:'Órdenes Integradas',noing:'Órdenes Sin PV',canc:'Órdenes Canceladas'}[f.tarjeta]);
-  ['canal','cliente','status','sla'].forEach(k=>{if(f[k][0])act.push(({canal:'Canal',cliente:'Cliente',status:'Status',sla:'SLA'})[k]+' '+f[k][0]);});
+  ['canal','cliente','clasif2','status','sla'].forEach(k=>{if(f[k][0])act.push(({canal:'Canal',cliente:'Cliente',clasif2:'Clasificación',status:'Status',sla:'SLA'})[k]+' '+f[k].join(', '));});
   if(!igual(f.bodega,BASE))act.push('Bodega '+(f.bodega.length?f.bodega.join(', '):'todas'));
   if(f.buscar)act.push('Búsqueda “'+f.buscar+'”');
   const etqPer=pe==='mes'?'mes en curso':pe==='mes_ant'?'mes anterior':pe==='30'?'últimos 30 días':pe==='todo'?'todo el período':(f.fecha_ini===f.fecha_fin?fd(f.fecha_ini):fd(f.fecha_ini)+' a '+fd(f.fecha_fin));
@@ -129,7 +129,7 @@ function vistaPedidos(){
       <section class="card"><div class="tl-head cap"><span>Tarjeta</span><span>Órdenes</span></div>${tiles}</section>
       <section class="card"><div class="card-h"><h2>Causa pendiente</h2></div><div class="card-b flush" tabindex="0">${causa}</div></section>
     </div>
-    ${card('a-tabla','Detalle de pedidos',fmt(d.n_filtrado)+' pedidos'+(d.detalle.length>=500?', primeros 500':'')+descOrden('det'),tablaDetalle())}
+    ${card('a-tabla','Detalle de pedidos',fmt(d.n_filtrado)+' pedidos'+(d.detalle.length>=500?', primeros 500':'')+descOrden('det')+`<button class="ibtn" data-exp-ped="det" aria-label="Exportar a CSV todos los pedidos que dejan los filtros" title="Exportar a CSV todos los pedidos que dejan los filtros">${ico('descarga',16)}</button>`,tablaDetalle())}
     <div class="charts3 a-graf">${chartCard('','Pedidos por SLA Type','cSla',d.g_sla)}${chartCard('','Pedidos por Cliente','cCli',d.g_cli)}${cardVentas()}</div>
     ${card('a-entr','Matriz por día de entrega estimada','<span class="lg"><i class="r"></i>vencido</span><span class="lg"><i class="a"></i>vence hoy</span><span>(Integrado · Pendiente)</span>',tablaEntrega(),'fit')}
   </div>`;
@@ -146,7 +146,7 @@ function vistaResumen(){
   return `<div class="screen resumen">
     <div class="kpis a-kpi">${band}</div>
     ${card('a-comp','Pedidos por mes y estado','% de los pedidos de cada mes',cuerpo(cp.meses.length,'cComp','Pedidos por mes y estado','','Sin datos para los filtros actuales'))}
-    ${card('a-crit','Facturado en SAP, pendiente en VTEX',`${fmt(d.criticos_total.n)} pedidos, ${money(d.criticos_total.monto)}`,tablaCriticos())}
+    ${card('a-crit','Facturado en SAP, pendiente en VTEX',`${fmt(d.criticos_total.n)} pedidos, ${money(d.criticos_total.monto)}<button class="ibtn" data-exp-ped="crit" aria-label="Exportar a CSV todos los pedidos facturados en SAP y pendientes en VTEX" title="Exportar a CSV todos los pedidos facturados en SAP y pendientes en VTEX">${ico('descarga',16)}</button>`,tablaCriticos())}
     ${card('a-canal','Riesgo por canal','',tablaCanal(),'fit')}
     ${card('a-cierre','% Cumplimiento al cierre y antigüedad prom. al cierre por mes','solo meses ya cerrados',ci.meses.length===1?cierreUno(ci):cuerpo(ci.meses.length,'cCierre','% Cumplimiento al cierre y antigüedad promedio por mes','Aún no hay meses cerrados','El primer punto aparece el día 1 del mes siguiente, cuando el mes termina.'))}
   </div>`;
@@ -164,7 +164,7 @@ function vistaDiagnostico(){
     ${chartCard('a-c1','No integrados por cliente','cNoInt',d.g_noint,'Sin pedidos no integrados','Todo lo filtrado está en SAP.')}
     ${card('a-c2','Estado de los pedidos por día','',`<div class="chart-wrap">${m.fechas.length?chartBox('cDiaEst','Estado de los pedidos por día'):vacio('','Sin datos para los filtros actuales')}</div>`)}
     ${card('a-mx','Pedidos por día de creación','por estado',tablaCreacion())}
-    ${card('a-det','Detalle de pedidos',fmt(d.n_filtrado)+' pedidos'+descOrden('det'),tablaDetalle())}
+    ${card('a-det','Detalle de pedidos',fmt(d.n_filtrado)+' pedidos'+descOrden('det')+`<button class="ibtn" data-exp-ped="det" aria-label="Exportar a CSV todos los pedidos que dejan los filtros" title="Exportar a CSV todos los pedidos que dejan los filtros">${ico('descarga',16)}</button>`,tablaDetalle())}
   </div>`;
 }
 

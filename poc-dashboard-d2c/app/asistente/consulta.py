@@ -333,6 +333,8 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
     lin, _ = lin_fn()
     cat = catalogo.de_union(lin, maestra.cargar()[0])
     pend = lin.merge(dim.loc[dim["Status"] == "ready-for-handling", ["Sequence"]], on="Sequence").groupby("SKU")["Qty"].sum()
+    rec = lin.merge(dim.loc[(dim["Status"] != "canceled") & (dim["Creation_Date"] >= hoy - timedelta(days=13)), ["Sequence"]], on="Sequence")
+    diaria = rec.groupby("SKU")["Qty"].sum() / 14                       # venta diaria promedio de los ultimos 14 dias
     chips = ["Stock VTEX = VTEX − Reservado"]
     productos: list[dict] = []
     if plan["producto"] or plan["sku"]:
@@ -345,6 +347,7 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
             notas.append("Coincidencia aproximada: no todas las palabras calzan con un producto.")
         s = pd.DataFrame({"SKU": skus}).merge(st, on="SKU", how="left")           # un renglon por producto, haya o no stock cargado
         s["Producto"], s["Pend"] = s["SKU"].map(cat.desc).fillna(""), s["SKU"].map(pend).fillna(0.0)
+        s["Cobertura"] = s["Disponible"] / s["SKU"].map(diaria)
         chips.append(productos[0]["descripcion"] + (f" y {len(productos) - 1} más" if len(productos) > 1 else ""))
         sin_dato = s[s["Disponible"].isna()]
         if len(sin_dato):
@@ -355,6 +358,7 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
         s = s.sort_values("Disponible", na_position="last")
     else:
         s = st.assign(Pend=st["SKU"].map(pend).fillna(0.0), Producto=st["SKU"].map(cat.desc).fillna(""))
+        s["Cobertura"] = s["Disponible"] / s["SKU"].map(diaria)
         sin = s[(s["Disponible"] <= 0)]
         con_demanda = sin[sin["Pend"] > 0]
         s = (con_demanda if len(con_demanda) else sin).sort_values("Pend", ascending=False)
@@ -364,8 +368,10 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
     s = s.head(plan["top"] or 30)
     num = lambda v: None if pd.isna(v) else float(v)  # noqa: E731
     cols = [{"n": "Código SAP", "f": "t"}, {"n": "Producto", "f": "t"}, {"n": "Stock VTEX", "f": "n"}, {"n": "Reservado", "f": "n"},
-            {"n": "Disponible", "f": "n"}, {"n": "Unid. en pedidos pendientes", "f": "n"}]
-    filas = [[a, b, num(c), num(d), num(e), float(f)] for a, b, c, d, e, f in zip(s["SKU"], s["Producto"], s["VTEX"], s["Reservado"], s["Disponible"], s["Pend"])]
+            {"n": "Disponible", "f": "n"}, {"n": "Unid. en pedidos pendientes", "f": "n"}, {"n": "Cobertura (días, venta 14 d)", "f": "n"}]
+    cob = lambda v: None if pd.isna(v) or v == float("inf") else round(float(v), 1)  # noqa: E731
+    filas = [[a, b, num(c), num(d), num(e), float(f), cob(g)] for a, b, c, d, e, f, g in
+             zip(s["SKU"], s["Producto"], s["VTEX"], s["Reservado"], s["Disponible"], s["Pend"], s["Cobertura"])]
     if total > len(filas):
         notas.append(f"Se muestran {len(filas)} de {total}.")
     return {"ok": True, "tipo": "stock", "valor": valor, "formato": "n", "unidad": titulo, "tabla": {"cols": cols, "filas": filas},

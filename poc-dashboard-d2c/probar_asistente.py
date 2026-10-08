@@ -23,6 +23,7 @@ fallos = []
 
 
 def p(q, previo=None):
+    asistente.motor._LLAMADAS.clear()          # el limite por minuto no aplica a la bateria de pruebas
     return asistente.responder(q, previo)
 
 
@@ -137,6 +138,20 @@ fila = pd.DataFrame([["CH", "O1", "1", "9", 2, "/1/", "240096077", "Secadora 9Kg
 d_it, inf = items.normalizar(fila, pd.Series({"1": 38798.0}))
 prueba("columnas reales de OrderItems (SKU_Selling_Price en centavos)", inf["mapa"]["precio_unitario"] == "SKU_Selling_Price" and inf["centavos"] and cerca(d_it["Monto"].iloc[0], 38798))
 
+print("Exportar pedidos segun los filtros")
+flt = {"alcance": "todos", "cliente": ["MELI"], "fecha_ini": "2026-08-01", "fecha_fin": "2026-08-11"}
+csv_p, n_p = servicio.exportar_pedidos(flt)
+fil = csv_p.lstrip("\ufeff").strip().split("\r\n")
+esp_n = int(((dim["SalesChannelName"] == "MELI") & (dim["Creation_Date"] >= "2026-08-01") & (dim["Creation_Date"] <= "2026-08-11")).sum())
+prueba("exporta TODOS los pedidos del filtro (no solo las 500 filas de la tabla)", n_p == esp_n and len(fil) == esp_n + 1 and esp_n > 500, f"{n_p} vs {esp_n}")
+prueba("encabezados y suma del monto correctos", fil[0].startswith("Sequence;Orden VTEX;Creación;Estado") and
+       cerca(sum(float(x.split(";")[12]) for x in fil[1:]), dim[(dim["SalesChannelName"] == "MELI") & (dim["Creation_Date"] >= "2026-08-01") & (dim["Creation_Date"] <= "2026-08-11")]["Total_Value"].sum()))
+csv_c, n_c = servicio.exportar_pedidos({"alcance": "todos"}, True)
+prueba("criticos: solo facturados en SAP y pendientes en VTEX", n_c == int((dim["Facturado Sin Despacho"] == "Facturado sin despacho").sum()) and n_c > 0)
+from app import exportar  # noqa: E402
+
+prueba("un texto que parece formula no se ejecuta en Excel", exportar.celda("=1+1") == "\'=1+1" and exportar.celda("-5") == "-5" and exportar.celda('a;b') == '"a;b"')
+
 print("Memoria del asistente (historial y valoracion)")
 import tempfile  # noqa: E402
 
@@ -219,6 +234,17 @@ servicio._CACHE["stock"] = pd.DataFrame(columns=["codigoSap", "VTEX", "Reservado
 prueba("sin datos de stock, explica por que", p("stock del med165b")["ok"] is False)
 servicio._CACHE["stock"] = stock_orig
 maestra.cargar = mae_orig
+
+# --- clasificacion como entidad, stock con mas frases y cobertura
+for q in ("stock de refrigeradores", "cuantas hay de refrigeradores", "tenemos de med165b", "quedan lavadoras"):
+    r = p(q)
+    prueba(f"stock: «{q}»", r["ok"] and r.get("tipo") == "stock" and len(r["tabla"]["filas"]) >= 1, r.get("texto"))
+r = p("stock de refrigeradores")
+prueba("el stock trae cobertura en dias", r["tabla"]["cols"][-1]["n"].startswith("Cobertura") and len(r["tabla"]["filas"]) > 1)
+r = p("ventas de refrigeradores ultimos 7 dias")
+prueba("la clasificacion filtra las ventas", r["ok"] and "Refrigerador" in r["texto"], r.get("texto"))
+r = p("asdf qwer zxcv")
+prueba("si no entiende, ofrece ejemplos", r["ok"] is False and r.get("ejemplos"))
 
 print()
 if fallos:

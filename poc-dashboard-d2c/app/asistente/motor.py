@@ -45,8 +45,11 @@ def _catalogo():
         return None
 
 
-def _no_entendi(motor: str, aviso) -> dict:
-    return {"ok": False, "texto": "No entendí la pregunta. Puedo contar, sumar, listar y desglosar pedidos, unidades y montos por producto, "
+def _no_entendi(motor: str, aviso, q: str = "") -> dict:
+    import difflib
+    cerca = difflib.get_close_matches(sa(q), [sa(e) for e in EJEMPLOS], n=1, cutoff=.35) if q else []
+    pista = f" ¿Quisiste decir «{next(e for e in EJEMPLOS if sa(e) == cerca[0])}»?" if cerca else ""
+    return {"ok": False, "texto": "No entendí la pregunta." + pista + " Puedo contar, sumar, listar y desglosar pedidos, unidades y montos por producto, "
             "cliente, bodega, status y período, y revisar el stock. Por ejemplo:", "ejemplos": EJEMPLOS, "motor": motor, "aviso": aviso}
 
 
@@ -112,7 +115,7 @@ def _responder(q: str, previo: dict | None) -> tuple[dict, dict]:
         if not ban["entendio"]:
             parecida = memoria.parecidas(qn, 1, .7)               # no se entiende: se prueba con una pregunta parecida ya validada
             if not parecida:
-                return _no_entendi(motor, aviso), {"plan": None, "via": via}
+                return _no_entendi(motor, aviso, q), {"plan": None, "via": via}
             plan, via = esquema.validar(parecida[0]["plan"], K), "memoria"
             nota_mem = f"Interpreté tu pregunta como «{parecida[0]['q']}», parecida a una que ya te sirvió."
     plan = esquema.validar(plan, K)
@@ -134,7 +137,7 @@ def _responder(q: str, previo: dict | None) -> tuple[dict, dict]:
     solo_producto = plan["producto"] and not plan["accion"] and not any(
         plan[k] for k in ("periodo", "metrica", "agrupar", "estado", "cliente", "canal", "bodega", "sla"))
     if res.get("sin_producto") and via == "reglas" and solo_producto:      # una palabra suelta que no es un producto: no se entendio
-        return _no_entendi(motor, aviso), {"plan": None, "via": via}
+        return _no_entendi(motor, aviso, q), {"plan": None, "via": via}
     notas = res.setdefault("notas", [])
     if nota_mem:
         notas.append(nota_mem)

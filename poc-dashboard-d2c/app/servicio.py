@@ -49,7 +49,7 @@ ALERTAS = {
     "mkp": {"col": "Alerta MKP", "val": "Atención MKP", "ov": {"bodega": BASE_BODEGA}},
     "fac": {"col": "Facturado Sin Despacho", "val": "Facturado sin despacho", "ov": {"bodega": BASE_BODEGA}},
 }
-DIM_KEYS = ("canal", "cliente", "status", "sla", "sla_excluir", "bodega", "buscar")
+DIM_KEYS = ("canal", "cliente", "status", "sla", "sla_excluir", "bodega", "buscar", "clasif2")
 
 
 # --------------------------------------------------------------------------- utilidades
@@ -244,6 +244,26 @@ def _sel_mes(f: dict) -> bool:
     return len(ini) == 10 and len(fin) == 10 and ini[:7] == fin[:7] and ini[8:10] == "01"
 
 
+_CLAS_SEQ: dict = {"version": None, "d": {}}
+
+
+def secuencias_clasif2(nombres) -> set:
+    """Sequence de los pedidos con al menos un producto de esas clasificaciones 2 (maestra de productos x lineas), por version de datos."""
+    from . import maestra
+    claves = tuple(sorted(str(x) for x in (nombres if isinstance(nombres, (list, tuple)) else [nombres])))
+    if _CLAS_SEQ["version"] != _CACHE["version"]:
+        _CLAS_SEQ.update(version=_CACHE["version"], d={})
+    if claves not in _CLAS_SEQ["d"]:
+        mae, err, _ = maestra.cargar()
+        if mae is None:
+            raise RuntimeError("No se puede filtrar por clasificación: " + (err or "falta la maestra de productos"))
+        _, _, lin, _ = lineas_todas()
+        m = lin.merge(mae[["SKU", "Clasif2"]], on="SKU", how="left")
+        m["Clasif2"] = m["Clasif2"].fillna("Sin clasificar")
+        _CLAS_SEQ["d"][claves] = set(m.loc[m["Clasif2"].isin(claves), "Sequence"])
+    return _CLAS_SEQ["d"][claves]
+
+
 def _aplicar_filtros(dim: pd.DataFrame, f: dict) -> pd.DataFrame:
     d = dim
     if f.get("alcance") == "abiertos":                       # = filtro de pagina Trazabilidad "En seguimiento"
@@ -260,6 +280,8 @@ def _aplicar_filtros(dim: pd.DataFrame, f: dict) -> pd.DataFrame:
         d = d[d["Status"].isin(f["status"])]
     if f.get("sla"):
         d = d[d["SLA_Type"].isin(f["sla"])]
+    if f.get("clasif2"):                                     # clic en una barra de "Ventas por Clasif2": pedidos que traen productos de esa clasificacion
+        d = d[d["Sequence"].isin(secuencias_clasif2(f["clasif2"]))]
     q = str(f.get("buscar") or "").strip()
     if q:
         m = (d["Sequence"].astype(str).str.contains(q, case=False, regex=False, na=False)
@@ -581,6 +603,34 @@ def estado_stock() -> dict:
     s = _CACHE.get("stock")
     return {"filas": 0 if s is None else int(len(s)), "error": queries.ERROR_STOCK[0] if queries.ERROR_STOCK else None,
             "ejemplo_codigos": [] if s is None or not len(s) else [str(x) for x in s["codigoSap"].head(3)]}
+
+
+COLS_EXPORT = [("Sequence", "Sequence"), ("Order", "Orden VTEX"), ("Creation_Date", "Creación"), ("Estado Pedido", "Estado"), ("Status", "Status VTEX"),
+               ("Canal", "Canal"), ("SalesChannelName", "Cliente"), ("SLA_Type", "SLA Type"), ("warehouse", "Bodega"),
+               ("Shipping_Estimate_Date", "Entrega estimada"), ("Pedido SAP", "Pedido SAP"), ("Unidades", "Unidades"), ("Total_Value", "Monto"),
+               ("Causa Pendiente", "Causa pendiente"), ("Dias Facturado Pendiente", "Días facturado pendiente")]
+
+
+def exportar_pedidos(filtros: dict, criticos: bool = False) -> tuple[str, int]:
+    """Todos los pedidos que dejan los filtros del tablero (no solo las 500 filas de la tabla), en CSV. -> (csv, cantidad)."""
+    from .exportar import a_csv
+    dim, _, _ = _snapshot()
+    f = dict(filtros or {})
+    d = _aplicar_filtros(dim, f)
+    if criticos:
+        d = d[d["Facturado Sin Despacho"] == "Facturado sin despacho"]
+        o = _ordenar(d.copy(), f.get("orden_crit"), ORDEN_CRIT)
+        d = o if o is not None else d.sort_values("Dias Facturado Pendiente", ascending=False)
+    else:
+        o = _ordenar(d.copy(), f.get("orden_det"), ORDEN_DET)
+        d = o if o is not None else d.sort_values(["Creation_Date", "Sequence"], ascending=[False, False])
+    pend = (d["Status"] == "ready-for-handling") & (d["Estado Ingreso"] == "Ingresado")
+    d = d.assign(**{"Causa Pendiente": d["Causa Pendiente"].where(pend, "")})
+    fecha = lambda s: s.dt.strftime("%Y-%m-%d").fillna("")  # noqa: E731
+    d = d.assign(Creation_Date=fecha(d["Creation_Date"]), Shipping_Estimate_Date=fecha(d["Shipping_Estimate_Date"]))
+    cols = [c for c, _ in COLS_EXPORT]
+    filas = d[cols].astype(object).where(d[cols].notna(), "").itertuples(index=False, name=None)
+    return a_csv([n for _, n in COLS_EXPORT], filas), int(len(d))
 
 
 def stock_vtex():

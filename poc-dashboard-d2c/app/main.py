@@ -105,7 +105,7 @@ async def api_ventas(request: Request):
     """Ventas por Clasif2 de la maestra de productos (y por producto de una clasificacion), con los filtros del tablero."""
     c = await _cuerpo(request)
     try:
-        return await run_in_threadpool(ventas.ventas, c, c.get("clasif2") if isinstance(c.get("clasif2"), str) else None)
+        return await run_in_threadpool(ventas.ventas, c, c.get("zoom_clasif") if isinstance(c.get("zoom_clasif"), str) else None)
     except Exception as e:  # noqa: BLE001
         return _error(e)
 
@@ -114,7 +114,7 @@ async def api_ventas(request: Request):
 async def api_ventas_exportar(request: Request):
     """CSV Clasif2 | Producto | Venta de una clasificacion (clasif2) o de todas (sin clasif2), respetando los filtros."""
     c = await _cuerpo(request)
-    cl = c.get("clasif2") if isinstance(c.get("clasif2"), str) else None
+    cl = c.get("zoom_clasif") if isinstance(c.get("zoom_clasif"), str) else None
     try:
         csv = await run_in_threadpool(ventas.exportar_csv, c, cl)
     except ValueError as e:
@@ -124,6 +124,20 @@ async def api_ventas_exportar(request: Request):
     nombre = "ventas-" + (re.sub(r"[^A-Za-z0-9]+", "-", cl).strip("-").lower() if cl else "todas") + ".csv"
     return Response(content=csv.encode("utf-8"), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@app.post("/api/pedidos/exportar")
+async def api_pedidos_exportar(request: Request):
+    """CSV con TODOS los pedidos que dejan los filtros del tablero (criticos=true: los facturados en SAP y pendientes en VTEX)."""
+    c = await _cuerpo(request)
+    crit = c.pop("criticos", False) is True
+    try:
+        csv, n = await run_in_threadpool(servicio.exportar_pedidos, c, crit)
+    except Exception as e:  # noqa: BLE001
+        return _error(e)
+    nombre = "pedidos-facturados-pendientes.csv" if crit else "pedidos.csv"
+    return Response(content=csv.encode("utf-8"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"', "X-Filas": str(n)})
 
 
 @app.get("/api/chat/motor")

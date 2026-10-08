@@ -80,10 +80,10 @@ def de_union(lin: pd.DataFrame, mae: pd.DataFrame | None) -> Catalogo:
     if _UNION["k"] != k:
         a = lin.drop_duplicates("SKU")[["SKU", "Descripcion"]].rename(columns={"Descripcion": "Linea"})
         if mae is not None and len(mae):
-            b = mae[["SKU", "Producto"]].rename(columns={"Producto": "Maestra"})
+            b = mae[["SKU", "Producto", "Clasif2"]].rename(columns={"Producto": "Maestra"})
             u = a.merge(b, on="SKU", how="outer").fillna("")
             u["Descripcion"] = u["Maestra"].where(u["Maestra"] != "", u["Linea"])
-            u["Busqueda"] = (u["Maestra"] + " " + u["Linea"]).str.strip()
+            u["Busqueda"] = (u["Maestra"] + " " + u["Linea"] + " " + u["Clasif2"].astype(str)).str.strip()     # tambien se busca por clasificacion ("refrigeradores")
         else:
             u = a.assign(Descripcion=a["Linea"], Busqueda=a["Linea"])
         _UNION.update(k=k, cat=Catalogo(u[["SKU", "Descripcion", "Busqueda"]]))
