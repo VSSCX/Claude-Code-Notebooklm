@@ -130,10 +130,13 @@ def _iniciar_cuentas_y_registro():
     """Logs en archivo, primera cuenta administradora (ADMIN_INICIAL) y limpieza de lo antiguo."""
     from . import registro, seguridad
     from .db import SessionLocal
-    try:
-        registro.configurar_logs()
+    try:                                        # cada paso va aparte: que uno falle no debe dejar sin cuentas a nadie
         from .integrations import sap
         sap.carpeta_export()                    # la carpeta de la exportación de SAP se crea (y comprueba) al arrancar
+    except Exception as e:  # noqa: BLE001
+        log.warning("Carpeta de exportación de SAP: %s", e)
+    try:
+        registro.configurar_logs()
         with SessionLocal() as s:
             u = seguridad.crear_admin_inicial(s)
             if u:
