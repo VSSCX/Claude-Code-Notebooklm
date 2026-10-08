@@ -44,7 +44,7 @@ const Sesion = {
     let est = null;
     try { est = await fetch('/api/sesion', {headers: {'X-Requested-With': 'od'}}).then(r => r.json()); } catch(e){ return true; }
     this.modo = est.modo || 'abierto'; this.puedeConfigurar = !!est.puede_configurar;
-    if (this.modo === 'abierto'){ document.body.classList.remove('entrando'); $('.app').inert = false; await pedirSesion(); return true; }
+    if (this.modo === 'abierto'){ document.body.classList.remove('entrando'); $('.app').inert = false; if (est.requiere_clave && !est.abierta) await pedirSesion(); return true; }
     if (est.abierta && est.cuenta){
       this.cuenta = est.cuenta;
       if (this.cuenta.debe_cambiar_clave) return this.pantalla(est.configuracion_inicial ? 'inicial' : 'cambio');
@@ -219,10 +219,7 @@ document.addEventListener('keydown', ev => {
 let _pieSync = {estado: 'ok', texto: ''};
 function cuentaHTML(){
   const c = Sesion.cuenta;
-  if (!c){
-    const q = Usuario.get();
-    return q ? `<button class="sync-user" data-act="cambiarUsuario" title="Cambiar de usuario">${esc(q)}</button>` : '';
-  }
+  if (!c) return '';                            // sin cuentas no hay nada de usuario en pantalla: el nombre sale del PC
   return `<div class="cuenta-w"><button class="cuenta" data-act="menuCuenta" aria-haspopup="menu" aria-expanded="${!!UI.menuCuenta}" title="Tu cuenta">
       <span class="avatar" aria-hidden="true">${esc(iniciales(c.nombre))}</span>
       <span class="cuenta-t"><b>${esc(c.nombre)}</b><small>${ROL[c.rol] || c.rol}</small></span>${ICON.chevron}</button>

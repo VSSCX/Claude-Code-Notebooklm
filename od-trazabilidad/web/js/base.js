@@ -104,8 +104,9 @@ function normTipo(v){ const s = normH(v); if (s.startsWith('pred')) return 'Pred
    Toda la app habla con Store. El servidor es la fuente de verdad. */
 /* Quién está usando la plataforma: viaja en cada llamada y queda en el historial */
 const Usuario = {
-  get(){ try { return localStorage.getItem('od_usuario') || ''; } catch(e){ return ''; } },
-  set(v){ try { localStorage.setItem('od_usuario', (v || '').trim().slice(0, 40)); } catch(e){} },
+  /* Ya no se pregunta el nombre: el servidor usa el usuario de Windows del PC. Un nombre escrito antes (con clave de acceso) se respeta solo en ese caso. */
+  get(){ try { return Sesion.conCuentas() ? '' : (sessionStorage.getItem('od_usuario') || ''); } catch(e){ return ''; } },
+  set(v){ try { sessionStorage.setItem('od_usuario', (v || '').trim().slice(0, 40)); } catch(e){} },
 };
 /* Cabeceras de toda llamada: quién (modo abierto) y la marca que el servidor exige contra peticiones de otros sitios */
 const cab = (extra = {}) => ({'X-Requested-With': 'od', ...(Usuario.get() ? {'X-Usuario': Usuario.get()} : {}), ...extra});

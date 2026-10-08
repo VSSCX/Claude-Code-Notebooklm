@@ -76,7 +76,7 @@ def abrir_sesion(body: dict, request: Request, response: Response, s: Session = 
     if not seguridad.exige_entrar(s):                       # modo abierto: nombre (y clave de acceso si el .env la trae)
         token = entrar(str(body.get("clave", "")), str(body.get("usuario", "")))
         response.set_cookie("sesion", token, httponly=True, samesite="lax")
-        return {"ok": True, "usuario": str(body.get("usuario", "")).strip()[:40]}
+        return {"ok": True, "usuario": (str(body.get("usuario", "")).strip() or domain.usuario_actual())[:40]}
     u = seguridad.nombre_usuario(body.get("usuario", ""))
     clave = str(body.get("clave", ""))
     ip = _ip(request)

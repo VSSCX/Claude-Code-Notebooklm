@@ -24,13 +24,24 @@ def limpio(nombre: str) -> str:
     return n[:40]
 
 
+def usuario_del_sistema() -> str:
+    """Quién es en Windows la persona que abrió la plataforma en su PC. Reemplaza la pregunta «¿cuál es tu nombre?»:
+    el historial de cada entrega queda a nombre de esa cuenta sin que nadie tenga que escribir nada."""
+    import getpass
+    try:
+        return limpio(getpass.getuser())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def requiere_clave() -> bool:
     return bool(getattr(settings, "clave_acceso", ""))
 
 
 def entrar(clave: str, usuario: str) -> str:
-    if not limpio(usuario):
-        raise HTTPException(422, "Escribe tu nombre para entrar.")
+    usuario = limpio(usuario) or usuario_del_sistema()
+    if not usuario:
+        raise HTTPException(422, "No se pudo saber quién eres: escribe tu nombre para entrar.")
     if requiere_clave() and not secrets.compare_digest(str(clave).encode(), settings.clave_acceso.encode()):
         raise HTTPException(401, "Clave incorrecta.")
     token = secrets.token_hex(16)

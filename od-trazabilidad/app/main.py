@@ -48,7 +48,7 @@ async def _sesion_y_registro(request, call_next):
 
     from . import domain, registro, seguridad
     from .db import SessionLocal
-    from .usuarios import limpio, requiere_clave, sesion_valida
+    from .usuarios import limpio, requiere_clave, sesion_valida, usuario_del_sistema
     inicio = time.perf_counter()
     rid = registro.nuevo_request_id()
     ruta, metodo = request.url.path, request.method
@@ -67,7 +67,8 @@ async def _sesion_y_registro(request, call_next):
     except Exception as e:  # noqa: BLE001
         log.warning("No se pudo revisar la sesión: %s", e)
     request.state.cuenta = cuenta
-    quien = cuenta["usuario"] if cuenta else limpio(request.headers.get("x-usuario", ""))
+    # sin cuentas: el nombre que mande el navegador y, si no hay, el usuario de Windows del PC (ya no se pregunta)
+    quien = cuenta["usuario"] if cuenta else (limpio(request.headers.get("x-usuario", "")) or ("" if exige else usuario_del_sistema()))
     domain.usar_usuario(cuenta["nombre"] if cuenta else quien)
     registro.fijar_quien(quien, ip, ruta, metodo)
 

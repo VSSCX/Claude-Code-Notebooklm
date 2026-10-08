@@ -210,3 +210,12 @@ def test_usuarios_iniciales_del_env_se_crean_una_vez_y_con_clave_temporal(c):
             assert seguridad.verificar("Elux1234", u.clave_hash)
     finally:
         object.__setattr__(settings, "usuarios_iniciales", "")
+
+
+def test_sin_cuentas_no_se_pregunta_el_nombre_y_se_usa_el_usuario_de_windows(c, monkeypatch):
+    from app import usuarios
+    monkeypatch.setattr(usuarios, "usuario_del_sistema", lambda: "sotovic")
+    e = c.get("/api/sesion").json()
+    assert e["modo"] == "abierto" and e["usuario"] == "sotovic" and not e["requiere_clave"]
+    assert c.get("/api/sesion", headers={"X-Usuario": "Ana"}).json()["usuario"] == "Ana"     # si el navegador manda uno, manda ese
+    assert usuarios.entrar("", "")                                                            # y una sesión sin nombre ya no da error
