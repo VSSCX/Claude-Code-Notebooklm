@@ -35,7 +35,8 @@ const ROL = {admin: 'Administrador', analista: 'Analista'};
 /* ============ Sesión ============ */
 const Sesion = {
   modo: 'abierto', cuenta: null, puedeConfigurar: false, _espera: null,
-  esAdmin(){ return this.modo === 'abierto' || (this.cuenta && this.cuenta.rol === 'admin'); },
+  /* Administración solo existe con cuentas: en modo abierto (cada PC con su nombre) no se muestra */
+  esAdmin(){ return !!(this.cuenta && this.cuenta.rol === 'admin'); },
   conCuentas(){ return this.modo === 'cuentas'; },
   quien(){ return this.cuenta ? this.cuenta.nombre : Usuario.get(); },
 

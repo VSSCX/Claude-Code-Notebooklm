@@ -7,6 +7,9 @@ Toma el crear_proyecto.py que ya tienes como plantilla: conserva su bloque de co
 a SQL Server y la lógica de instalación, y reemplaza solo los archivos incluidos. Los
 archivos de texto van en ARCHIVOS y los binarios (fuentes) en BINARIOS, en base64.
 Solo usa la biblioteca estándar.
+
+Con --sin-cuentas el instalador sale sin los archivos de servidor y cuentas (docs\\SERVIDOR.md, servidor.bat,
+herramientas\\restablecer_clave.py): es el que se reparte a los analistas que usan la plataforma en su propio PC.
 """
 import base64
 import json
@@ -17,6 +20,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 EXCLUIR_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "data", "node_modules", ".impeccable"}
 EXCLUIR_ARCHIVOS = {".env", "xlsx.full.min.js", "crear_proyecto.py"}
+SOLO_SERVIDOR = {"docs/SERVIDOR.md", "servidor.bat", "herramientas/restablecer_clave.py"}
 CONSERVAR_VACIOS = {".gitkeep"}          # data/.gitkeep y casos/.gitkeep crean las carpetas
 BINARIOS_EXT = {".woff2", ".woff", ".png", ".jpg", ".ico", ".xls"}
 
@@ -27,7 +31,7 @@ ESCRIBIR_BINARIOS = '''    for rel, b64 in BINARIOS.items():
     print(f"{len(ARCHIVOS) + len(BINARIOS)} archivos creados en {DESTINO}")'''
 
 
-def recolectar():
+def recolectar(sin_cuentas: bool = False):
     texto, binarios = {}, {}
     for ruta in sorted(RAIZ.rglob("*")):
         rel = ruta.relative_to(RAIZ)
@@ -37,6 +41,8 @@ def recolectar():
         if ruta.name in EXCLUIR_ARCHIVOS or ruta.suffix == ".pyc":
             continue
         clave = rel.as_posix()
+        if sin_cuentas and clave in SOLO_SERVIDOR:
+            continue
         if ruta.suffix.lower() in BINARIOS_EXT:
             binarios[clave] = base64.b64encode(ruta.read_bytes()).decode("ascii")
         else:
@@ -71,10 +77,11 @@ def generar(plantilla: str, texto: dict, binarios: dict) -> str:
 
 
 def main():
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if len(args) != 1:
         raise SystemExit(__doc__)
-    destino = Path(sys.argv[1])
-    texto, binarios = recolectar()
+    destino = Path(args[0])
+    texto, binarios = recolectar("--sin-cuentas" in sys.argv)
     salida = generar(destino.read_text(encoding="utf-8"), texto, binarios)
     destino.write_text(salida, encoding="utf-8", newline="\n")
     print(f"{destino}: {len(texto)} archivos de texto + {len(binarios)} binarios, {len(salida) // 1024} KB")
