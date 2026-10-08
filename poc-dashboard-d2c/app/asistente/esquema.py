@@ -11,7 +11,7 @@ import pandas as pd
 
 from .texto import sa
 
-ACCIONES = ("medir", "listar", "pedido", "stock", "ayuda", "info")
+ACCIONES = ("medir", "listar", "pedido", "stock", "alertas", "ayuda", "info")
 METRICAS = ("unidades", "pedidos", "monto", "lineas", "ticket", "pct_integracion", "pct_pendiente", "antiguedad", "monto_riesgo", "desfase")
 PERIODOS = ("hoy", "ayer", "semana", "semana_anterior", "mes", "mes_anterior", "ultimos", "todo", "rango")
 # estado = filtros sobre el estado del pedido (los mismos conceptos del tablero)

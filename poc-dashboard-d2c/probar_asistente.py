@@ -5,6 +5,7 @@ Cada pregunta se compara contra una cifra calculada a mano con pandas (no con el
 comprueba que entiende la pregunta Y que la cifra es correcta. Sale con codigo 1 si algo falla.
 """
 import os
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -245,6 +246,35 @@ r = p("ventas de refrigeradores ultimos 7 dias")
 prueba("la clasificacion filtra las ventas", r["ok"] and "Refrigerador" in r["texto"], r.get("texto"))
 r = p("asdf qwer zxcv")
 prueba("si no entiende, ofrece ejemplos", r["ok"] is False and r.get("ejemplos"))
+
+# --- alertas, IA que explica (sin cambiar cifras), deteccion de la tabla de stock, informe de aprendizaje
+for q in ("hay algo raro hoy", "que debo revisar", "como vamos"):
+    r = p(q)
+    prueba(f"alertas: «{q}»", r["ok"] and r.get("tipo") == "alertas" and len(r["tabla"]["filas"]) >= 1, r.get("texto"))
+r = p("hay algo raro hoy")
+prueba("las alertas incluyen quiebre de stock", any(f[1] in ("Sin stock", "Quiebre próximo") for f in r["tabla"]["filas"]))
+r = p("cuantos pedidos se cancelaron hoy")
+ia_orig = asistente.ia._llm
+asistente.ia._llm = lambda s, u, json_out=True: "Hubo " + re.search(r"(\d[\d.]*) pedidos", r["texto"]).group(1) + " pedidos cancelados."
+prueba("la IA puede explicar con las cifras del servidor", asistente.ia.redactar("x", r) is not None)
+asistente.ia._llm = lambda s, u, json_out=True: "Hubo 987654 pedidos cancelados."
+prueba("si la IA inventa una cifra, se descarta", asistente.ia.redactar("x", r) is None)
+asistente.ia._llm = ia_orig
+datos = asistente.ia.datos_para_redactar("x", r)
+prueba("a la IA solo salen cifras agregadas (sin pedidos)", "Sequence" not in datos and "Order" not in datos)
+prueba("el informe de aprendizaje funciona", "no_entendidas" in asistente.memoria.informe())
+from app import queries as _q
+_orig = _q.leer_sap
+def _falso(sql):
+    if "bi_stock_vtex" in sql:
+        raise RuntimeError("Invalid object name")
+    if "INFORMATION_SCHEMA" in sql:
+        return pd.DataFrame({"TABLE_SCHEMA": ["dbo"], "TABLE_NAME": ["stk_vtex_actual"]})
+    return pd.DataFrame({"Material": ["0000123"], "StockVTEX": [5], "Reservado": [2]})
+_q.leer_sap = _falso
+_st = _q.q_stock_vtex()
+prueba("encuentra sola la tabla de stock si la conocida falla", len(_st) == 1 and _q.INFO_STOCK["tabla"] == "dbo.stk_vtex_actual")
+_q.leer_sap = _orig
 
 print()
 if fallos:

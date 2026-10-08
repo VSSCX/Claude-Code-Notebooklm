@@ -12,7 +12,8 @@ EJEMPLOS = ["¿Cuál es la venta de los últimos 7 días del MED165B?",
             "Pedidos de POST Fechado hoy con productos, cantidad y monto",
             "¿Cuál es el status de POST Fechado hoy?",
             "¿Hay stock del refrigerador MED 165B?",
-            "Top 5 clientes por monto este mes"]
+            "Top 5 clientes por monto este mes",
+            "¿Hay algo raro hoy? / ¿Qué debo revisar?"]
 
 
 def num(v, f: str = "n") -> str:
@@ -104,6 +105,8 @@ def frase(res: dict, plan: dict, dim) -> str:
 
 def seguimientos(res: dict, plan: dict) -> list[str]:
     acc, g = plan.get("accion") or "medir", plan.get("agrupar")
+    if res.get("tipo") == "alertas":
+        return ["stock de los productos sin stock", "pedidos con entrega vencida", "pedidos no integrados"]
     if res.get("tipo") == "stock":
         return ["y las unidades vendidas hoy", "y los pedidos pendientes"]
     if acc == "listar":

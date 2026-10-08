@@ -77,7 +77,7 @@ def _post(url: str, cuerpo: dict, cab: dict) -> dict:
         return json.loads(r.read().decode("utf-8"))
 
 
-def _anthropic(system: str, user: str) -> str:
+def _anthropic(system: str, user: str, json_out: bool = True) -> str:
     try:
         import anthropic
     except ImportError as e:
@@ -85,37 +85,37 @@ def _anthropic(system: str, user: str) -> str:
     modelo = settings.ia_modelo or MODELO_ANTHROPIC
     cli = anthropic.Anthropic(api_key=settings.ia_clave or None, base_url=settings.ia_url or None,
                               timeout=settings.ia_timeout, max_retries=1)
-    cfg: dict = {"format": {"type": "json_schema", "schema": SCHEMA}}
+    cfg: dict = {"format": {"type": "json_schema", "schema": SCHEMA}} if json_out else {}
     if modelo.startswith(("claude-opus-5", "claude-sonnet-5", "claude-fable", "claude-opus-4")):
         cfg["effort"] = "low"                               # traducir una frase corta no necesita razonar mucho
     base = dict(model=modelo, max_tokens=4000, system=system, messages=[{"role": "user", "content": user}])
     try:
-        resp = cli.messages.create(**base, output_config=cfg)
+        resp = cli.messages.create(**base, output_config=cfg) if cfg else cli.messages.create(**base)
     except anthropic.BadRequestError:                       # un modelo que no acepta esquema o esfuerzo: se pide solo con el prompt
         resp = cli.messages.create(**base)
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def _llm(system: str, user: str) -> str:
+def _llm(system: str, user: str, json_out: bool = True) -> str:
     modo, url, modelo = settings.ia_modo, (settings.ia_url or "").rstrip("/"), settings.ia_modelo
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     if modo == "ollama":
         j = _post((url or "http://localhost:11434") + "/api/chat",
-                  {"model": modelo or "qwen2.5:7b", "stream": False, "format": "json", "options": {"temperature": 0}, "messages": msgs}, {})
+                  {"model": modelo or "qwen2.5:7b", "stream": False, **({"format": "json"} if json_out else {}), "options": {"temperature": 0}, "messages": msgs}, {})
         return j["message"]["content"]
     if modo == "openai":
         cab = {"Authorization": "Bearer " + settings.ia_clave} if settings.ia_clave else {}
         cuerpo = {"model": modelo or "local", "temperature": 0, "messages": msgs}
         u = (url or "http://localhost:1234/v1") + "/chat/completions"
         try:
-            j = _post(u, {**cuerpo, "response_format": {"type": "json_object"}}, cab)
+            j = _post(u, {**cuerpo, "response_format": {"type": "json_object"}} if json_out else cuerpo, cab)
         except urllib.error.HTTPError as e:
             if e.code not in (400, 422):
                 raise
             j = _post(u, cuerpo, cab)                       # servidores sin modo JSON
         return j["choices"][0]["message"]["content"]
     if modo == "anthropic":
-        return _anthropic(system, user)
+        return _anthropic(system, user, json_out)
     raise RuntimeError("IA no configurada")
 
 
@@ -124,3 +124,32 @@ def planificar(q: str, K: dict, hoy: pd.Timestamp, previo: dict | None, ejemplos
     txt = _llm(prompt_sistema(K, hoy, ejemplos), usuario)
     m = re.search(r"\{.*\}", txt, re.S)
     return E.validar(json.loads(m.group(0)), K) if m else None
+
+
+# ------------------------------------------------------------------ explicar cifras ya calculadas
+def _numeros(t: str) -> set[str]:
+    return {re.sub(r"\D", "", x).lstrip("0") for x in re.findall(r"\d[\d.,]*", t) if re.sub(r"\D", "", x).lstrip("0")}
+
+
+def datos_para_redactar(q: str, res: dict, max_filas: int = 12) -> str:
+    """Lo unico que sale hacia la IA: la pregunta y las cifras ya agregadas (nada de pedidos ni clientes finales)."""
+    t = res.get("tabla") or {}
+    ent = lambda v: "" if v is None else (int(v) if isinstance(v, float) and v == int(v) else (round(v, 2) if isinstance(v, float) else v))  # noqa: E731
+    filas = [[ent(v) for v in f] for f in (t.get("filas") or [])[:max_filas]]
+    return json.dumps({"pregunta": q, "respuesta_base": res.get("texto"), "filtros": res.get("chips"), "notas": res.get("notas"),
+                       "columnas": [c["n"] for c in t.get("cols", [])], "filas": filas, "total_filas": len(t.get("filas") or []),
+                       "comparacion": res.get("comparacion")}, ensure_ascii=False, default=str)
+
+
+def redactar(q: str, res: dict) -> str | None:
+    """Explica la respuesta en 2 a 4 frases. Si el texto trae una cifra que no estaba en los datos, se descarta (-> None)."""
+    datos = datos_para_redactar(q, res)
+    sistema = ("Eres analista de un dashboard de pedidos D2C. Recibes la pregunta y las cifras YA calculadas. Responde en español, directo, en 2 a 4 frases: "
+               "primero la respuesta, luego lo más relevante (el mayor, el menor, una alerta, una recomendación breve). "
+               "Usa SOLO cifras que aparecen en los datos, tal cual (no sumes, no promedies, no redondees, no inventes). "
+               "Si faltan datos, dilo. Sin saludos ni markdown.")
+    txt = _llm(sistema, datos, json_out=False).strip()
+    if not txt or len(txt) > 900:
+        return None
+    permitidas = _numeros(datos)
+    return txt if _numeros(txt) <= permitidas | {str(i) for i in range(1, 32)} else None

@@ -115,3 +115,9 @@ La **maestra de productos** (código SAP, Clasif2, producto) se busca sola: el p
 `dim_producto`...), deja de lado las temporales, y usa la primera que trae código SAP y Clasif2 (el zoom dice cuál usó). Si elige mal, se fija con
 `MAESTRA_TABLA` (y `MAESTRA_ORIGEN=vtex` si está en Azure). **La venta es el monto del pedido** (el mismo que suma el resto del tablero, sin cancelados);
 un pedido con productos de varias clasificaciones se reparte en proporción al valor de sus líneas.
+
+## Novedades v3.5
+- **Alertas y anomalías:** «¿hay algo raro hoy?», «¿qué debo revisar?», «¿cómo vamos?». Revisa volumen de ayer contra el mismo día de las 4 semanas previas, tasa de cancelación (7 d contra 28 d), entregas vencidas, pedidos sin integrar, facturado sin despacho, quiebres y productos sin stock o con menos de 7 días de cobertura.
+- **IA que explica (opcional):** con `IA_MODO` y `IA_REDACTAR=1` la IA redacta 2-4 frases sobre las cifras ya calculadas. A la IA solo salen cifras agregadas de esa respuesta (nunca pedidos). Si el texto trae una cifra que no estaba en los datos, se descarta y queda la frase base.
+- **Aprendizaje:** `GET /api/chat/aprendizaje` lista las preguntas no entendidas o marcadas como no útiles, con la pregunta validada más parecida, para decidir qué reglas o ejemplos agregar.
+- **Stock más robusto:** si `bi_stock_vtex` falla o sus columnas no calzan, se buscan solas las tablas parecidas (stock, inventario, existencias) y se mapean las columnas. `/api/diagnostico` muestra qué tabla se usó. Se puede fijar con `STOCK_TABLA` y `STOCK_COL_*`.

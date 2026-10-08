@@ -58,6 +58,13 @@ class Settings:
     maestra_col_clasif2: str = os.getenv("MAESTRA_COL_CLASIF2", "").strip()
     maestra_col_producto: str = os.getenv("MAESTRA_COL_PRODUCTO", "").strip()
 
+    # --- Stock VTEX: tabla del ODS (por defecto bi_stock_vtex). Si no existe o sus columnas no calzan, se busca sola entre las tablas "stock" ---
+    stock_tabla: str = os.getenv("STOCK_TABLA", "").strip()
+    stock_origen: str = os.getenv("STOCK_ORIGEN", "sap").strip().lower()
+    stock_col_sku: str = os.getenv("STOCK_COL_SKU", "").strip()
+    stock_col_vtex: str = os.getenv("STOCK_COL_VTEX", "").strip()
+    stock_col_reservado: str = os.getenv("STOCK_COL_RESERVADO", "").strip()
+
     # --- Asistente de consultas (chat) ---
     # Sin configurar usa reglas (funciona sin internet ni IA). Con IA_MODO la IA solo traduce la pregunta
     # a un plan; las cifras las calcula siempre el servidor. Valores: ollama | openai | anthropic
@@ -65,6 +72,7 @@ class Settings:
     ia_url: str = os.getenv("IA_URL", "").strip()
     ia_modelo: str = os.getenv("IA_MODELO", "").strip()
     ia_clave: str = os.getenv("IA_CLAVE", "").strip()
+    ia_redactar: bool = os.getenv("IA_REDACTAR", "").strip().lower() in ("1", "true", "si", "sí", "yes")   # la IA explica las cifras ya calculadas
     ia_timeout: int = int(os.getenv("IA_TIMEOUT_SEGUNDOS", "25"))
     # Donde se guarda el historial de preguntas del asistente (vacio = data/historial_asistente.jsonl; en Vercel solo en memoria)
     asistente_historial: str = os.getenv("ASISTENTE_HISTORIAL", "").strip()

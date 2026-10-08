@@ -376,3 +376,87 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
         notas.append(f"Se muestran {len(filas)} de {total}.")
     return {"ok": True, "tipo": "stock", "valor": valor, "formato": "n", "unidad": titulo, "tabla": {"cols": cols, "filas": filas},
             "chips": chips, "notas": notas, "productos": productos, "etiqueta": "Stock actual", "resumen": None, "comparacion": None, "metrica": "stock"}
+
+
+# ------------------------------------------------------------------ alertas y anomalias
+def alertas(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) -> dict:
+    """Revisa el tablero y dice que esta fuera de lo normal: volumen, cancelaciones, pendientes, integracion y quiebre de stock proyectado."""
+    filas: list[list] = []
+    sev = {"alta": 0, "media": 1, "baja": 2}
+    d = dim[dim["Status"] != "canceled"]
+    ayer = hoy - timedelta(days=1)
+
+    # 1) volumen de ayer contra el mismo dia de la semana (4 semanas previas)
+    tipicos = [int(((d["Creation_Date"] >= ayer - timedelta(days=7 * k)) & (d["Creation_Date"] < ayer - timedelta(days=7 * k) + timedelta(days=1))).sum()) for k in range(1, 5)]
+    n_ayer = int(((d["Creation_Date"] >= ayer) & (d["Creation_Date"] < hoy)).sum())
+    tip = [t for t in tipicos if t > 0]
+    if len(tip) >= 2:
+        med = sum(tip) / len(tip)
+        var = n_ayer / med - 1
+        if abs(var) >= .3:
+            filas.append(["alta" if abs(var) >= .5 else "media", "Volumen de pedidos",
+                          f"Ayer hubo {n_ayer} pedidos, {abs(var) * 100:.0f}% {'más' if var > 0 else 'menos'} que un {_dia(ayer)} típico (~{med:.0f})."])
+
+    # 2) tasa de cancelacion: ultimos 7 dias contra los 28 anteriores
+    def tasa(a, b):
+        x = dim[(dim["Creation_Date"] >= a) & (dim["Creation_Date"] < b)]
+        return (float((x["Status"] == "canceled").mean()), len(x)) if len(x) >= 20 else (None, len(x))
+    r7, n7 = tasa(hoy - timedelta(days=6), hoy + timedelta(days=1))
+    r28, _ = tasa(hoy - timedelta(days=34), hoy - timedelta(days=6))
+    if r7 is not None and r28 is not None and r7 > r28 * 1.3 and r7 - r28 >= .01:
+        filas.append(["alta" if r7 > r28 * 2 else "media", "Cancelaciones",
+                      f"Cancelación de los últimos 7 días: {r7 * 100:.1f}% (los 28 días previos: {r28 * 100:.1f}%)."])
+
+    # 3) pendientes, integracion y facturacion
+    rfh = d["Status"] == "ready-for-handling"
+    venc = int((rfh & (d["Shipping_Estimate_Date"] < hoy)).sum())
+    if venc:
+        filas.append(["alta" if venc >= 20 else "media", "Entrega vencida", f"{venc} pedidos pendientes ya pasaron su fecha de entrega estimada."])
+    viejos = int(((d["Estado Ingreso"] == "No ingresado") & (d["Creation_Date"] < hoy - timedelta(days=1)) & (d["Status"] != "invoiced")).sum())
+    if viejos:
+        filas.append(["media", "Integración SAP", f"{viejos} pedidos creados antes de ayer siguen sin ingresar a SAP."])
+    sd = int((d["Facturado Sin Despacho"] == "Facturado sin despacho").sum())
+    if sd:
+        filas.append(["media", "Facturado sin despacho", f"{sd} pedidos están facturados en SAP pero pendientes en VTEX."])
+    quiebre = int((rfh & (d["Causa Pendiente"] == "Quiebre de stock")).sum())
+    if quiebre:
+        filas.append(["media", "Pendientes por quiebre", f"{quiebre} pedidos pendientes esperan por falta de stock."])
+
+    # 4) stock: sin stock con demanda, y cobertura corta segun la venta de los ultimos 14 dias
+    notas: list[str] = []
+    try:
+        st = stock_fn()
+        lin, _ = lin_fn()
+        if st is None or st.empty:
+            notas.append("No hay datos de stock cargados: no se revisó el riesgo de quiebre.")
+        else:
+            cat = catalogo.de_union(lin, maestra.cargar()[0])
+            rec = lin.merge(d.loc[d["Creation_Date"] >= hoy - timedelta(days=13), ["Sequence"]], on="Sequence")
+            diaria = rec.groupby("SKU")["Qty"].sum() / 14
+            pend = lin.merge(d.loc[rfh, ["Sequence"]], on="Sequence").groupby("SKU")["Qty"].sum()
+            s = st.assign(dia=st["SKU"].map(diaria).fillna(0.0), pend=st["SKU"].map(pend).fillna(0.0))
+            s["cob"] = (s["Disponible"].clip(lower=0) / s["dia"]).where(s["dia"] > 0)
+            sin = s[(s["Disponible"] <= 0) & ((s["pend"] > 0) | (s["dia"] > 0))].sort_values("pend", ascending=False)
+            for _, r in sin.head(5).iterrows():
+                filas.append(["alta", "Sin stock", f"{cat.desc.get(r['SKU'], r['SKU'])} ({r['SKU']}): sin stock disponible, {r['pend']:.0f} unid. en pedidos pendientes."])
+            corto = s[(s["Disponible"] > 0) & (s["cob"] < 7)].sort_values("cob")
+            for _, r in corto.head(5).iterrows():
+                filas.append(["media", "Quiebre próximo", f"{cat.desc.get(r['SKU'], r['SKU'])} ({r['SKU']}): {r['Disponible']:.0f} unid. alcanzan para ~{r['cob']:.1f} días."])
+            if len(sin) > 5 or len(corto) > 5:
+                notas.append(f"Hay {len(sin)} productos sin stock y {len(corto)} con menos de 7 días de cobertura; se muestran los 5 más urgentes de cada grupo.")
+    except Exception as e:  # noqa: BLE001
+        notas.append("No pude revisar el stock: " + str(e)[:100])
+
+    filas.sort(key=lambda f: sev[f[0]])
+    if not filas:
+        texto = "Revisé volumen, cancelaciones, pendientes, integración y stock: no veo nada fuera de lo normal."
+    else:
+        texto = f"Encontré {len(filas)} punto(s) para revisar; {sum(f[0] == 'alta' for f in filas)} de severidad alta."
+    cols = [{"n": "Severidad", "f": "t"}, {"n": "Tema", "f": "t"}, {"n": "Detalle", "f": "t"}]
+    return {"ok": True, "tipo": "alertas", "texto": texto, "valor": float(len(filas)), "formato": "n", "unidad": "puntos a revisar",
+            "tabla": {"cols": cols, "filas": filas}, "chips": ["Revisión automática", f"Datos hasta {hoy.strftime('%d-%m-%Y')}"],
+            "notas": notas, "etiqueta": "Alertas", "resumen": None, "comparacion": None, "metrica": "alertas"}
+
+
+def _dia(d: pd.Timestamp) -> str:
+    return ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][d.weekday()]

@@ -602,7 +602,8 @@ def estado_stock() -> dict:
     """Por que no hay stock (o cuanto hay) para explicarlo en pantalla."""
     s = _CACHE.get("stock")
     return {"filas": 0 if s is None else int(len(s)), "error": queries.ERROR_STOCK[0] if queries.ERROR_STOCK else None,
-            "ejemplo_codigos": [] if s is None or not len(s) else [str(x) for x in s["codigoSap"].head(3)]}
+            "ejemplo_codigos": [] if s is None or not len(s) else [str(x) for x in s["codigoSap"].head(3)],
+            "tabla": queries.INFO_STOCK["tabla"], "columnas": queries.INFO_STOCK["columnas"], "tablas_vistas": queries.INFO_STOCK["candidatas"][:5]}
 
 
 COLS_EXPORT = [("Sequence", "Sequence"), ("Order", "Orden VTEX"), ("Creation_Date", "Creación"), ("Estado Pedido", "Estado"), ("Status", "Status VTEX"),

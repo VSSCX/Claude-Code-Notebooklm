@@ -194,6 +194,21 @@ def estadisticas() -> dict:
                 "no_entendidas": no.most_common(20), "marcadas_no_utiles": mal.most_common(20)}
 
 
+def informe() -> dict:
+    """Que aprender: preguntas sin respuesta o marcadas como no utiles, cada una con la pregunta validada mas parecida (si existe).
+    Sirve para decidir que reglas, sinonimos o ejemplos agregar. No incluye datos de pedidos."""
+    est = estadisticas()
+    def con_sugerencia(items):
+        out = []
+        for q, n in items:
+            p = parecidas(normalizar(q), 1, .5)
+            out.append({"pregunta": q, "veces": n, "parecida_validada": p[0]["q"] if p else None})
+        return out
+    return {"resumen": {k: est[k] for k in ("preguntas", "respondidas", "utiles", "no_utiles")},
+            "no_entendidas": con_sugerencia(est["no_entendidas"]), "marcadas_no_utiles": con_sugerencia(est["marcadas_no_utiles"]),
+            "frecuentes": frecuentes(10)}
+
+
 def reiniciar_para_pruebas(archivo: str) -> None:
     """Vacia la memoria y la vuelve a leer de `archivo` (para probar que el historial sobrevive a un reinicio)."""
     global _LISTO, _FORZADO

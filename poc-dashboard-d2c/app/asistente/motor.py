@@ -45,6 +45,19 @@ def _catalogo():
         return None
 
 
+def _explicar(q: str, res: dict, notas: list) -> None:
+    """Con IA_REDACTAR=1 la IA explica las cifras que el servidor ya calculo. Si cambia alguna cifra, se descarta y queda la frase base."""
+    if not settings.ia_redactar or info_motor()["modo"] == "reglas":
+        return
+    try:
+        t = ia.redactar(q, res)
+    except Exception as e:  # noqa: BLE001
+        t = None
+        notas.append("La IA no pudo redactar la respuesta; va la versión base." + ("" if settings.serverless else f" ({str(e)[:80]})"))
+    if t:
+        res["texto_base"], res["texto"], res["redactada"] = res["texto"], t, True
+
+
 def _no_entendi(motor: str, aviso, q: str = "") -> dict:
     import difflib
     cerca = difflib.get_close_matches(sa(q), [sa(e) for e in EJEMPLOS], n=1, cutoff=.35) if q else []
@@ -130,7 +143,9 @@ def _responder(q: str, previo: dict | None) -> tuple[dict, dict]:
     if accion == "pedido":
         return {**_pedido(plan, motor), "plan": plan, "via": via, "aviso": aviso}, ctx
     try:
-        res = consulta.stock(plan, dim, hoy, _lineas, servicio.stock_vtex) if accion == "stock" else consulta.medir_o_listar(plan, dim, hoy, _lineas)
+        res = (consulta.stock(plan, dim, hoy, _lineas, servicio.stock_vtex) if accion == "stock"
+               else consulta.alertas(plan, dim, hoy, _lineas, servicio.stock_vtex) if accion == "alertas"
+               else consulta.medir_o_listar(plan, dim, hoy, _lineas))
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "texto": "No pude calcular la respuesta." + ("" if settings.serverless else f" Detalle: {str(e)[:160]}"), "motor": motor, "plan": plan}, ctx
 
@@ -151,6 +166,8 @@ def _responder(q: str, previo: dict | None) -> tuple[dict, dict]:
         notas.append("«El último mes» se tomó como los últimos 30 días; para el mes anterior completo pregunta por «el mes pasado».")
     res.update(motor=motor, via=via, plan=plan, aviso=aviso)
     if res.get("ok"):
-        res["texto"] = frase(res, plan, dim)
+        if res.get("tipo") != "alertas":
+            res["texto"] = frase(res, plan, dim)
         res["seguir"] = seguimientos(res, plan)
+        _explicar(q, res, notas)
     return res, ctx

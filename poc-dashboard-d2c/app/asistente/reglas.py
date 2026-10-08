@@ -233,6 +233,8 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
         plan["accion"] = "info"
     elif plan["pedido"]:
         plan["accion"] = "pedido"
+    elif X.hay(L.P_ALERTAS) and not {"estado", "metrica", "agrupar", "producto"} & expl:
+        plan["accion"] = "alertas"
     elif stock_cue:
         plan["accion"] = "stock"
     elif listar or (X.hay(r"\bpedidos?\b|\bordenes\b") and not plan["metrica"] and not plan["agrupar"] and not X.hay(L.P_CONTAR)

@@ -162,6 +162,14 @@ def api_chat_historial():
     return asistente.memoria.estadisticas()
 
 
+@app.get("/api/chat/aprendizaje")
+def api_chat_aprendizaje():
+    """Para quien mantiene el programa: que preguntas no se entendieron o no sirvieron, con la validada mas parecida."""
+    if settings.serverless:
+        return JSONResponse(status_code=404, content={"error": "No disponible"})
+    return asistente.memoria.informe()
+
+
 @app.post("/api/chat")
 async def api_chat(request: Request):
     """Pregunta en lenguaje natural -> plan validado -> cifra calculada por el servidor (ver asistente.py)."""
