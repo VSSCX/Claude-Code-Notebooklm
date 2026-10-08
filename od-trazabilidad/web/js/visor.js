@@ -59,9 +59,13 @@ window.addEventListener('message', ev => {
 });
 
 /* Un camión vacío para que el visor muestre algo antes de la primera carga */
-const MEDIDAS_VISTA = {rampla: ['Rampla 53', 1540, 245, 230], camion50: ['Camión 50', 620, 244, 230]};
+const NOMBRE_VISTA = {rampla: 'Rampla 53', camion50: 'Camión 50'};
+function medidasVista(vista){                                  // las de Configuración; si aún no cargaron, las de fábrica
+  const v = vista in NOMBRE_VISTA ? vista : 'rampla', c = ((UI.ajustes || {}).camiones || {})[v] || (v === 'rampla' ? {largo: 1540, ancho: 245, alto: 235} : {largo: 620, ancho: 244, alto: 230});
+  return [NOMBRE_VISTA[v], c.largo, c.ancho, c.alto];
+}
 function camionVacioJSON(vista){
-  const [tipo, L, W, H] = MEDIDAS_VISTA[vista] || MEDIDAS_VISTA.rampla;
+  const [tipo, L, W, H] = medidasVista(vista);
   return JSON.stringify({titulo: 'Order Desk - Cubicaje B2B', esSda: false, pedido: '', camiones: [
     {idx: 1, tipo, L, W, H, volTot: 0, volCap: +(L * W * H / 1e6).toFixed(2), ocupVol: 0, pesoTot: 0, items: [], cajas: [], pallets: []}]});
 }

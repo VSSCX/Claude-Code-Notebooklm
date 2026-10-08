@@ -764,8 +764,11 @@ def test_ajustes_de_cubicaje(c, tmp_path):
     _cargar_medidas_basicas(c, tmp_path)
     plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
     object.__setattr__(settings, "plantilla_visor", str(plantilla))
-    assert c.get("/api/ajustes-cubicaje").json() == {"orientacion_pallet": "largo", "celda_cm": 1,
-                                                     "capacidad_pallet": "geometria"}     # por defecto 1 cm: más fiel a la carga real
+    aj = c.get("/api/ajustes-cubicaje").json()
+    assert {k: aj[k] for k in ("orientacion_pallet", "celda_cm", "capacidad_pallet")} == {
+        "orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria"}     # por defecto 1 cm: más fiel a la carga real
+    assert aj["camiones"]["rampla"] == {"largo": 1540.0, "ancho": 245.0, "alto": 235.0}     # la rampla 53 mide 2350 mm de alto
+    assert aj["camiones"]["camion50"] == {"largo": 620.0, "ancho": 244.0, "alto": 230.0}
     assert c.put("/api/ajustes-cubicaje", json={"orientacion_pallet": "otro"}).status_code == 422
     assert c.put("/api/ajustes-cubicaje", json={"celda_cm": 5}).status_code == 422
 
@@ -1214,3 +1217,43 @@ def test_la_pagina_versiona_sus_archivos_para_no_mezclar_cache_vieja(c):
     assert refs and all("?v=" in r for r in refs)
     r = c.get("/js/base.js")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+def test_medidas_de_los_camiones_se_editan_y_llegan_al_cubicaje(c, tmp_path):
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    carga = {"lineas": [{"sku": "900081624", "qty": 30}], "vista": "rampla"}
+    d = c.post("/api/cubicaje-libre", json=carga).json()
+    assert (d["camiones"][0]["L"], d["camiones"][0]["w"], d["camiones"][0]["h"]) == (1540.0, 245.0, 235.0)
+
+    nuevas = {"rampla": {"largo": 1500, "ancho": 240, "alto": 240}, "camion50": {"largo": 600, "ancho": 240, "alto": 225}}
+    r = c.put("/api/ajustes-cubicaje", json={"camiones": nuevas})
+    assert r.status_code == 200 and r.json()["camiones"]["rampla"]["alto"] == 240
+    d = c.post("/api/cubicaje-libre", json=carga).json()
+    assert (d["camiones"][0]["L"], d["camiones"][0]["w"], d["camiones"][0]["h"]) == (1500.0, 240.0, 240.0)
+    d50 = c.post("/api/cubicaje-libre", json={**carga, "vista": "camion50"}).json()
+    assert d50["camiones"][0]["h"] == 225.0
+
+    # cambiar otro ajuste no pisa las medidas
+    c.put("/api/ajustes-cubicaje", json={"celda_cm": 2})
+    assert c.get("/api/ajustes-cubicaje").json()["camiones"]["rampla"]["alto"] == 240
+    # valores fuera de rango o vacíos se rechazan, con el motivo en mm
+    mal = c.put("/api/ajustes-cubicaje", json={"camiones": {**nuevas, "rampla": {"largo": 1500, "ancho": 240, "alto": 0}}})
+    assert mal.status_code == 422 and "alto de la Rampla 53" in mal.json()["detail"] and "mm" in mal.json()["detail"]
+    assert c.put("/api/ajustes-cubicaje", json={"camiones": {"rampla": {"largo": 1500}}}).status_code == 422
+    # volver a lo de fábrica
+    c.put("/api/ajustes-cubicaje", json={"camiones": {"rampla": {"largo": 1540, "ancho": 245, "alto": 235},
+                                                      "camion50": {"largo": 620, "ancho": 244, "alto": 230}}, "celda_cm": 1})
+
+
+def test_el_cubicaje_sda_asigna_vehiculos_con_las_medidas_editadas():
+    from app.cubicaje import sda
+    original = (sda.RAMPLA, sda.CAMION50)
+    try:
+        sda.usar_camiones(("Rampla", 1500, 240, 240), ("Camion 50", 600, 240, 225))
+        v = sda.asignar_vehiculos(31)
+        assert (v[0].L, v[0].w, v[0].h) == (1500, 240, 240) and v[1].h == 225
+    finally:
+        sda.usar_camiones(*original)

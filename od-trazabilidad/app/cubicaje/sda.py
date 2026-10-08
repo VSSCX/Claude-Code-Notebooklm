@@ -295,8 +295,14 @@ def remezclar_flojos(pallets: list[Pallet], bloques: list[Bloque]) -> list[Palle
 # Etapa 4: validación geométrica, camiones, carga a piso y salida
 # ===========================================================================
 CAP_RAMPLA, CAP_CAM50 = 30, 12          # pallets por vehículo
-RAMPLA = ("Rampla", 1540.0, 245.0, 230.0)
+RAMPLA = ("Rampla", 1540.0, 245.0, 235.0)
 CAMION50 = ("Camion 50", 620.0, 244.0, 230.0)
+
+
+def usar_camiones(rampla: tuple, camion50: tuple) -> None:
+    """Cambia las medidas de los vehículos (nombre, largo, ancho, alto en cm). Las fija Configuración antes de cubicar."""
+    global RAMPLA, CAMION50
+    RAMPLA, CAMION50 = tuple(rampla), tuple(camion50)
 TARIMA = 14.5                            # alto de la tarima del pallet
 GAPX, GAPY, GAP_PISO = 8.0, 5.0, 8.0
 LARGO_MIN_PISO = 60.0

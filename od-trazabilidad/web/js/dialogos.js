@@ -455,6 +455,8 @@ document.addEventListener('click', ev => {
     case 'abrirLecturaSap': abrirLecturaSap(); break;
     case 'abrirAnalisis': abrirLecturaSap('analizar'); break;
     case 'cambiarUsuario': pedirSesion(true); break;
+    case 'guardarCamiones': guardarCamiones(false); break;
+    case 'restablecerCamiones': guardarCamiones(true); break;
     case 'verVisorCub': UI.verVisorCub = !UI.verVisorCub; render(); break;
     case 'verPredist': UI.verPredist = !UI.verPredist; render(); break;
     case 'guardarPredist': { const p = Store.get('pedidos', UI.sel);

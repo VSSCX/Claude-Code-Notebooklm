@@ -19,7 +19,7 @@ def _commit(s: Session):
         s.rollback()
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (CAMIONES_DEFECTO, CAMIONES_VISTA, _ajustes_cubicaje,
+from .comun import (CAMIONES_BASE, LIMITES_CAMION, _ajustes_cubicaje, camiones_defecto, camiones_vista, medidas_camiones,
                     _aplicar_ajustes, _calefones_de, _clave_analisis, _clave_cubicaje)
 
 router = APIRouter()
@@ -88,9 +88,36 @@ def put_ajustes_cubicaje(body: dict, s: Session = Depends(get_session)):
     if cap not in ("geometria", "tabla"):
         raise HTTPException(422, "Capacidad no válida (geometria o tabla).")
     datos = {"orientacion_pallet": orient, "celda_cm": celda, "capacidad_pallet": cap}
+    cam = body.get("camiones")
+    if cam is None:
+        datos["camiones"] = medidas_camiones(s)                      # no se pisan las medidas al cambiar otro ajuste
+    else:
+        datos["camiones"] = _validar_camiones(cam)
     domain.guardar_config(s, "ajustes_cubicaje", datos)
     _commit(s)
-    return datos
+    return _ajustes_cubicaje(s)
+
+
+NOMBRES_CAMION = {"rampla": "la Rampla 53", "camion50": "el Camión 50"}
+
+
+def _validar_camiones(cam) -> dict:
+    """Medidas de los vehículos en cm. Cada campo se valida con su rango: un cero o un número de más no debe llegar al motor."""
+    if not isinstance(cam, dict):
+        raise HTTPException(422, "Medidas de camiones no válidas.")
+    out = {}
+    for clave in CAMIONES_BASE:
+        g = cam.get(clave) or {}
+        out[clave] = {}
+        for campo, (lo, hi) in LIMITES_CAMION.items():
+            try:
+                v = float(str(g.get(campo)).replace(",", "."))
+            except (TypeError, ValueError):
+                raise HTTPException(422, f"Falta el {campo} de {NOMBRES_CAMION[clave]}.") from None
+            if not lo <= v <= hi:
+                raise HTTPException(422, f"El {campo} de {NOMBRES_CAMION[clave]} debe estar entre {lo * 10:.0f} y {hi * 10:.0f} mm.")
+            out[clave][campo] = round(v, 1)
+    return out
 
 
 def _clave_predist(pedido: str) -> str:
@@ -362,7 +389,7 @@ def _cubicar(numero: str, body: dict, s: Session):
 
     cfg = s.get(Config, "app")
     cfg_val = _json.loads(cfg.valor) if cfg else {}
-    camiones_cfg = body.get("camiones") or cfg_val.get("camiones") or CAMIONES_DEFECTO
+    camiones_cfg = body.get("camiones") or cfg_val.get("camiones") or camiones_defecto(s)
     modo = str(body.get("modo") or an.get("modo_cubicaje") or "MDA").strip().upper()
     cliente = an.get("cliente", "")
 
@@ -430,7 +457,8 @@ def _cubicar(numero: str, body: dict, s: Session):
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
         from ..cubicaje.mda import Camion as _Cam
         # Sin carga no se dibuja una plantilla en blanco: se muestra la rampla vacía
-        cams = r.camiones or [_Cam(numero=1, tipo="Rampla 53", L=1540, w=245, h=230)]
+        rm = camiones_vista(s)["rampla"]
+        cams = r.camiones or [_Cam(numero=1, tipo=rm[0], L=rm[1], w=rm[2], h=rm[3])]
         datos_visor = construir_json(r.placed, cams, es_sda=bool(r.pallets), pallets=r.pallets,
                                       cliente=cliente, modo=r.modo)
         html = html_visor(plantilla, datos_visor)
@@ -648,11 +676,11 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
             # los modos SDA exigen indicar caja master: si no viene, se asume sin caja
             if not str(body.get("caja_master") or "").strip():
                 body = {**body, "caja_master": "SIN CAJA MASTER"}
-        camiones = leer_camiones([list(CAMIONES_VISTA["rampla"])])
+        camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
     elif vista == "camion50":
-        camiones = leer_camiones([list(CAMIONES_VISTA["camion50"])])
+        camiones = leer_camiones([list(camiones_vista(s)["camion50"])])
     else:
-        camiones = leer_camiones([list(CAMIONES_VISTA["rampla"])])
+        camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
 
     posiciones = []
     desconocidos = []

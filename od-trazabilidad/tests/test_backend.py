@@ -560,7 +560,9 @@ def test_cubicaje_del_excel_coincide_con_la_grilla_de_2_cm(datos, celda, esperad
                "ajustes": {}, "resultado": calcular(pos, plan, {}, med, {}), "generado": "2026-10-01"}
         domain.guardar_config(s, "analisis:4005100000", doc)
         s.commit()
-    assert c.put("/api/ajustes-cubicaje", json={"celda_cm": celda}).status_code == 200
+    # el Excel usa la rampla de 230 cm de alto; la de la plataforma ahora es de 235, así que para comparar se fija la del Excel
+    excel = {"rampla": {"largo": 1540, "ancho": 245, "alto": 230}, "camion50": {"largo": 620, "ancho": 244, "alto": 230}}
+    assert c.put("/api/ajustes-cubicaje", json={"celda_cm": celda, "camiones": excel}).status_code == 200
     r = c.post("/api/cubicaje/4005100000", json={"modo": "MDA", "caja_master": "SIN CAJA MASTER"})
     assert r.status_code == 200, r.text
     d = r.json()
@@ -569,7 +571,8 @@ def test_cubicaje_del_excel_coincide_con_la_grilla_de_2_cm(datos, celda, esperad
     assert [round(ocup[n], 4) for n in sorted(ocup)] == esperado[0]
     assert [unid[n] for n in sorted(unid)] == esperado[1]
     assert [x["tipo"] for x in d["camiones"]] == ["Rampla 53"] * 3
-    c.put("/api/ajustes-cubicaje", json={"celda_cm": 2})
+    c.put("/api/ajustes-cubicaje", json={"celda_cm": 2, "camiones": {"rampla": {"largo": 1540, "ancho": 245, "alto": 235},
+                                                                      "camion50": {"largo": 620, "ancho": 244, "alto": 230}}})
 
 
 # ---------- carga masiva con productos que no están en la Base de Medidas ----------

@@ -449,9 +449,52 @@ function seccionConexion(){
 
 /* ============ Vista: Configuración ============
    Lo que antes estaba mezclado en "SAP y archivos": clientes, medidas y ajustes. */
+/* ---- Medidas de los camiones (mm en pantalla; el motor las guarda en cm) ---- */
+const FABRICA_CAM = {rampla: {nombre: 'Rampla 53', largo: 1540, ancho: 245, alto: 235},
+                     camion50: {nombre: 'Camión 50', largo: 620, ancho: 244, alto: 230}};
+const CAMPOS_CAM = [['largo', 'Largo'], ['ancho', 'Ancho'], ['alto', 'Alto']];
+function seccionCamiones(){
+  if (!UI.ajustes && !UI.cargandoAjustes){ UI.cargandoAjustes = true; cargarAjustes().then(() => { UI.cargandoAjustes = false; render(); }); }
+  const cam = (UI.ajustes && UI.ajustes.camiones) || FABRICA_CAM;
+  const tarjeta = clave => {
+    const f = FABRICA_CAM[clave], v = cam[clave] || f;
+    const cambiado = CAMPOS_CAM.some(([k]) => Math.abs((+v[k] || 0) - f[k]) > 0.05);
+    const vol = (v.largo * v.ancho * v.alto / 1e6).toFixed(2).replace('.', ',');
+    return `<div class="docket" data-k="cam-${clave}"><div class="dk-h"><div class="dk-id">${esc(f.nombre)}
+        ${cambiado ? '<span class="tag warn">Editado</span>' : '<span class="tag">De fábrica</span>'}</div>
+        <div class="dk-qty num">${vol} <small>m³ útiles</small></div></div>
+      <div class="fgrid" style="margin-top:10px">${CAMPOS_CAM.map(([k, n]) => `
+        <label class="f">${n} (mm)<input type="number" inputmode="numeric" min="1000" step="10" name="cam-${clave}-${k}" value="${Math.round(v[k] * 10)}"></label>`).join('')}</div>
+      ${cambiado ? `<p class="small muted" style="margin:8px 0 0">De fábrica: ${CAMPOS_CAM.map(([k, n]) => `${n.toLowerCase()} ${f[k] * 10}`).join(' · ')} mm</p>` : ''}</div>`;
+  };
+  return `<div class="panel" style="margin-bottom:20px"><div class="panel-h" style="justify-content:space-between">
+      <h2>Medidas de los camiones</h2>
+      <div class="row"><button class="btn" data-act="restablecerCamiones">Volver a las de fábrica</button>
+        <button class="btn primary" data-act="guardarCamiones">Guardar medidas</button></div>
+    </div><div class="panel-b">
+      <p style="margin-top:0;max-width:72ch">Las medidas útiles de la caja de cada vehículo, en milímetros. Las usa todo el cubicaje (pedidos, cubicador y visor 3D). Los cubicajes ya calculados no cambian solos: se actualizan al cubicar de nuevo.</p>
+      ${tarjeta('rampla')}${tarjeta('camion50')}
+    </div></div>`;
+}
+async function guardarCamiones(restablecer){
+  const num = n => +String((document.querySelector(`[name="${n}"]`) || {}).value || '').replace(',', '.');
+  const camiones = {};
+  for (const clave of Object.keys(FABRICA_CAM)){
+    camiones[clave] = {};
+    for (const [k] of CAMPOS_CAM)
+      camiones[clave][k] = restablecer ? FABRICA_CAM[clave][k] : num(`cam-${clave}-${k}`) / 10;     // mm → cm
+  }
+  try { UI.ajustes = await api('PUT', '/ajustes-cubicaje', {...(UI.ajustes || {}), camiones}); }
+  catch(e){ return toast(e.message); }
+  UI.cubicaje = {}; UI.autoCub = {};                         // lo calculado con las medidas anteriores se rehace al cubicar
+  if (typeof pedirCalculo === 'function' && UI.cubIniciado) pedirCalculo();
+  toast(restablecer ? 'Medidas de fábrica restauradas' : 'Medidas de los camiones guardadas');
+  render();
+}
+
 function vistaConfiguracion(){
   return `<div class="panel" style="margin-bottom:20px"><div class="panel-b">
       <h2 style="margin:0 0 6px">Configuración</h2>
       <p class="small muted" style="margin:0;max-width:72ch">Los datos que usa el cubicaje y el análisis: las reglas de cada cliente y la Base de Medidas. Se cargan una vez y quedan guardados.</p>
-    </div></div>` + seccionConexion() + seccionClientes() + seccionMedidas();
+    </div></div>` + seccionConexion() + seccionCamiones() + seccionClientes() + seccionMedidas();
 }
