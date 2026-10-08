@@ -70,7 +70,7 @@ def lanzar_python(accion_id: str, label: str, args: list[str], fn) -> dict:
                     job["datos"] = fn(avance)
                     job.update(estado="ok")
                 except Exception as e:  # noqa: BLE001
-                    job.update(estado="error", error=str(e)[:500])
+                    job.update(estado="error", error=str(e)[:500], paso=job.get("progreso", ""))
                     registro.registrar_excepcion(e, origen="sap", usuario=q.get("usuario", ""), rid=rid,
                                                  ruta=q.get("ruta", ""), metodo=q.get("metodo", ""),
                                                  contexto={"accion": accion_id, "etiqueta": label, "args": [str(a)[:60] for a in args][:6]})
@@ -90,6 +90,12 @@ def lanzar_python(accion_id: str, label: str, args: list[str], fn) -> dict:
         _liberar()
         raise
     return _trabajos[tid]
+
+
+def recientes(n: int = 5) -> list[dict]:
+    """Los últimos trabajos, con el que está en curso primero."""
+    lista = list(_trabajos.values())[-n:][::-1]
+    return sorted(lista, key=lambda j: j["estado"] != "en_curso")
 
 
 def trabajo(tid: str) -> dict | None:

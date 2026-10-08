@@ -80,11 +80,17 @@ def sap_leer_pedido(body: dict):
         raise HTTPException(409, str(e)) from e
 
 
+def _causa(e: Exception) -> str:
+    """El motivo de un error técnico, en una línea y sin el ruido de los controladores ODBC."""
+    txt = " ".join(str(e).split())
+    return txt[:220] + ("…" if len(txt) > 220 else "")
+
+
 @router.post("/analisis/{numero}", status_code=202)
 def analizar(numero: str, body: dict):
     import json as _json
     import re as _re
-    from datetime import date as _date
+    from datetime import date as _date, datetime
     from ..analisis import calcular, en_entrega_por_modelo, oc_de_zsd
     from ..config import BASE_DIR
     from ..db import SessionLocal
@@ -105,6 +111,30 @@ def analizar(numero: str, body: dict):
         raise HTTPException(422, "Fecha inválida.") from e
 
     def correr(avance):
+        # Primero lo que puede fallar sin tocar SAP (cliente, SQL Server, Base de Medidas): antes todo eso se
+        # descubría DESPUÉS de leer VL01N y exportar ZSD001_03, y el análisis moría justo al terminar la exportación.
+        avance("0/4 Revisando conexiones")
+        with SessionLocal() as ses:
+            grupo, codigo = _sop_de(cliente, ses)
+            # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
+            filas_med = ses.execute(select(Medida.sku, Medida.descripcion, Medida.max_camion)).all()
+        if not codigo:
+            raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
+        try:
+            plan = bases.plan_sop(grupo)
+            disp = bases.disponibilidad()
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError("No se pudo consultar SQL Server (plan SOP y disponibilidad), por eso no se empezó con SAP. "
+                               "Revisa la VPN o la red y la conexión en Configuración. Detalle: " + _causa(e)) from e
+        if filas_med:
+            med = {sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
+        else:
+            try:
+                med = base_medidas.medidas()
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError("No hay Base de Medidas cargada y no se pudo abrir la del servidor de archivos. "
+                                   "Cárgala en Configuración → Base de Medidas. Detalle: " + _causa(e)) from e
+
         avance("1/4 Leyendo el pedido en VL01N")
         lectura = sap.leer_pedido(numero, puesto, f.strftime("%d.%m.%Y"))
         if not lectura.posiciones:
@@ -115,28 +145,20 @@ def analizar(numero: str, body: dict):
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
         avance("2/4 Consultando Qty en entrega en ZSD001_03")
-        with SessionLocal() as ses:
-            grupo, codigo = _sop_de(cliente, ses)
-            # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
-            filas_med = ses.execute(select(Medida.sku, Medida.descripcion, Medida.max_camion)).all()
-        if not codigo:
-            raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
         carpeta = BASE_DIR / "data" / "sap"
         avisos_zsd: list[str] = []
+        # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
+        nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
         filas_zsd = sap.zsd001_03(codigo, [p["sku"] for p in posiciones],
-                                  str(carpeta), "Qty En Entrega.xlsx", avisar=avisos_zsd.append)
+                                  str(carpeta), nombre_zsd, avisar=avisos_zsd.append)
 
         avance("3/4 Calculando saldos y alertas")
-        plan = bases.plan_sop(grupo)
-        disp = bases.disponibilidad()
         # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
         oc, oc_origen = bases.oc_de(numero), "Pedidos Ingresados"
         if not oc:
             oc, oc_origen = oc_de_zsd(filas_zsd, numero), "ZSD001_03"
         if not oc:
             oc_origen = ""
-        med = ({sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
-               if filas_med else base_medidas.medidas())
         en_ent = en_entrega_por_modelo(filas_zsd)
         res = calcular(posiciones, plan, en_ent, med, disp)
 
@@ -558,6 +580,13 @@ def sap_borrar_grupo(body: dict, s: Session = Depends(get_session)):
                                       [grupo], correr)
     except RuntimeError as err:
         raise HTTPException(409, str(err)) from err
+
+
+@router.get("/acciones/trabajos")
+def lista_trabajos():
+    """Los últimos trabajos (el que está en curso primero). Si se recarga la página mientras SAP trabaja,
+    la plataforma retoma el seguimiento en vez de dar el trabajo por perdido."""
+    return acciones.recientes()
 
 
 @router.get("/acciones/trabajos/{tid}")

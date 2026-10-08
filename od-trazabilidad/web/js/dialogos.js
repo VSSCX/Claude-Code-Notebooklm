@@ -529,7 +529,7 @@ document.addEventListener('change', async ev => {
 });
 
 render();
-Sesion.iniciar().catch(() => {}).then(() => { if (!E.res){ document.body.classList.remove('entrando'); $('.app').inert = false; } Store.init(); });   // primero quién eres, después se carga todo
+Sesion.iniciar().catch(() => {}).then(() => { if (!E.res){ document.body.classList.remove('entrando'); $('.app').inert = false; } Store.init().then(retomarTrabajo); });   // primero quién eres, después se carga todo
 
 /* ---- Carga por sobre el plan SOP: autorización por lote ---- */
 async function autorizarExceso(){

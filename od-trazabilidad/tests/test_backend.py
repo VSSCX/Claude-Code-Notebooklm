@@ -1245,3 +1245,114 @@ def test_el_pallet_de_sodimac_deja_105_cm_de_carga(datos):
         s.get(Cliente, "SODIMAC").pallet_alto = 110.0              # cambiado a mano: se respeta
         s.commit()
         assert cli_mod.buscar(s, "SODIMAC").pallet_alto == 110
+
+
+# ---------- el análisis no debe morir justo después de exportar ZSD001_03 ----------
+def test_sin_sql_server_el_analisis_falla_antes_de_tocar_sap_con_un_motivo_claro(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import bases, sap
+    from app.main import app
+    c = TestClient(app)
+    llamadas = []
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: llamadas.append("vl01n"))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: llamadas.append("zsd"))
+
+    def sin_red(grupo):
+        raise RuntimeError("('08001', '[08001] Named Pipes Provider: Could not open a connection to SQL Server [53]')")
+    monkeypatch.setattr(bases, "plan_sop", sin_red)
+    r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
+    t = _esperar(c, r.json()["id"])
+    assert t["estado"] == "error"
+    assert "SQL Server" in t["error"] and "no se empezó con SAP" in t["error"] and "VPN" in t["error"]
+    assert t["paso"].startswith("0/4")
+    assert llamadas == []                                    # no se abrió SAP ni se exportó nada
+
+
+def test_el_error_de_un_paso_dice_en_cual_se_detuvo(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import base_medidas, bases, sap
+    from app.main import app
+    c = TestClient(app)
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(
+        posiciones=[SimpleNamespace(sku="9000", qty_entrega=1, qty_pendiente=1)], aviso=""))
+
+    def zsd(*a, **k):
+        raise sap.ErrorSap("SAP no guardó el archivo de ZSD001_03 (SAP muestra una ventana: «Seguridad de SAP GUI»).")
+    monkeypatch.setattr(sap, "zsd001_03", zsd)
+    monkeypatch.setattr(bases, "plan_sop", lambda g: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {})
+    r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
+    t = _esperar(c, r.json()["id"])
+    assert t["estado"] == "error" and "Seguridad de SAP GUI" in t["error"]
+    assert t["paso"].startswith("2/4")
+
+
+def test_se_puede_retomar_el_seguimiento_de_un_trabajo_en_curso(datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import acciones
+    from app.main import app
+    c = TestClient(app)
+    acciones._trabajos.clear()
+    acciones._registrar({"id": "viejo", "estado": "ok", "accion": "x", "label": "x", "args": [], "inicio": "", "fin": ""})
+    acciones._registrar({"id": "vivo", "estado": "en_curso", "accion": "analizar_pedido", "label": "Analizar pedido",
+                         "args": ["1"], "inicio": "2026-10-08T10:00:00", "fin": "", "progreso": "2/4"})
+    acciones._registrar({"id": "nuevo", "estado": "ok", "accion": "x", "label": "x", "args": [], "inicio": "", "fin": ""})
+    lista = c.get("/api/acciones/trabajos").json()
+    assert lista[0]["id"] == "vivo"                           # el que sigue en curso va primero
+    acciones._trabajos.clear()
+
+
+def test_exportacion_de_zsd_se_lee_solo_cuando_esta_completa_y_no_devuelve_vacio_en_silencio(tmp_path):
+    import threading
+    import time as _t
+    from openpyxl import Workbook
+    from app.integrations import sap
+
+    class SesionFalsa:                                          # sin ventanas abiertas
+        def findById(self, ident):
+            raise KeyError(ident)
+
+    destino = tmp_path / "Qty En Entrega 1.xlsx"
+
+    def escribir_de_a_poco():                                  # SAP crea el archivo y lo termina de llenar después
+        destino.write_bytes(b"PK")
+        _t.sleep(1.2)
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Material", "Nombre Codigo de Material", "Qty. En Entrega"])
+        ws.append(["9000", "PRODUCTO", 7])
+        wb.save(destino)
+    hilo = threading.Thread(target=escribir_de_a_poco)
+    hilo.start()
+    sap._esperar_archivo(SesionFalsa(), destino, maximo=20)
+    filas = sap.leer_export(destino)
+    hilo.join()
+    assert filas == [{"Material": "9000", "Nombre Codigo de Material": "PRODUCTO", "Qty. En Entrega": 7}]
+
+    vacio = tmp_path / "vacio.xlsx"
+    vacio.write_bytes(b"")
+    with pytest.raises(sap.ErrorSap, match="vacío"):
+        sap.leer_export(vacio)
+    raro = tmp_path / "raro.xlsx"
+    raro.write_text("hola\tmundo\n1\t2\n", encoding="utf-8")
+    with pytest.raises(sap.ErrorSap, match="columna de material"):
+        sap.leer_export(raro)
+
+
+def test_si_sap_no_guarda_el_archivo_se_nombra_la_ventana_en_vez_de_esperar_en_vano(tmp_path):
+    from app.integrations import sap
+
+    class Ventana:
+        Text = "Seguridad de SAP GUI"
+
+    class SesionConAviso:
+        def findById(self, ident):
+            if ident == "wnd[1]":
+                return Ventana()
+            raise KeyError(ident)
+
+    t0 = time.time()
+    with pytest.raises(sap.ErrorSap, match="Seguridad de SAP GUI"):
+        sap._esperar_archivo(SesionConAviso(), tmp_path / "no_llega.xlsx", maximo=30)
+    assert time.time() - t0 < 12

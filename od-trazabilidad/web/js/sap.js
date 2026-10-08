@@ -4,19 +4,48 @@
 /* ============ Acciones en SAP (todo nativo: la plataforma no abre Excel) ============ */
 function estadoJob(){
   const j = UI.job; if (!j) return '';
-  if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}. ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
+  if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}.${j.reconectando ? ' <span class="tag err">Reconectando con la plataforma…</span>' : ''} ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
   if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.resultado || 'terminó')}</p>`;
-  return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}</p>`;
+  return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}${j.paso ? ` <span class="muted">(se detuvo en: ${esc(j.paso)})</span>` : ''}</p>`;
 }
+/* Sigue un trabajo de SAP hasta que termine. Un fallo pasajero de red (o de sesión) ya no da el trabajo por perdido:
+   antes el primer error de consulta cortaba el seguimiento, la pantalla se quedaba sin resultado y parecía que
+   el análisis había terminado solo. */
 async function seguirJob(){
+  let fallos = 0;
   while (UI.job && UI.job.estado === 'en_curso'){
     await new Promise(r => setTimeout(r, 1500));
-    try { UI.job = await api('GET', '/acciones/trabajos/' + UI.job.id); } catch(e){ break; }
+    try { const j = await api('GET', '/acciones/trabajos/' + UI.job.id); UI.job = j; fallos = 0; }
+    catch(e){
+      if (e.status === 404){
+        UI.job = {...UI.job, estado: 'error', paso: UI.job.progreso, reconectando: false,
+          error: 'La plataforma se reinició mientras SAP trabajaba y el trabajo se perdió. Vuelve a lanzarlo.'};
+        break;
+      }
+      if (!(Sesion.conCuentas() && !Sesion.cuenta)) fallos++;       // mientras se vuelve a entrar no se cuenta como fallo
+      if (fallos >= 40){
+        UI.job = {...UI.job, estado: 'error', paso: UI.job.progreso, reconectando: false,
+          error: 'Se perdió la conexión con la plataforma y no volvió en un minuto. El trabajo puede haber terminado: revisa el pedido o vuelve a lanzarlo.'};
+        break;
+      }
+      UI.job.reconectando = true; render(); continue;
+    }
     render();
   }
   render();
   if (UI.job && UI.job.estado === 'ok') await Store.refresh();
   else if (UI.job && UI.job.estado === 'error') toast(UI.job.error);
+}
+/* Si se recarga la página mientras SAP trabaja, se retoma el seguimiento */
+async function retomarTrabajo(){
+  if (UI.job) return;
+  let lista = [];
+  try { lista = await api('GET', '/acciones/trabajos'); } catch(e){ return; }
+  const j = lista.find(x => x.estado === 'en_curso'); if (!j) return;
+  UI.job = j; render(); toast('Hay una acción de SAP en curso: sigo mostrándote cómo va');
+  const eraAnalisis = j.accion === 'analizar_pedido';
+  await seguirJob();
+  if (eraAnalisis) cierreAnalisis();
 }
 function abrirLecturaSap(modo){
   const p = UI.sel && Store.get('pedidos', UI.sel);
@@ -50,13 +79,20 @@ async function lanzarAnalisis(pedido, body){
   try { UI.job = await api('POST', `/analisis/${encodeURIComponent(pedido)}`, body); render(); }
   catch(e){ toast(e.message); return; }
   await seguirJob();
-  if (UI.job && UI.job.estado === 'ok' && UI.job.datos){
-    const d = UI.job.datos;
-    UI.job.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta`;
+  cierreAnalisis();
+}
+function cierreAnalisis(){
+  const j = UI.job; if (!j) return;
+  if (j.estado === 'ok' && j.datos){
+    const d = j.datos;
+    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta`;
     if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
     UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos';
     render();
+  } else if (j.estado === 'error'){
+    // un aviso que no se va solo: el motivo y el paso en que se detuvo (el toast desaparecía en segundos)
+    Avisos.agregar('error', 'El análisis no terminó', j.error || '', j.paso ? [`Se detuvo en: ${j.paso}`] : []);
   }
 }
 

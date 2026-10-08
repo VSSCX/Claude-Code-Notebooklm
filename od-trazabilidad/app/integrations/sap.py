@@ -475,6 +475,15 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
 
     _presionar(ses, "wnd[0]/tbar[1]/btn[8]", 120)   # Ejecutar
 
+    # Si SAP no encontró nada, no hay lista que exportar: se dice con sus palabras en vez de fallar más adelante
+    if _por_id(ses, "wnd[0]/tbar[1]/btn[33]") is None:
+        msg = _mensaje_sap(ses)
+        if re.search(r"no se (han )?(seleccion|encontr)|sin datos|no data|no hay", msg, re.I):
+            if avisar:
+                avisar("ZSD001_03 no encontró entregas para este cliente y estos materiales: la Qty en entrega queda en 0.")
+            return []
+        raise ErrorSap("ZSD001_03 no mostró la lista de resultados" + (f" (SAP dice: «{msg[:150]}»)." if msg else "."))
+
     # Layout y exportación (mismos pasos que el Excel)
     _presionar(ses, "wnd[0]/tbar[1]/btn[33]", 5)
     layout = _por_id(ses, "wnd[1]/usr/ssubD0500_SUBSCREEN:SAPLSLVC_DIALOG:0501/cntlG51_CONTAINER/shellcont/shell")
@@ -496,23 +505,78 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
         radio.Select()
     _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 5)
     if _por_id(ses, "wnd[1]/usr/ctxtDY_PATH") is None:
-        raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo.")
+        raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo" + _ventana_inesperada(ses) + ".")
 
     Path(carpeta).mkdir(parents=True, exist_ok=True)
     destino = Path(carpeta) / nombre
-    if destino.exists():
-        destino.unlink()
+    _limpiar_exportaciones(Path(carpeta), conservar=destino)
     _texto(ses, "wnd[1]/usr/ctxtDY_PATH", str(carpeta))
     _texto(ses, "wnd[1]/usr/ctxtDY_FILENAME", nombre)
-    _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar
+    _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar / guardar
 
-    t0 = time.time()
-    while not destino.exists() and time.time() - t0 < 30:
+    _esperar_archivo(ses, destino)
+    try:
+        return leer_export(destino)
+    finally:
+        try:
+            destino.unlink()                 # ya se leyó: no queda un archivo suelto que se pueda abrir o bloquear
+        except OSError:
+            pass
+
+
+def _ventana_inesperada(ses) -> str:
+    """' (SAP muestra: «título»)' si hay una ventana abierta que el flujo no esperaba, p. ej. la de seguridad de SAP GUI."""
+    if _por_id(ses, "wnd[1]") is None:
+        return ""
+    try:
+        titulo = " ".join(str(ses.findById("wnd[1]").Text or "").split())
+    except Exception:  # noqa: BLE001
+        titulo = ""
+    return f" (SAP muestra una ventana: «{titulo[:90]}»)" if titulo else " (SAP muestra una ventana que no esperaba)"
+
+
+def _limpiar_exportaciones(carpeta, conservar=None, dias: float = 1.0) -> None:
+    """Borra exportaciones viejas que hayan quedado de análisis interrumpidos."""
+    limite = time.time() - dias * 86400
+    for f in carpeta.glob("Qty En Entrega*.xls*"):
+        try:
+            if f != conservar and f.stat().st_mtime < limite:
+                f.unlink()
+        except OSError:
+            pass
+
+
+def _esperar_archivo(ses, destino, maximo: float = 60.0) -> None:
+    """Espera a que SAP termine de escribir el archivo: existe, tiene contenido, deja de crecer y se puede abrir.
+    Antes se leía apenas aparecía (más 1 s fijo): un archivo a medio escribir se leía vacío y el análisis seguía
+    con la Qty en entrega en cero."""
+    t0, ultimo, estable = time.time(), -1, 0
+    while time.time() - t0 < maximo:
+        try:
+            tam = destino.stat().st_size if destino.exists() else -1
+        except OSError:
+            tam = -1
+        if tam > 0 and tam == ultimo:
+            estable += 1
+            if estable >= 2:
+                try:
+                    with open(destino, "rb"):
+                        return
+                except OSError:
+                    estable = 0                     # todavía lo tiene abierto quien lo escribe
+        else:
+            estable = 0
+        ultimo = tam
+        if tam < 0 and time.time() - t0 > 4 and _por_id(ses, "wnd[1]") is not None:
+            # SAP sigue mostrando una ventana y no hay archivo: casi siempre es el aviso de seguridad de SAP GUI
+            # (acceso a archivos) o un error al guardar. Se dice cuál es en vez de esperar al vacío.
+            raise ErrorSap(f"SAP no guardó el archivo de ZSD001_03{_ventana_inesperada(ses)}. "
+                           f"Si es el aviso de seguridad de SAP GUI, márcalo como «Permitir siempre» para la carpeta {destino.parent} "
+                           "(o pide a TI que la agregue a las rutas permitidas del scripting de SAP GUI).")
         time.sleep(0.5)
     if not destino.exists():
-        raise ErrorSap(f"ZSD001_03 no generó el archivo {destino}.")
-    time.sleep(1.0)   # que SAP termine de escribir
-    return leer_export(destino)
+        raise ErrorSap(f"ZSD001_03 no generó el archivo {destino.name} en {destino.parent}. Revisa que SAP pueda escribir en esa carpeta.")
+    raise ErrorSap(f"El archivo {destino.name} de ZSD001_03 no terminó de guardarse (sigue abierto o creciendo).")
 
 
 def leer_export(ruta) -> list[dict]:
@@ -536,9 +600,12 @@ def leer_export(ruta) -> list[dict]:
         filas = [linea.split("\t") for linea in (texto or "").splitlines()]
     filas = [f for f in filas if any(str(c or "").strip() for c in f)]
     if not filas:
-        return []
+        raise ErrorSap("El archivo exportado de ZSD001_03 llegó vacío: SAP no lo escribió completo. Vuelve a intentar.")
     i_cab = next((i for i, f in enumerate(filas[:15])
-                  if any("material" in str(c or "").lower() for c in f)), 0)
+                  if any("material" in str(c or "").lower() for c in f)), None)
+    if i_cab is None:
+        raise ErrorSap("El archivo exportado de ZSD001_03 no trae la columna de material: no tiene el formato esperado. "
+                       "Revisa el layout elegido en SAP.")
     cab = [str(c or "").strip() for c in filas[i_cab]]
     return [{cab[j]: f[j] for j in range(min(len(cab), len(f))) if cab[j]}
             for f in filas[i_cab + 1:]]
