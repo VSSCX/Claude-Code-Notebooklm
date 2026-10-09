@@ -435,7 +435,7 @@ document.addEventListener('click', ev => {
       guardarCliente(v('cliNombre').trim().toUpperCase(), {
         grupo_sop: v('cliGrupo'), codigo: v('cliCodigo'), canal: v('cliCanal'), region: v('cliRegion'),
         pallet: [+v('cliPL'), +v('cliPW'), +v('cliPH')], caja_master: v('cliCM'),
-        calefon_aparte: chk('cliCalefon'), hibrido: chk('cliHibrido'), notas: v('cliNotas')});
+        calefon_aparte: chk('cliCalefon'), hibrido: chk('cliHibrido'), pallet_por_producto: chk('cliPorProducto'), notas: v('cliNotas')});
       break; }
     case 'abrirLecturaSap': abrirLecturaSap(); break;
     case 'abrirAnalisis': abrirLecturaSap('analizar'); break;

@@ -14,6 +14,9 @@ from ..analisis import PALLETS as _PALLETS_BASE
 from ..models import Cliente, ahora
 
 
+PALLET_POR_PRODUCTO = ("FALABELLA", "EASY")        # SDA Stock: un producto por pallet, sin mezclas
+
+
 def _semilla() -> list[dict]:
     filas = []
     for nombre, (grupo, codigo) in _CLIENTES_BASE.items():
@@ -23,6 +26,7 @@ def _semilla() -> list[dict]:
                       "pallet_alto": float(pl[2]),
                       "calefon_aparte": "HITES" in nombre,
                       "hibrido": nombre in ("SODIMAC", "RIPLEY"),
+                      "pallet_por_producto": nombre in PALLET_POR_PRODUCTO,
                       "canal": "RETAIL", "region": "RM"})
     return filas
 
@@ -72,7 +76,7 @@ def doc(c: Cliente) -> dict:
     return {"nombre": c.nombre, "grupo_sop": c.grupo_sop, "codigo": c.codigo, "canal": c.canal,
             "region": c.region, "pallet": [c.pallet_largo, c.pallet_ancho, c.pallet_alto],
             "caja_master": c.caja_master, "calefon_aparte": c.calefon_aparte,
-            "hibrido": c.hibrido, "notas": c.notas}
+            "hibrido": c.hibrido, "pallet_por_producto": c.pallet_por_producto, "notas": c.notas}
 
 
 def guardar(s: Session, datos: dict) -> Cliente:
@@ -92,6 +96,7 @@ def guardar(s: Session, datos: dict) -> Cliente:
     c.caja_master = str(datos.get("caja_master", c.caja_master or "")).strip().upper()
     c.calefon_aparte = bool(datos.get("calefon_aparte", c.calefon_aparte))
     c.hibrido = bool(datos.get("hibrido", c.hibrido))
+    c.pallet_por_producto = bool(datos.get("pallet_por_producto", c.pallet_por_producto))
     c.notas = str(datos.get("notas", c.notas or ""))[:200]
     c.actualizado = ahora()
     s.add(c)

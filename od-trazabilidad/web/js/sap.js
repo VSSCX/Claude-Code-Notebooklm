@@ -322,6 +322,7 @@ function seccionClientes(){
       <div class="row" style="margin-top:10px">
         <label class="row small"><input type="checkbox" name="cliCalefon" ${ed.calefon_aparte ? 'checked' : ''}> Calefones en camión aparte</label>
         <label class="row small"><input type="checkbox" name="cliHibrido" ${ed.hibrido ? 'checked' : ''}> Conchos a piso (sin pallets mix)</label>
+        <label class="row small" title="En SDA Stock cada producto arma sus propios pallets: los excedentes no se juntan en un pallet mixto"><input type="checkbox" name="cliPorProducto" ${ed.pallet_por_producto ? 'checked' : ''}> Un producto por pallet (SDA Stock)</label>
       </div>
       <label class="f" style="margin-top:10px">Notas<input type="text" name="cliNotas" value="${esc(ed.notas || '')}"></label>
       <div class="row" style="margin-top:10px"><button class="btn primary" data-act="guardarCliente">Guardar</button>
@@ -331,7 +332,7 @@ function seccionClientes(){
       <th>Pallet (L × A × Alto)</th><th>Caja master</th><th>Reglas</th><th></th></tr></thead><tbody>
       ${filas.map(f => `<tr><td><b>${esc(f.nombre)}</b></td><td>${esc(f.grupo_sop)}</td><td class="num">${esc(f.codigo)}</td>
         <td class="num">${f.pallet.map(x => fmt(x)).join(' × ')}</td><td class="small">${esc(f.caja_master || '—')}</td>
-        <td>${f.calefon_aparte ? '<span class="tag">calefones aparte</span> ' : ''}${f.hibrido ? '<span class="tag">conchos a piso</span>' : ''}</td>
+        <td>${f.calefon_aparte ? '<span class="tag">calefones aparte</span> ' : ''}${f.hibrido ? '<span class="tag">conchos a piso</span>' : ''}${f.pallet_por_producto ? ' <span class="tag">un producto por pallet</span>' : ''}</td>
         <td><button class="btn quiet sm" data-act="editarCliente" data-nombre="${esc(f.nombre)}">Editar</button></td></tr>`).join('')}
     </tbody></table></div>
   </div></div>`;

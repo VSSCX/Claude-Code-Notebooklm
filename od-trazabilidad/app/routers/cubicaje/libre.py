@@ -243,6 +243,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           piso_pallet=str(body.get("piso_pallet") or ""),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
+                          pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
                           orientacion_pallet=ajustes["orientacion_pallet"],
                           capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
                           kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")))

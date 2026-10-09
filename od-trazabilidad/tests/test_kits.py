@@ -107,3 +107,44 @@ def test_expandir_kits_en_modos_por_sucursal():
                                               {"KIT1": KIT})
     assert usados == ["KIT1"] and {p.sku: p.carga for p in pos} == {"horno": 10, "encim": 10, "campana": 10}
     assert sum(f.unidades for f in pre if f.sku == "horno") == 10          # no más kits que los del pedido (6 + 4)
+
+
+# ---------- restricción por cliente: un producto por pallet (SDA Stock) ----------
+def _productos_por_pallet(res):
+    out = defaultdict(set)
+    for f in res.filas04:
+        if f.pallet > 0:
+            out[f.pallet].add(f.sku)
+    return out
+
+
+def test_sin_la_restriccion_los_excedentes_de_varios_productos_se_mezclan():
+    cache = {"a": _d(60, 40, 40, "A"), "b": _d(60, 40, 40, "B"), "c": _d(60, 40, 40, "C")}
+    pos = [_pos("a", 30), _pos("b", 30), _pos("c", 30)]
+    res = cubicaje_sda_stock(pos, cache, 120, 100, 150, False, ["1"])
+    assert any(len(s) > 1 for s in _productos_por_pallet(res).values())
+
+
+def test_un_producto_por_pallet_no_mezcla_ni_aunque_queden_pocas_unidades():
+    cache = {"a": _d(60, 40, 40, "A"), "b": _d(60, 40, 40, "B"), "c": _d(60, 40, 40, "C")}
+    pos = [_pos("a", 30), _pos("b", 30), _pos("c", 30)]
+    res = cubicaje_sda_stock(pos, cache, 120, 100, 150, False, ["1"], por_producto=True)
+    prod = _productos_por_pallet(res)
+    assert prod and all(len(s) == 1 for s in prod.values())               # nunca dos productos en un pallet
+    assert {p["tipo"] for p in res.pallets} == {"Mono"}
+    total = defaultdict(int)
+    for f in res.filas04:
+        total[f.sku] += f.unidades
+    assert dict(total) == {"a": 30, "b": 30, "c": 30}                      # no se pierde nada
+    assert any("Un producto por pallet" in a for a in res.avisos)
+    # un mismo producto puede ocupar más de un pallet
+    grande = cubicaje_sda_stock([_pos("a", 200)], cache, 120, 100, 150, False, ["1"], por_producto=True)
+    assert len(grande.pallets) > 1 and all(len(s) == 1 for s in _productos_por_pallet(grande).values())
+
+
+def test_un_producto_por_pallet_la_caja_master_y_las_sueltas_del_mismo_sku_comparten_pallet():
+    cache = {"a": _d(30, 20, 20, "A"), "ca": Dims(L=60, w=40, h=40, apilable=True, inclinable=False, rotable=False,
+                                                  piezas=6, desc="CAJA A", max_camion=0, max_pallet=0, peso=10.0)}
+    res = cubicaje_sda_stock([_pos("a", 20)], cache, 120, 100, 150, True, ["1"], por_producto=True)    # 3 cajas + 2 sueltas
+    prod = _productos_por_pallet(res)
+    assert len(prod) == 1 and {p["tipo"] for p in res.pallets} == {"Mono"}

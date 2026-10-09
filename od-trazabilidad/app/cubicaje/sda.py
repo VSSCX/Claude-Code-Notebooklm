@@ -244,6 +244,26 @@ def armar_pallets(bloques: list[Bloque]) -> tuple[list[Pallet], list[tuple[int, 
     return pallets, piso
 
 
+def armar_pallets_por_producto(bloques: list[Bloque]) -> tuple[list[Pallet], list[tuple[int, int]]]:
+    """Clientes con la restricción «un producto por pallet» (FALABELLA, EASY): cada SKU arma sus propios pallets y
+    nada se mezcla con otro SKU, aunque el pallet quede con poca carga. Las cajas master y las unidades sueltas del
+    MISMO SKU sí pueden compartir pallet (es el mismo producto). Un SKU puede ocupar más de un pallet."""
+    por_cod: dict[str, list[int]] = {}
+    for i, b in enumerate(bloques):
+        por_cod.setdefault(b.cod, []).append(i)
+    pallets: list[Pallet] = []
+    piso: list[tuple[int, int]] = []
+    for idx in por_cod.values():
+        sub = [bloques[i] for i in idx]
+        pals, pis = armar_pallets(sub)
+        for p in pals:
+            p.contenido = [(idx[bi], n) for bi, n in p.contenido]
+            p.tipo = "Mono"
+            pallets.append(p)
+        piso += [(idx[bi], n) for bi, n in pis]
+    return pallets, piso
+
+
 def remezclar_flojos(pallets: list[Pallet], bloques: list[Bloque]) -> list[Pallet]:
     """Deshace los pallets con menos del 60% y reparte su contenido en pallets mix."""
     pool: list[list] = []          # [índice de bloque, unidades]
@@ -371,8 +391,8 @@ def _cubicar_pallet(items: list[Item], pal_L: float, pal_W: float, pal_H: float,
 
 
 def validar_pallets(pallets: list[Pallet], bloques: list[Bloque], pal_L: float, pal_W: float,
-                    pal_H: float, restric: Restric,
-                    misma_sucursal: bool = False) -> tuple[list[Pallet], dict[int, list[Placement]]]:
+                    pal_H: float, restric: Restric, misma_sucursal: bool = False,
+                    por_producto: bool = False) -> tuple[list[Pallet], dict[int, list[Placement]]]:
     """Comprueba con el motor que cada pallet realmente cierre, y reubica lo que sobra.
 
     Reglas del VBA (las que costaron los arreglos de julio):
@@ -380,6 +400,7 @@ def validar_pallets(pallets: list[Pallet], bloques: list[Bloque], pal_L: float, 
       volver a cubicar (si no, el volcado y la validación no coinciden).
     - Si un bloque no entra completo, lo que sobra se encola.
     - Un bloque con 0 colocado dentro de un pallet mix se saca entero.
+    - Con por_producto, lo encolado solo se reubica en pallets del mismo producto.
     - Lo encolado se reubica en pallets con hueco REAL (se recubica el pallet completo y
       solo se acepta si entra TODO); si ninguno lo admite, recién ahí se abre pallet nuevo.
     """
@@ -417,6 +438,8 @@ def validar_pallets(pallets: list[Pallet], bloques: list[Bloque], pal_L: float, 
                 continue
             if misma_sucursal and p.sucursal != bloques[bi].sucursal:
                 continue          # en predistribuido, el sobrante no cruza de sucursal
+            if por_producto and any(bloques[b].cod != bloques[bi].cod for b, _ in p.contenido):
+                continue          # un producto por pallet: el sobrante no se mezcla con otro producto
             prueba = Pallet(contenido=[(b, n + qty if b == bi else n) for b, n in p.contenido],
                             frac=p.frac)
             if not any(b == bi for b, _ in p.contenido):
@@ -435,7 +458,7 @@ def validar_pallets(pallets: list[Pallet], bloques: list[Bloque], pal_L: float, 
         if not colocado:
             nuevo = Pallet(contenido=[(bi, qty)], frac=qty / bloques[bi].cap_pallet,
                            sucursal=bloques[bi].sucursal if misma_sucursal else "",
-                           tipo="Mono-Suc" if misma_sucursal else "")
+                           tipo="Mono-Suc" if misma_sucursal else ("Mono" if por_producto else ""))
             pallets.append(nuevo)
             items = _items_de_pallet(nuevo, bloques)
             plc, _ = _cubicar_pallet(items, pal_L, pal_W, pal_H, restric)
@@ -584,7 +607,8 @@ def restricciones_piso() -> Restric:
 def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L: float,
                        pal_W: float, pal_H: float, usa_caja_master: bool, pedidos: list[str],
                        pasa_filtro=None, cam_offset: int = 0, orientacion: str = "excel",
-                       capacidad: str = "geometria", kits: dict | None = None, kits_mezclar: bool = False):
+                       capacidad: str = "geometria", kits: dict | None = None, kits_mezclar: bool = False,
+                       por_producto: bool = False):
     """Modo SDA Stock completo: bloques -> pallets -> camiones -> piso -> salida."""
     from .kits import armar_pallets_kit, separar_kits
     from .mda import Camion, Fila03, Resultado
@@ -608,15 +632,21 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
     pack_L, pack_W = orientar_pallet(pal_L, pal_W, orientacion, bloques, restric, pal_H)
     calcular_capacidades(bloques, pack_L, pack_W, pal_H, restric, cache, tabla)
     ordenar_por_volumen(bloques)
-    pallets, piso = armar_pallets(bloques)
-    pallets = remezclar_flojos(pallets, bloques)
+    if por_producto:                    # restricción del cliente: cada producto en sus pallets, sin remezclar
+        pallets, piso = armar_pallets_por_producto(bloques)
+        res.avisos.append("Un producto por pallet (regla del cliente): no se mezclan productos, "
+                          "aunque algún pallet quede con poca carga.")
+    else:
+        pallets, piso = armar_pallets(bloques)
+        pallets = remezclar_flojos(pallets, bloques)
     if tabla:
         # La capacidad la manda la Base de Medidas: no se revalida con geometría
         pallets = [p for p in pallets if sum(n for _, n in p.contenido) > 0]
         placements = {i: grilla_simple(_items_de_pallet(p, bloques), pack_L, pack_W)
                       for i, p in enumerate(pallets)}
     else:
-        pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric)
+        pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric,
+                                              por_producto=por_producto)
     if lineas_kit:                      # los kits van en pallets propios, completos
         kp, kplc, kpiso, kav, ksm = armar_pallets_kit(lineas_kit, cache, bloques, pack_L, pack_W, pal_H, restric,
                                                       mezclar=kits_mezclar)
@@ -637,7 +667,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
                                                  restricciones_piso())
     res.placed = colocados + piso_pl
     res.filas04 = filas04 + piso_filas
-    res.pallets = [{"numero": i + 1, "tipo": p.tipo if p.tipo.startswith("Kit") else ("Mono" if p.k == 1 else "Mix"),
+    res.pallets = [{"numero": i + 1, "tipo": p.tipo or ("Mono" if p.k == 1 else "Mix"),
                     "vehiculo": geo.get(i + 1, {}).get("veh", 0),
                     "x": geo.get(i + 1, {}).get("x", 0.0), "y": geo.get(i + 1, {}).get("y", 0.0),
                     "dl": pal_W, "dw": pal_L} for i, p in enumerate(pallets)]

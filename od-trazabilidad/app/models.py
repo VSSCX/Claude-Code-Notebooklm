@@ -166,6 +166,7 @@ class Cliente(Base):
     caja_master: Mapped[str] = mapped_column(Unicode(20), default="")  # default de F2
     calefon_aparte: Mapped[bool] = mapped_column(Boolean, default=False)   # HITES
     hibrido: Mapped[bool] = mapped_column(Boolean, default=False)          # SODIMAC / RIPLEY
+    pallet_por_producto: Mapped[bool] = mapped_column(Boolean, default=False)   # FALABELLA / EASY: SDA Stock sin mezclar productos
     notas: Mapped[str] = mapped_column(Unicode(200), default="")
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
 

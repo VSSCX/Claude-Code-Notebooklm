@@ -138,6 +138,7 @@ def _cubicar(numero, body: dict, s: Session):
         caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")),
         pallet=tuple(cli_mod.doc(regla)["pallet"]) if regla else None,
         hibrido=regla.hibrido if regla else None,
+        pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
         orientacion_pallet=ajustes["orientacion_pallet"],
         capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
         piso_pallet=str(body.get("piso_pallet") or ""),
@@ -229,12 +230,13 @@ def _avisos_clientes(s: Session, distintos: list[str], base: str) -> list[str]:
     firmas = set()
     for c in distintos:
         r = cli_mod.buscar(s, c)
-        firmas.add((r.pallet_largo, r.pallet_ancho, r.pallet_alto, r.caja_master, r.hibrido, r.calefon_aparte)
+        firmas.add((r.pallet_largo, r.pallet_ancho, r.pallet_alto, r.caja_master, r.hibrido, r.calefon_aparte,
+                   r.pallet_por_producto)
                    if r else None)
     if len(firmas) <= 1:
         return []
     return [f"Clientes con reglas distintas ({', '.join(distintos)}): el cubicaje usa las de {base or distintos[0]} "
-            "(pallet, caja master, híbrido). Si corresponden otras, elígelas en «Reglas de» y vuelve a cubicar."]
+            "(pallet, caja master, híbrido, un producto por pallet). Si corresponden otras, elígelas en «Reglas de» y vuelve a cubicar."]
 
 
 def _guardar_conjunto(s: Session, doc: dict, numeros: list[str], cid: str) -> None:

@@ -37,6 +37,7 @@ class Entrada:
     hibrido: bool | None = None          # regla del cliente; None = se deduce del nombre
     orientacion_pallet: str = "largo"    # largo (como EasyCargo) | excel (como el VBA)
     capacidad_pallet: str = "geometria"  # geometria (cálculo exacto) | tabla (Máx Pallet)
+    pallet_por_producto: bool = False            # regla del cliente (FALABELLA, EASY): SDA Stock sin mezclar productos
     kits: dict = field(default_factory=dict)     # SKU de kit -> KitDef (cajas separadas que viajan juntas)
     kits_mezclar: bool = False                   # kits distintos en un mismo pallet (apagado: por validar)
 
@@ -84,7 +85,8 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
         return cubicaje_sda_stock(e.posiciones, e.medidas, pal_L, pal_W, pal_H,
                                   str(e.caja_master).upper() == "CON CAJA MASTER", e.pedidos,
                                   pasa_filtro, cam_offset, orientacion=e.orientacion_pallet,
-                                  capacidad=e.capacidad_pallet, kits=e.kits, kits_mezclar=e.kits_mezclar)
+                                  capacidad=e.capacidad_pallet, kits=e.kits, kits_mezclar=e.kits_mezclar,
+                                  por_producto=e.pallet_por_producto)
     if modo == "SDA PREDISTRIBUIDO":
         from ..analisis import pallet_cliente
         if not e.predistribuido:

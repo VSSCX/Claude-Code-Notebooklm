@@ -1392,3 +1392,48 @@ def test_un_kit_se_cubica_con_las_medidas_de_sus_componentes(c, tmp_path, monkey
     d2 = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "KITY", "qty": 5}], "modo": "SDA STOCK",
                                              "caja_master": "SIN CAJA MASTER"}).json()
     assert [f["sku"] for f in d2["faltantes"]] == ["900999999"] and d2["faltantes"][0]["unidades"] == 5
+
+
+def _productos_por_pallet_api(d):
+    out = {}
+    for f in d["filas04"]:
+        if f["pallet"] > 0:
+            out.setdefault(f["pallet"], set()).add(f["sku"])
+    return out
+
+
+def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_path, monkeypatch):
+    """Restricción por cliente: sin mezclas en SDA Stock, tanto en el cubicador manual como en el pedido analizado."""
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    with open(_archivo_medidas(tmp_path, [["1001", "1001 CAJA CHICA", 1, 30, 30, 30, 5, "Y", "N", "N", 500, 40],
+                                          ["1002", "1002 CAJA LARGA", 1, 40, 20, 20, 5, "Y", "N", "N", 500, 40]]), "rb") as fh:
+        c.post("/api/medidas/importar", files={"file": ("Base de Medidas.xlsm", fh.read())})
+    lineas = [{"sku": "1001", "qty": 5}, {"sku": "1002", "qty": 5}]
+    cuerpo = {"lineas": lineas, "modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER"}
+
+    # el cliente trae la regla de fábrica; los demás no
+    clis = {x["nombre"]: x for x in c.get("/api/clientes").json()["filas"]}
+    assert clis["FALABELLA"]["pallet_por_producto"] and clis["EASY"]["pallet_por_producto"]
+    assert not clis["PARIS"]["pallet_por_producto"]
+
+    libre_paris = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "PARIS"}).json()
+    assert any(len(s) > 1 for s in _productos_por_pallet_api(libre_paris).values())      # PARIS sí mezcla (control)
+    for cli in ("FALABELLA", "EASY"):
+        d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": cli}).json()
+        prod = _productos_por_pallet_api(d)
+        assert prod and all(len(s) == 1 for s in prod.values()), cli
+        assert d["unidades"] == 10
+
+    # cubicaje de un pedido analizado
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4600", cliente="FALABELLA")
+    d = c.post("/api/cubicaje/4600", json={"modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER"}).json()
+    assert d["modo"] == "SDA STOCK" and all(len(s) == 1 for s in _productos_por_pallet_api(d).values())
+
+    # se puede apagar desde Configuración
+    r = c.put("/api/clientes/FALABELLA", json={"pallet_por_producto": False})
+    assert r.json()["pallet_por_producto"] is False
+    d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "FALABELLA"}).json()
+    assert any(len(s) > 1 for s in _productos_por_pallet_api(d).values())
