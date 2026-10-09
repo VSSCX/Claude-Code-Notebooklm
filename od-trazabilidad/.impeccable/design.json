@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T00:00:00Z",
+  "title": "Design System: Trazabilidad Order Desk",
+  "extensions": {
+    "colorMeta": {
+      "ultramarine": {"role": "primary", "displayName": "Ultramar", "canonical": "#2442D6", "tonalRamp": ["#0B1654","#122282","#1A33B0","#2442D6","#5B73E3","#93A3EC","#C6CFF5","#E6EBFB"], "dark": "#8FA3FF"},
+      "ink": {"role": "neutral", "displayName": "Tinta", "canonical": "#12171C", "tonalRamp": ["#12171C","#222A31","#39424B","#586069","#7A838D","#A3ABB3","#CBD1D7","#E9EDEF"], "dark": "#E8ECF0"},
+      "paper": {"role": "neutral", "displayName": "Papel de etiqueta", "canonical": "#FDFDFC", "tonalRamp": ["#586069","#7A838D","#A3ABB3","#CBD1D7","#E4E8EC","#E9EDEF","#F2F4F5","#FDFDFC"], "dark": "#161C22"},
+      "desk": {"role": "neutral", "displayName": "Escritorio gris frio", "canonical": "#E4E8EC", "tonalRamp": ["#12171C","#39424B","#586069","#7A838D","#A3ABB3","#CBD1D7","#E4E8EC","#F2F4F5"], "dark": "#0E1216"},
+      "delivered-green": {"role": "secondary", "displayName": "Verde entregado", "canonical": "#17724A", "tonalRamp": ["#0A2E1E","#0F4A30","#17724A","#1B7F50","#4FA27E","#88C3A6","#BBE0CD","#DDF0E5"], "dark": "#5CC592"},
+      "attention-amber": {"role": "secondary", "displayName": "Ambar atencion", "canonical": "#8F5200", "tonalRamp": ["#3D2200","#6A3C00","#8F5200","#D98A00","#E8A83F","#F0C377","#F7DDAE","#FBEBCD"], "dark": "#F0B04A"},
+      "void-red": {"role": "secondary", "displayName": "Rojo anulado", "canonical": "#B3261E", "tonalRamp": ["#4A0F0B","#7C1913","#B3261E","#CC5149","#DD857F","#EBAFAA","#F5D0CD","#FADDD9"], "dark": "#F28074"},
+      "scheduled-blue": {"role": "secondary", "displayName": "Azul grisaceo programado", "canonical": "#3F6A99", "tonalRamp": ["#14263A","#22405F","#3F6A99","#6288B1","#88A6C7","#AFC4DB","#CFDCEA","#DDE8F3"], "dark": "#7BA4D1"}
+    },
+    "typographyMeta": {
+      "display-num": {"displayName": "Display numerico", "purpose": "Numero de pedido en la etiqueta."},
+      "headline": {"displayName": "Headline", "purpose": "Titulo de pagina."},
+      "title": {"displayName": "Title", "purpose": "h2 y marca del riel."},
+      "subtitle": {"displayName": "Subtitle", "purpose": "h3, ID de expediente, valores de celda."},
+      "body": {"displayName": "Body", "purpose": "Texto base y controles."},
+      "body-sm": {"displayName": "Body small", "purpose": "Tablas y metadatos."},
+      "label": {"displayName": "Label", "purpose": "Leyendas de formulario, tags, texto de paso."},
+      "field-cap": {"displayName": "Field cap", "purpose": "Leyenda de una celda de campo, unida a su valor."},
+      "code": {"displayName": "Code", "purpose": "Numeros de pedido, entregas, cantidades, SKU."}
+    },
+    "shadows": [
+      {"name": "lift", "value": "0 1px 2px rgba(18,23,28,.12), 0 6px 14px rgba(18,23,28,.16)", "purpose": "Unica sombra: dialogo y toast. En oscuro rgba(0,0,0,.5)."}
+    ],
+    "motion": [
+      {"name": "ease-out", "value": "cubic-bezier(.23,1,.32,1)", "purpose": "Easing de todas las transiciones de 100-160ms."},
+      {"name": "press", "value": "transform: scale(.97)", "purpose": "Estado activo de botones, pasos, seg y chips."},
+      {"name": "flash", "value": "900ms ease-out, fondo warn-soft a transparente", "purpose": "Confirma una fila actualizada."},
+      {"name": "overlay-enter", "value": "160ms, opacity 0 a 1 y scale .97 a 1", "purpose": "Dialogos."},
+      {"name": "toast", "value": "120-160ms, opacity y translateY 8px; 2.6s sin accion, 7s con accion", "purpose": "Toast."}
+    ],
+    "breakpoints": [
+      {"name": "ancho", "value": "1180px"},
+      {"name": "angosto", "value": "900px"}
+    ]
+  },
+  "components": [
+    {
+      "name": "Boton primario", "kind": "button", "refersTo": "btn-primary",
+      "description": "Accion principal; ultramar relleno.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Guardar</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;min-height:32px;padding:5px 12px;border:1px solid var(--edge,#7A838D);border-radius:2px;background:var(--paper,#FDFDFC);color:var(--ink,#12171C);font:550 14px 'Hanken Grotesk',system-ui,sans-serif;cursor:pointer}.ds-btn:hover{border-color:var(--ink,#12171C)}.ds-btn-primary{background:var(--accent,#2442D6);border-color:var(--accent,#2442D6);color:var(--accent-ink,#fff)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:2px}.ds-btn:active{transform:scale(.97)}"
+    },
+    {
+      "name": "Boton secundario", "kind": "button", "refersTo": "btn",
+      "description": "Accion normal; papel con borde.",
+      "html": "<button class=\"ds-btn\">Exportar</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;min-height:32px;padding:5px 12px;border:1px solid var(--edge,#7A838D);border-radius:2px;background:var(--paper,#FDFDFC);color:var(--ink,#12171C);font:550 14px 'Hanken Grotesk',system-ui,sans-serif;cursor:pointer}.ds-btn:hover{border-color:var(--ink,#12171C);background:var(--paper-2,#F2F4F5)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:2px}.ds-btn:active{transform:scale(.97)}"
+    },
+    {
+      "name": "Tags de estado", "kind": "chip", "refersTo": "tag",
+      "description": "Estado en texto: neutro, ok, warn, err, anulado.",
+      "html": "<span class=\"ds-tag\">Pendiente</span> <span class=\"ds-tag ds-ok\">Entregado</span> <span class=\"ds-tag ds-warn\">Sin agendar</span> <span class=\"ds-tag ds-err\">Error</span> <span class=\"ds-tag ds-void\">Anulado</span>",
+      "css": ".ds-tag{display:inline-flex;padding:1px 7px;border-radius:2px;font:600 12px/18px 'Hanken Grotesk',system-ui,sans-serif;background:var(--paper-3,#E9EDEF);color:var(--ink-2,#39424B)}.ds-ok{background:var(--ok-soft,#DDF0E5);color:var(--ok,#17724A)}.ds-warn{background:var(--warn-soft,#FBEBCD);color:var(--warn,#8F5200)}.ds-err{background:var(--err-soft,#FADDD9);color:var(--err,#B3261E)}.ds-void{background:transparent;color:var(--err,#B3261E);box-shadow:inset 0 0 0 1px var(--err,#B3261E);letter-spacing:.08em;text-transform:uppercase}"
+    },
+    {
+      "name": "Etiqueta de pedido", "kind": "custom", "refersTo": "label",
+      "description": "Cabecera con numero grande, codigo de barras sobre placa clara y celdas encajonadas bajo regla de tinta de 2px.",
+      "html": "<div class=\"ds-label\"><div class=\"ds-top\"><div class=\"ds-num\"><span class=\"ds-pre\">OC</span>4500123456</div><div class=\"ds-plate\"><svg width=\"150\" height=\"34\" viewBox=\"0 0 150 34\"><path d=\"M2 0h3v34H2zM7 0h1v34H7zM10 0h4v34h-4zM16 0h1v34h-1zM20 0h2v34h-2zM25 0h3v34h-3zM31 0h1v34h-1zM34 0h4v34h-4zM41 0h2v34h-2zM46 0h1v34h-1zM50 0h3v34h-3zM56 0h2v34h-2zM61 0h1v34h-1zM65 0h4v34h-4zM72 0h1v34h-1zM76 0h3v34h-3zM82 0h2v34h-2zM87 0h1v34h-1zM91 0h4v34h-4zM98 0h2v34h-2zM103 0h1v34h-1zM107 0h3v34h-3zM113 0h1v34h-1zM117 0h4v34h-4zM124 0h2v34h-2zM129 0h3v34h-3zM135 0h1v34h-1zM139 0h4v34h-4z\" fill=\"#000\"/></svg></div></div><div class=\"ds-cells\"><div class=\"ds-cell\"><span class=\"ds-cap\">Cliente</span><span class=\"ds-val\">Constructora Andes</span></div><div class=\"ds-cell\"><span class=\"ds-cap\">Canal</span><span class=\"ds-val\">Directo</span></div><div class=\"ds-cell\"><span class=\"ds-cap\">Recibido</span><span class=\"ds-val\">02-10-2026</span></div></div></div>",
+      "css": ".ds-label{background:var(--paper,#FDFDFC);border:1px solid var(--ink,#12171C);border-radius:2px;color:var(--ink,#12171C);font-family:'Hanken Grotesk',system-ui,sans-serif}.ds-top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:14px 16px 12px}.ds-num{font-size:34px;font-weight:700;letter-spacing:-.025em;line-height:1.05;font-variant-numeric:tabular-nums}.ds-pre{font-size:16px;font-weight:600;color:var(--muted,#586069);margin-right:10px}.ds-plate{background:#fff;padding:4px 8px;border-radius:2px;height:44px}.ds-cells{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink,#12171C)}.ds-cell{padding:8px 12px 9px;border-right:1px solid var(--hair,#CBD1D7)}.ds-cell:last-child{border-right:0}.ds-cap{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#586069)}.ds-val{display:block;font-weight:600;font-size:16px}"
+    },
+    {
+      "name": "Ruta de 9 pasos", "kind": "custom", "refersTo": "paso",
+      "description": "Celdas de etiqueta: hecho = tinta, siguiente = ultramar, entregado = verde.",
+      "html": "<div class=\"ds-ruta\"><span class=\"ds-paso ds-done\"><i>1</i><b>Recibido</b></span><span class=\"ds-paso ds-done\"><i>2</i><b>Validado</b></span><span class=\"ds-paso ds-next\"><i>3</i><b>Agendado</b></span><span class=\"ds-paso\"><i>4</i><b>Cargado</b></span><span class=\"ds-paso ds-last\"><i>9</i><b>Entregado</b></span></div>",
+      "css": ".ds-ruta{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--ink,#12171C);border-radius:2px;overflow:hidden;font-family:'Hanken Grotesk',system-ui,sans-serif}.ds-paso{display:flex;flex-direction:column;gap:3px;padding:6px 8px 7px;background:var(--paper,#FDFDFC);color:var(--muted,#586069);border-right:1px solid var(--hair,#CBD1D7)}.ds-paso:last-child{border-right:0}.ds-paso i{font-style:normal;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--edge,#7A838D);font-size:11px;font-weight:700}.ds-paso b{font-size:12px;font-weight:600}.ds-done{background:var(--ink,#12171C);color:var(--paper,#FDFDFC)}.ds-done i{background:var(--paper,#FDFDFC);border-color:var(--paper,#FDFDFC);color:var(--ink,#12171C)}.ds-next{background:var(--accent-soft,#E6EBFB);color:var(--accent,#2442D6);box-shadow:inset 0 0 0 2px var(--accent,#2442D6)}.ds-next i{border-color:var(--accent,#2442D6)}.ds-last{background:var(--ok-solid,#1B7F50);color:#fff}.ds-last i{background:#fff;border-color:#fff;color:var(--ok-solid,#1B7F50)}"
+    },
+    {
+      "name": "Docket", "kind": "card", "refersTo": "docket",
+      "description": "Expediente de entrega: regla superior de tinta de 2px y bloque meta encajonado.",
+      "html": "<div class=\"ds-docket\"><div class=\"ds-dkh\"><b class=\"ds-id\">8100045521</b><span class=\"ds-qty\">120 un</span></div><div class=\"ds-meta\"><div><span class=\"ds-cap\">Camion</span><span class=\"ds-v\">C-14</span></div><div><span class=\"ds-cap\">Fecha</span><span class=\"ds-v\">06-10-2026</span></div></div></div>",
+      "css": ".ds-docket{background:var(--paper,#FDFDFC);border:1px solid var(--hair,#CBD1D7);border-top:2px solid var(--ink,#12171C);border-radius:0 0 2px 2px;padding:12px 14px;font-family:'Hanken Grotesk',system-ui,sans-serif;color:var(--ink,#12171C)}.ds-dkh{display:flex;justify-content:space-between;align-items:baseline}.ds-id{font:700 16px 'JetBrains Mono',ui-monospace,monospace}.ds-qty{font-weight:650;font-size:16px}.ds-meta{display:flex;margin-top:8px;border:1px solid var(--hair,#CBD1D7);border-radius:2px}.ds-meta>div{padding:5px 10px 6px;border-right:1px solid var(--hair,#CBD1D7)}.ds-meta>div:last-child{border-right:0}.ds-cap{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#586069)}.ds-v{display:block;font-weight:550;font-size:13px}"
+    },
+    {
+      "name": "Seg", "kind": "custom", "refersTo": "seg",
+      "description": "Control segmentado; el pulsado se rellena de tinta.",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">Pallets</button><button aria-pressed=\"false\">Cajas</button></div>",
+      "css": ".ds-seg{display:inline-flex;border:1px solid var(--edge,#7A838D);border-radius:2px;overflow:hidden;background:var(--paper,#FDFDFC)}.ds-seg button{border:0;background:transparent;color:var(--ink,#12171C);padding:0 11px;min-height:30px;font:550 14px 'Hanken Grotesk',system-ui,sans-serif;cursor:pointer}.ds-seg button+button{border-left:1px solid var(--edge,#7A838D)}.ds-seg button[aria-pressed=true]{background:var(--ink,#12171C);color:var(--paper,#FDFDFC);font-weight:650}.ds-seg button:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:-3px}"
+    },
+    {
+      "name": "Chip de camion", "kind": "chip", "refersTo": "chip-cam",
+      "description": "Camion con regla superior de tinta y barra de ocupacion.",
+      "html": "<button class=\"ds-chipcam\" aria-pressed=\"true\"><span class=\"ds-l1\"><b>Camion 1</b><span>82%</span></span><span class=\"ds-l2\"><span>12 pallets</span><span>9,8 t</span></span><span class=\"ds-barra\"><span></span></span></button>",
+      "css": ".ds-chipcam{all:unset;box-sizing:border-box;width:172px;display:flex;flex-direction:column;gap:5px;padding:7px 10px 8px;border:1px solid var(--hair,#CBD1D7);border-top:2px solid var(--ink,#12171C);border-radius:0 0 2px 2px;background:var(--paper,#FDFDFC);color:var(--ink,#12171C);font:14px 'Hanken Grotesk',system-ui,sans-serif;cursor:pointer}.ds-chipcam[aria-pressed=true]{background:var(--accent-soft,#E6EBFB);box-shadow:inset 0 0 0 2px var(--accent,#2442D6)}.ds-l1,.ds-l2{display:flex;justify-content:space-between;font-size:13px}.ds-l2{color:var(--muted,#586069);font-size:12px}.ds-barra{display:block;height:6px;background:var(--track,#DCE1E6)}.ds-barra span{display:block;height:100%;width:82%;background:var(--ok-solid,#1B7F50)}.ds-chipcam:focus-visible{outline:2px solid var(--accent,#2442D6);outline-offset:1px}"
+    },
+    {
+      "name": "Toast con accion", "kind": "custom", "refersTo": "toast",
+      "description": "Pastilla de tinta con accion de texto subrayada; 7 s con accion.",
+      "html": "<div class=\"ds-toast\">Pedido archivado<button class=\"ds-acc\">Deshacer</button></div>",
+      "css": ".ds-toast{display:inline-block;background:var(--ink,#12171C);color:var(--paper,#FDFDFC);padding:9px 16px;border-radius:2px;font:550 13px 'Hanken Grotesk',system-ui,sans-serif;box-shadow:0 1px 2px rgba(18,23,28,.12),0 6px 14px rgba(18,23,28,.16)}.ds-acc{all:unset;cursor:pointer;margin-left:14px;font-weight:700;text-decoration:underline;text-underline-offset:3px}.ds-acc:focus-visible{outline:2px solid var(--paper,#FDFDFC);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La etiqueta logistica",
+    "overview": "Cada pedido se imprime como una etiqueta de despacho GS1: campos encajonados, una regla gruesa de tinta y un codigo de barras escaneable. La herramienta se lee como una etiqueta de pallet bien impresa, no como un dashboard SaaS. Superficie de papel de etiqueta sobre escritorio gris frio; riel y reglas de tinta casi negra; ultramar solo para seleccion, accion principal y foco; cuatro colores de estado con trabajo propio. Densa, tabular, esquinas casi rectas, una sola sombra en overlays.",
+    "keyCharacteristics": [
+      "Papel sobre escritorio, riel de tinta fijo a la izquierda.",
+      "Reglas de tinta de 1px y 2px; radio maximo 2px.",
+      "Campos encajonados con leyendas pequenas en mayusculas.",
+      "Code 128 real del numero de pedido, siempre sobre placa clara.",
+      "Una sola sombra suave, solo en dialogos y toast.",
+      "Hanken Grotesk para texto; JetBrains Mono solo para codigos y cantidades."
+    ],
+    "rules": [
+      {"name": "The Ultramarine Rule", "body": "El ultramar significa seleccionado, accion o foco. Nunca decora.", "section": "colors"},
+      {"name": "The Status Job Rule", "body": "Verde, ambar, rojo y azul grisaceo solo con su significado.", "section": "colors"},
+      {"name": "The Mono Is For Codes Rule", "body": "JetBrains Mono solo para codigos y cantidades.", "section": "typography"},
+      {"name": "The Tabular Rule", "body": "Toda cifra usa tabular-nums.", "section": "typography"},
+      {"name": "The One Lift Rule", "body": "Solo overlays llevan sombra.", "section": "elevation"}
+    ],
+    "dos": [
+      "Do representar cada objeto de trabajo como etiqueta: celdas encajonadas, leyenda field-cap arriba, valor abajo, una regla de tinta gruesa.",
+      "Do poner el Code 128 siempre sobre placa clara (#fff con barras #000), tambien en tema oscuro.",
+      "Do usar ultramar solo para seleccion, accion principal y foco; estados con sus cuatro colores.",
+      "Do mantener radio de 2px, bordes de 1px y una sola sombra (Lift) en overlays.",
+      "Do usar tabular-nums en cifras y JetBrains Mono solo en codigos y cantidades.",
+      "Do actualizar al instante y guardar en segundo plano; las fallas revierten con mensaje claro.",
+      "Do usar tokens var(--...) para todo color."
+    ],
+    "donts": [
+      "Don't usar kickers ni eyebrows. La leyenda field-cap solo rotula un valor dentro de su celda.",
+      "Don't usar rayas laterales de color en tarjetas, filas o avisos; la seleccion es aro completo.",
+      "Don't usar degradados en texto. Los unicos degradados son el esqueleto de carga y la barra de calculo.",
+      "Don't mostrar el codigo de barras sobre fondo oscuro o translucido.",
+      "Don't usar grilla de tarjetas, tiras de metricas heroicas ni esquinas mayores a 2px.",
+      "Don't usar iconos de glifo o emoji; los iconos son SVG.",
+      "Don't cargar fuentes ni librerias desde CDN."
+    ]
+  }
+}

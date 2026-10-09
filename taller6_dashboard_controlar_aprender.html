@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Controlar y Aprender · Dashboard Estratégico · Municipalidad de Ñuñoa</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;position:relative;
+  font-family:'Segoe UI',Tahoma,sans-serif;font-size:11px;background:#4a5068}
+.root{width:1280px;height:720px;overflow:hidden;display:flex;flex-direction:column;background:#f7f3ea;
+  position:absolute;top:0;left:0;transform-origin:top left}
+
+/* ── HEADER ── */
+.hdr{position:relative;padding:12px 22px 10px;flex-shrink:0;border-top:6px solid #2d5fa0}
+.hdr-top{display:flex;align-items:flex-end;justify-content:space-between}
+.hdr-title{font-family:Georgia,'Times New Roman',serif}
+.hdr-title .t1{font-size:30px;font-weight:700;color:#1a1a1a;letter-spacing:.01em}
+.hdr-title .t2{font-size:15px;font-weight:400;color:#1a1a1a;margin-left:6px;letter-spacing:.02em}
+.hdr-grp{font-size:9px;font-weight:700;letter-spacing:.18em;color:#d99a1f;text-transform:uppercase;padding-bottom:4px}
+.hdr-rule{height:3px;background:#f0a830;margin-top:8px}
+
+/* ── BANNER ── */
+.banner{background:#1f5cad;color:#fff;text-align:center;padding:6px 0;font-size:15px;font-weight:600;letter-spacing:.01em;flex-shrink:0}
+.aviso{font-size:8.5px;background:#f7a800;color:#3a2000;padding:1px 7px;border-radius:2px;margin-left:10px;vertical-align:middle;letter-spacing:.04em}
+
+/* ── BODY ── */
+.body{flex:1;display:flex;gap:10px;padding:10px 12px;overflow:hidden;min-height:0}
+.col{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+.col-l{flex:0 0 610px}
+.col-r{flex:1}
+
+/* ── PANEL ── */
+.panel{background:#fff;border:1px solid #d8dbe2;display:flex;flex-direction:column;overflow:hidden;min-height:0;min-width:0;
+  box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.panel-hdr{font-size:11px;font-weight:600;color:#1a1a1a;padding:6px 10px;border-bottom:1px solid #e8eaf0;flex-shrink:0;background:#fdfcf9}
+.panel-body{flex:1;padding:6px;overflow:hidden;position:relative}
+.panel-body canvas{width:100%!important;height:100%!important}
+
+/* ── TABLE ── */
+.tbl-wrap{flex:1;overflow-y:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:8.5px}
+.tbl thead th{position:sticky;top:0;background:#1f5cad;color:#fff;padding:3px 7px;text-align:left;font-size:8.5px;font-weight:600;text-transform:none;white-space:nowrap;z-index:1}
+.tbl thead th:last-child{text-align:center}
+.tbl td{padding:2px 7px;border-bottom:1px solid #eef0f4;color:#2a2a2a;white-space:nowrap}
+.tbl tr:nth-child(even) td:not(.val){background:#f7f8fb}
+.tbl td.persp{font-weight:600;color:#444}
+.tbl td.val{text-align:center;font-weight:700;color:#fff}
+.cell-v{background:#1db14f}.cell-o{background:#f2c12e;color:#5a4400!important}.cell-r{background:#c0392b}
+
+/* ── NOTE ── */
+.note{font-size:9px;color:#6c2020;background:#fde8e8;border:1px solid #f0b8b8;border-left:4px solid #c0392b;
+  padding:6px 9px;line-height:1.4;margin:0 0 0;flex-shrink:0}
+.note b{color:#a02525}
+
+/* ── LEGEND CHIPS ── */
+.legend-row{display:flex;gap:10px;align-items:center;font-size:8.5px;color:#555;padding:0 10px 5px;flex-shrink:0}
+.legend-row .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle}
+
+/* ── FOOTER ── */
+.ftr{flex-shrink:0;padding:4px 14px;font-size:8.5px;color:#9298a8;display:flex;justify-content:space-between;border-top:1px solid #e8e4d8}
+</style>
+</head>
+<body>
+<div class="root">
+
+<!-- ═══ HEADER ═══ -->
+<div class="hdr">
+  <div class="hdr-top">
+    <div class="hdr-title"><span class="t1">CONTROLAR Y APRENDER</span><span class="t2">DASHBOARD ESTRATÉGICO</span><span class="aviso">⚠ Datos simulados</span></div>
+    <div class="hdr-grp">Grupo 2 · Mun. Ñuñoa</div>
+  </div>
+  <div class="hdr-rule"></div>
+</div>
+
+<!-- ═══ BANNER ═══ -->
+<div class="banner">Ilustre Municipalidad de Ñuñoa</div>
+
+<!-- ═══ BODY ═══ -->
+<div class="body">
+
+  <!-- LEFT COLUMN -->
+  <div class="col col-l">
+    <div class="panel" style="flex:0 0 333px">
+      <div class="panel-hdr">Perspectiva · Objetivo · Iniciativa Asociada · % Avance iniciativa</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Perspectiva</th><th>Objetivo</th><th>Iniciativa Asociada</th><th>% Avance iniciativa</th></tr></thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note">
+      <b>⚠ Problema detectado — satisfacción vecinal en zona roja:</b> las iniciativas de atención directa al vecino
+      (<b>Ñuñoa Atiende</b> y <b>Vinculación Vecinal</b>) caen muy por debajo de meta. La perspectiva <b>Comunitaria</b>
+      concentra el 86% de sus objetivos en estado crítico (rojo).
+    </div>
+    <div class="panel" style="flex:1">
+      <div class="panel-hdr">% Avance por Objetivo <span style="color:#9298a8;font-weight:400">· orden ascendente, objetivos más críticos primero</span></div>
+      <div class="panel-body"><canvas id="obj_chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="col col-r">
+    <div class="panel" style="flex:0 0 333px">
+      <div class="panel-hdr">% Avance por iniciativa por Iniciativa Asociada</div>
+      <div class="panel-body"><canvas id="ini_chart"></canvas></div>
+    </div>
+    <div class="panel" style="flex:1">
+      <div class="panel-hdr">Distribución de Estado por Perspectiva por Perspectiva y Estado</div>
+      <div class="legend-row">
+        <span>Estado:</span>
+        <span><span class="dot" style="background:#f2c12e"></span>Amarillo</span>
+        <span><span class="dot" style="background:#c0392b"></span>Rojo</span>
+        <span><span class="dot" style="background:#1db14f"></span>Verde</span>
+      </div>
+      <div class="panel-body"><canvas id="estado_chart"></canvas></div>
+    </div>
+  </div>
+
+</div><!-- /body -->
+
+<!-- ═══ FOOTER ═══ -->
+<div class="ftr">
+  <span>18 iniciativas · 4 perspectivas BSC · Fase Controlar y Aprender</span>
+  <span>Prof. Alicia Núñez · FEN — Universidad de Chile</span>
+  <span>Taller 6 · Control de Gestión · Grupo 2</span>
+</div>
+
+</div><!-- /root -->
+
+<script>
+Chart.register(ChartDataLabels);
+Chart.defaults.font.family="'Segoe UI',Tahoma,sans-serif";
+Chart.defaults.font.size=9;
+Chart.defaults.set('plugins.datalabels',{display:false});
+
+const COLOR={v:'#1db14f',o:'#f2c12e',r:'#c0392b'};
+const fmt=v=>v.toFixed(2).replace('.',',');
+const estado=v=>v>=0.80?'v':v>=0.60?'o':'r';
+const tagClass={v:'cell-v',o:'cell-o',r:'cell-r'};
+
+// ─── DATA: tabla original del PDF, ajustando "Comunitaria" (satisfacción vecinal) a zona roja ───
+const ROWS=[
+  {p:'Aprendizaje y Crecimiento', obj:'Desarrollo de competencias',     ini:'Estandarización procesos', av:0.60},
+  {p:'Aprendizaje y Crecimiento', obj:'Sistemas de información',        ini:'SIMEV',                    av:0.30},
+  {p:'Comunitaria',               obj:'Acceso equitativo a servicios',  ini:'Vinculación vecinal',      av:0.35},
+  {p:'Comunitaria',               obj:'Bienestar comunitario',          ini:'Áreas verdes',             av:0.36},
+  {p:'Comunitaria',               obj:'Calidad de servicios al vecino', ini:'Ñuñoa Atiende',            av:0.40},
+  {p:'Comunitaria',               obj:'Confianza institucional',        ini:'Vinculación vecinal',      av:0.38},
+  {p:'Comunitaria',               obj:'Equidad territorial',            ini:'Áreas verdes',             av:0.90},
+  {p:'Comunitaria',               obj:'Oportunidad en la atención',     ini:'Ñuñoa Atiende',            av:0.42},
+  {p:'Comunitaria',               obj:'Participación ciudadana',        ini:'Vinculación vecinal',      av:0.33},
+  {p:'Financiera',                obj:'Costo per cápita eficiente',     ini:'Eficiencia financiera',    av:0.55},
+  {p:'Financiera',                obj:'Ejecución presupuestaria',       ini:'Eficiencia financiera',    av:0.55},
+  {p:'Financiera',                obj:'Sostenibilidad IPP',             ini:'Cobranza',                 av:0.85},
+  {p:'Procesos Internos',         obj:'Calidad de servicio entregado',  ini:'Estandarización procesos', av:0.60},
+  {p:'Procesos Internos',         obj:'Digitalización de trámites',     ini:'Cobertura digital',        av:0.35},
+  {p:'Procesos Internos',         obj:'Distribución de perfiles RRHH',  ini:'Estandarización procesos', av:0.60},
+  {p:'Procesos Internos',         obj:'Gestión corporaciones',          ini:'Eficiencia financiera',    av:0.55},
+  {p:'Procesos Internos',         obj:'Infraestructura comunal',        ini:'Áreas verdes',             av:0.90},
+  {p:'Procesos Internos',         obj:'Recaudación municipal',          ini:'Cobranza',                 av:0.85}
+];
+
+// ─── TABLA ───
+function renderTable(){
+  document.getElementById('tbl-body').innerHTML=ROWS.map(r=>{
+    const e=estado(r.av);
+    return `<tr><td class="persp">${r.p}</td><td>${r.obj}</td><td>${r.ini}</td><td class="val ${tagClass[e]}">${fmt(r.av)}</td></tr>`;
+  }).join('');
+}
+
+// ─── % AVANCE POR INICIATIVA (agrupado, promedio) ───
+function buildIniChart(){
+  const groups={};
+  ROWS.forEach(r=>{(groups[r.ini]=groups[r.ini]||[]).push(r.av);});
+  let data=Object.keys(groups).map(k=>({ini:k,av:groups[k].reduce((a,b)=>a+b,0)/groups[k].length}));
+  data.sort((a,b)=>b.av-a.av);
+  new Chart(document.getElementById('ini_chart'),{type:'bar',
+    data:{labels:data.map(d=>d.ini),
+      datasets:[{label:'% Avance',data:data.map(d=>d.av),
+        backgroundColor:data.map(d=>COLOR[estado(d.av)]),borderRadius:2,
+        datalabels:{display:true,anchor:'end',align:'top',color:c=>COLOR[estado(data[c.dataIndex].av)],
+          font:{size:10,weight:'700'},formatter:v=>fmt(v)}}]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:0,max:1,title:{display:true,text:'% Avance por iniciativa',font:{size:8.5}},
+                 ticks:{font:{size:8},callback:v=>fmt(v)}},
+              x:{ticks:{font:{size:8.5}}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+// ─── % AVANCE POR OBJETIVO (horizontal, ascendente) ───
+function buildObjChart(){
+  const data=[...ROWS].sort((a,b)=>a.av-b.av);
+  new Chart(document.getElementById('obj_chart'),{type:'bar',
+    data:{labels:data.map(r=>r.obj),
+      datasets:[{label:'% Avance',data:data.map(r=>r.av),
+        backgroundColor:data.map(r=>COLOR[estado(r.av)]),borderRadius:2,
+        datalabels:{display:true,anchor:'end',align:'end',color:c=>COLOR[estado(data[c.dataIndex].av)],
+          font:{size:9,weight:'700'},formatter:v=>fmt(v)}}]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{min:0,max:1,title:{display:true,text:'% Avance',font:{size:8.5}},ticks:{font:{size:8},callback:v=>fmt(v)}},
+              y:{ticks:{font:{size:8}}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+// ─── DISTRIBUCIÓN DE ESTADO POR PERSPECTIVA ───
+function buildEstadoChart(){
+  const PERSP=['Aprendizaje y Crecimiento','Comunitaria','Financiera','Procesos Internos'];
+  const pct={};
+  PERSP.forEach(p=>{
+    const rows=ROWS.filter(r=>r.p===p);
+    const v=rows.filter(r=>estado(r.av)==='v').length;
+    const o=rows.filter(r=>estado(r.av)==='o').length;
+    const r=rows.filter(r=>estado(r.av)==='r').length;
+    const tot=rows.length;
+    pct[p]={v:Math.round(v/tot*1000)/10,o:Math.round(o/tot*1000)/10,r:Math.round(r/tot*1000)/10};
+  });
+  new Chart(document.getElementById('estado_chart'),{type:'bar',
+    data:{labels:PERSP,datasets:[
+      {label:'Verde',data:PERSP.map(p=>pct[p].v),backgroundColor:COLOR.v,
+        datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:9.5,weight:'700'},formatter:v=>v+'%'}},
+      {label:'Amarillo',data:PERSP.map(p=>pct[p].o),backgroundColor:COLOR.o,
+        datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#5a4400',font:{size:9.5,weight:'700'},formatter:v=>v+'%'}},
+      {label:'Rojo',data:PERSP.map(p=>pct[p].r),backgroundColor:COLOR.r,
+        datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:9.5,weight:'700'},formatter:v=>v+'%'}}
+    ]},
+    options:{maintainAspectRatio:false,
+      scales:{x:{stacked:true,ticks:{font:{size:8.5}}},
+              y:{stacked:true,max:100,title:{display:true,text:'Distribución de Estado',font:{size:8.5}},ticks:{font:{size:8},callback:v=>v+'%'}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+renderTable();
+buildIniChart();
+buildObjChart();
+buildEstadoChart();
+
+// ─── BOOT: fit to viewport ───
+function fitToViewport(){
+  const root=document.querySelector('.root');
+  const sx=window.innerWidth/1280;
+  const sy=window.innerHeight/720;
+  const s=Math.min(sx,sy,1);
+  const offsetX=(window.innerWidth-1280*s)/2;
+  const offsetY=(window.innerHeight-720*s)/2;
+  root.style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+s+')';
+}
+window.addEventListener('resize',fitToViewport);
+fitToViewport();
+</script>
+</body>
+</html>
