@@ -1437,3 +1437,40 @@ def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_pat
     assert r.json()["pallet_por_producto"] is False
     d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "FALABELLA"}).json()
     assert any(len(s) > 1 for s in _productos_por_pallet_api(d).values())
+
+
+def test_las_entregas_se_crean_con_la_fecha_del_analisis_y_no_con_la_de_hoy(c, tmp_path, monkeypatch):
+    """PARIS emite órdenes que rigen desde la semana siguiente: VL01N necesita esa fecha de selección, no la de hoy."""
+    from datetime import date, timedelta
+    from app.integrations import sap_crear
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4700")
+    futura = date.today() + timedelta(days=9)
+    # el análisis se hizo con una fecha futura (la del diálogo «Analizar pedido»)
+    from app.db import SessionLocal
+    from app.models import Config
+    import json
+    with SessionLocal() as s:
+        reg = s.get(Config, "analisis:4700")
+        doc = json.loads(reg.valor); doc["fecha"] = futura.isoformat(); reg.valor = json.dumps(doc); s.commit()
+    usadas = []
+
+    def falso(pedido, puesto, fecha, materiales, fecha_cita="", hora_cita="", ensayo=False, ses=None):
+        usadas.append(fecha)
+        r = sap_crear.Resultado(ok=True, ensayo=ensayo); r.entrega = ""; r.mensaje = "ok"
+        return r
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    assert usadas and set(usadas) == {futura.strftime("%d.%m.%Y")}
+    # una fecha indicada al crear manda sobre la del análisis
+    usadas.clear()
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True, "fecha": "01.01.2031"}).json()["id"])
+    assert set(usadas) == {"01.01.2031"}
+    # un análisis con fecha pasada no atrasa la selección: se usa hoy
+    with SessionLocal() as s:
+        reg = s.get(Config, "analisis:4700")
+        doc = json.loads(reg.valor); doc["fecha"] = "2020-01-01"; reg.valor = json.dumps(doc); s.commit()
+    usadas.clear()
+    _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True}).json()["id"])
+    assert set(usadas) == {date.today().strftime("%d.%m.%Y")}
+    assert c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True, "fecha": "mañana"}).status_code == 422

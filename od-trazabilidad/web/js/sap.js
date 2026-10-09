@@ -227,7 +227,7 @@ function vistaAnalisis(p){
   }).join('');
   const cuenta = k => r.filas.filter(f => f.alerta === k).length;
   return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">

@@ -386,18 +386,18 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
             por_camion[f["camion"]][f["sku"]] = por_camion[f["camion"]].get(f["sku"], 0) + f["unidades"]
         if not por_camion:
             raise HTTPException(422, f"El cubicaje del pedido {numero} no tiene camiones para crear.")
-        tareas.append((numero, puesto, por_camion, ((cub.get("conjunto") or {}).get("id") or "")))
+        tareas.append((numero, puesto, por_camion, ((cub.get("conjunto") or {}).get("id") or ""),
+                       _fecha_vl01n(s, numero, body.get("fecha"))))
     numero = tareas[0][0]
-    fecha = str(body.get("fecha") or _date.today().strftime("%d.%m.%Y"))
     total = sum(len(x[2]) for x in tareas)
 
     def correr(avance):
         salidas = []
         hecho = 0
-        for numero, puesto, por_camion, conj in tareas:
+        for numero, puesto, por_camion, conj, fecha in tareas:
             for cam, materiales in sorted(por_camion.items()):
                 hecho += 1
-                avance(f"{'Ensayo' if ensayo else 'Creando'} entrega {hecho} de {total}: pedido {numero}, camión {cam}")
+                avance(f"{'Ensayo' if ensayo else 'Creando'} entrega {hecho} de {total}: pedido {numero}, camión {cam} (fecha de selección {fecha})")
                 r = sap_crear.crear_entrega(numero, puesto, fecha, materiales,
                                             fecha_cita=str(body.get("fecha_cita") or ""),
                                             hora_cita=str(body.get("hora_cita") or ""), ensayo=ensayo)
@@ -434,6 +434,31 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
                                       [numero], correr)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
+
+
+def _fecha_vl01n(s: Session, numero: str, fecha_body) -> str:
+    """Fecha de selección de VL01N (dd.mm.aaaa) para crear las entregas de un pedido.
+
+    Manda la que se indique al crear. Si no, la fecha con la que se analizó el pedido: hay clientes (PARIS) cuyas
+    órdenes de compra rigen desde la semana siguiente, y con la fecha de hoy VL01N no encuentra las líneas. Nunca
+    anterior a hoy, porque una fecha de selección más tardía solo suma líneas."""
+    import json as _json
+    from datetime import date as _date
+    from ..models import Config
+    hoy = _date.today()
+    if str(fecha_body or "").strip():
+        txt = str(fecha_body).strip()
+        try:                                    # acepta dd.mm.aaaa o aaaa-mm-dd
+            d = _date.fromisoformat(txt) if "-" in txt else _date(int(txt[6:10]), int(txt[3:5]), int(txt[0:2]))
+        except (ValueError, IndexError):
+            raise HTTPException(422, "La fecha de selección debe ser dd.mm.aaaa.") from None
+        return d.strftime("%d.%m.%Y")
+    an = s.get(Config, _clave_analisis(numero))
+    try:
+        d = _date.fromisoformat(_json.loads(an.valor).get("fecha", "")) if an else hoy
+    except (ValueError, TypeError):
+        d = hoy
+    return max(d, hoy).strftime("%d.%m.%Y")
 
 
 @router.post("/sap/crear_grupo", status_code=202)
