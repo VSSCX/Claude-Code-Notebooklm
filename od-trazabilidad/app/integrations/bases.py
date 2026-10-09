@@ -5,7 +5,9 @@ guarda en la base local de cada persona. Si ahí no hay nada, se usa lo del arch
 .env, como antes. Sin usuario propio de SQL Server se entra con la cuenta de Windows.
 La clave va aparte para no tener que escapar caracteres especiales en la URL.
 """
+import re
 import threading
+import time
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
@@ -87,8 +89,6 @@ def motor_bases() -> Engine:
 # Consultas. El plan usa la MISMA consulta que el Excel ("Plan SOP"), para que
 # ambos muestren los mismos números (incluye la regla CONSENSO / MARKET&SHARE).
 # ---------------------------------------------------------------------------
-import re
-import time
 
 _CACHE: dict[str, tuple[float, object]] = {}
 CACHE_SEG = 600   # 10 minutos

@@ -2,24 +2,18 @@
 import json as _json
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
 from ..config import settings
 from ..db import get_session
 from ..integrations import bases, clientes as cli_mod, maestra, medidas as med_mod
+from .comun import _commit
 
 
 
 
 
-def _commit(s: Session):
-    try:
-        s.commit()
-    except IntegrityError as e:
-        s.rollback()
-        raise HTTPException(409, "El registro choca con otro existente.") from e
 
 
 router = APIRouter()

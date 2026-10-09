@@ -6,7 +6,7 @@ va por sucursal, con el volumen más grande primero dentro de cada una (como MDA
 """
 from __future__ import annotations
 
-from .core import Box, Item, cascada
+from .core import Box, Item
 from .datos import Dims
 from .mda import NO_ENCONTRADO, Camion, Fila03, Posicion, Resultado
 from .mda_predist import FilaPredist, restricciones_mda_predist

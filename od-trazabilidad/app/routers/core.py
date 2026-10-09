@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
@@ -14,16 +13,10 @@ from ..integrations import acciones, bases
 
 from ..models import Archivo
 from ..schemas import EntregaIn, PedidoIn
+from .comun import _commit, _sop_de
 
 
-def _commit(s: Session):
-    try:
-        s.commit()
-    except IntegrityError as e:
-        s.rollback()
-        raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (_sop_de)
 
 router = APIRouter()
 

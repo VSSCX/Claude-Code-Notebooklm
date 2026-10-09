@@ -2,7 +2,6 @@
 import math
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import domain
@@ -12,18 +11,12 @@ from sqlalchemy import select
 
 from ..models import Entrega
 from ..schemas import PaqueteIn
+from .comun import _clave_analisis, _clave_cubicaje, _commit, _sop_de, solicitantes_del_grupo
 
 
 
 
-def _commit(s: Session):
-    try:
-        s.commit()
-    except IntegrityError as e:
-        s.rollback()
-        raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (_clave_analisis, _clave_cubicaje, _sop_de, solicitantes_del_grupo)
 
 router = APIRouter()
 

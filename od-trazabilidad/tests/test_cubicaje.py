@@ -5,10 +5,10 @@ La verificación final contra el Excel está en test_casos.py, con los casos de 
 """
 import pytest
 
-from app.cubicaje.core import Box, Item, Placement, Restric, cascada, pack
+from app.cubicaje.core import Box, Item, Restric, cascada, pack
 from app.cubicaje.datos import cargar_cache_dims, get_dims_for, get_pallet_dims, leer_camiones
-from app.cubicaje.mda import Posicion, cubicaje_mda
-from app.cubicaje.motor import Entrada, ModoNoPortado, modo_efectivo, segmentar
+from app.cubicaje.mda import Posicion
+from app.cubicaje.motor import Entrada, modo_efectivo, segmentar
 from app.cubicaje.vb import clng, fmt_num, round1, vb_int, vb_round
 from app.cubicaje.visor import construir_json, letra
 
@@ -394,7 +394,7 @@ def test_pallets_flojos_se_remezclan():
 
 
 # ---------------------------------------------------------------- SDA Stock completo
-from app.cubicaje.sda import asignar_vehiculos, cubicaje_sda_stock  # noqa: E402
+from app.cubicaje.sda import asignar_vehiculos  # noqa: E402
 
 
 def test_asignacion_de_vehiculos():

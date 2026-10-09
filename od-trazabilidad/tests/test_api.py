@@ -287,7 +287,6 @@ def test_analisis_en_un_clic(c, monkeypatch):
 
 
 def test_cubicaje_desde_analisis(c, monkeypatch, tmp_path):
-    import json
     from app.integrations import base_medidas, bases, sap
     from app.config import settings
     # análisis previo (la carga del cubicaje sale de ahí)
@@ -341,7 +340,7 @@ def test_cubicaje_desde_analisis(c, monkeypatch, tmp_path):
 
 def test_visor_no_se_acumula(c, monkeypatch, tmp_path):
     """El visor se sirve desde /visor con sus librerías y no se acumulan versiones."""
-    from app.config import BASE_DIR, settings
+    from app.config import settings
     from app.integrations import base_medidas, bases, sap
     monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(
         pedido=p, posiciones=[sap.Posicion("900081624", 10, 10)]))
@@ -1095,8 +1094,7 @@ def test_plantilla_y_carga_masiva(c, tmp_path):
 def test_vista_de_un_solo_pallet(c, tmp_path):
     """Las cajas quedan apoyadas sobre la tarima y dentro de la huella del pallet."""
     import json as _json
-    import re
-    from app.config import BASE_DIR, settings
+    from app.config import settings
     _cargar_medidas_basicas(c, tmp_path)
     plantilla = tmp_path / "p.html"
     plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")

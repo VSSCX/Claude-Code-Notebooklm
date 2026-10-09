@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .core import Box, Item, Placement, Restric, cascada
+from .core import Box, Item, Placement, Restric
 from .datos import Dims, get_dims_for
 from .vb import clng, vb_round
 

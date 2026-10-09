@@ -6,7 +6,7 @@ su archivo y este solo los junta bajo /api.
 
 - core.py     pedidos, entregas, grupos y bandeja
 - sap.py      leer, analizar, crear y borrar en SAP
-- cubicaje.py cubicaje del pedido, cubicador libre y Base de Medidas
+- cubicaje/   (paquete) cubicaje del pedido, cubicador libre, Base de Medidas y kits
 - datos.py    clientes, sesión, respaldos y estado del sistema
 """
 from fastapi import APIRouter

@@ -18,9 +18,11 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-EXCLUIR_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", "data", "node_modules", ".impeccable"}
+EXCLUIR_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "data", "node_modules", ".impeccable"}
 EXCLUIR_ARCHIVOS = {".env", "xlsx.full.min.js", "crear_proyecto.py"}
 SOLO_SERVIDOR = {"docs/SERVIDOR.md", "docs/PENDIENTES.md", "servidor.bat", "herramientas/restablecer_clave.py"}   # PENDIENTES: notas del equipo
+# Archivos que ya no existen en el proyecto: al reinstalar encima se borran, para que no queden sombras de versiones viejas
+OBSOLETOS = ["app/routers/cubicaje.py"]          # ahora es el paquete app/routers/cubicaje/
 CONSERVAR_VACIOS = {".gitkeep"}          # data/.gitkeep y casos/.gitkeep crean las carpetas
 BINARIOS_EXT = {".woff2", ".woff", ".png", ".jpg", ".ico", ".xls"}
 
@@ -73,6 +75,14 @@ def generar(plantilla: str, texto: dict, binarios: dict) -> str:
         s = s.replace("import json\n", "import base64\nimport json\n", 1)
     if necesita_binarios:
         s = s.replace(viejo, ESCRIBIR_BINARIOS, 1)
+    nuevo_obs = "OBSOLETOS = " + json.dumps(OBSOLETOS) + "\n"
+    if re.search(r"(?m)^OBSOLETOS = .*\n", s):
+        s = re.sub(r"(?m)^OBSOLETOS = .*\n", lambda _m: nuevo_obs, s, count=1)
+    else:
+        s = re.sub(r"(?m)^(BINARIOS = json\.loads\(.*\)\n)", lambda m: m.group(1) + nuevo_obs, s, count=1)
+        borrar = ("    for rel in OBSOLETOS:\n        (DESTINO / rel).unlink(missing_ok=True)\n"
+                  "    for rel, contenido in ARCHIVOS.items():\n")
+        s = s.replace("    for rel, contenido in ARCHIVOS.items():\n", borrar, 1)
     return s
 
 

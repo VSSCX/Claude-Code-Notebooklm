@@ -267,7 +267,6 @@ def test_ajuste_de_carga_rechaza_nan_e_infinito(datos):
 
 def test_entrega_creada_en_sap_se_informa_aunque_falle_el_registro(monkeypatch, datos):
     """Si no se puede guardar en la plataforma, no se aborta ni se pierde el número de la entrega."""
-    import json
     from fastapi.testclient import TestClient
     from app.integrations import sap_crear
     from app.main import app
@@ -597,114 +596,6 @@ def _medida(s, sku, desc):
                  apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
 
 
-def test_carga_masiva_con_productos_sin_medidas_alerta_con_sku_y_unidades(datos):
-    from io import BytesIO
-    from fastapi.testclient import TestClient
-    from openpyxl import load_workbook
-    from app.integrations import medidas as med_mod
-    from app.main import app
-    c = TestClient(app)
-    with SessionLocal() as s:
-        _medida(s, "9000", "9000 PRODUCTO A")
-        s.commit()
-    archivo = _excel_carga([("9000", 10, ""), ("7777", 40, ""), ("7777", 5, ""), ("8888", 3, "")])
-    r = c.post("/api/cubicaje-libre/importar", files={"file": ("carga.xlsx", archivo)})
-    assert r.status_code == 200, r.text
-    d = r.json()
-    # los que faltan quedan en la carga (no se pierden) y se avisan con sus unidades, los de más unidades primero
-    assert {l["sku"] for l in d["lineas"]} == {"9000", "7777", "8888"}
-    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 45), ("8888", 3)]
-    assert d["desconocidos"] == ["7777", "8888"]
-    assert d["unidades"] == 10                                       # solo lo que tiene medidas va al camión
-    # la plantilla trae esos SKU en el formato de la Base de Medidas
-    x = c.get("/api/cubicaje-libre/faltantes.xlsx")
-    assert x.status_code == 200 and "spreadsheetml" in x.headers["content-type"]
-    ws = load_workbook(BytesIO(x.content)).worksheets[0]
-    assert ws.title == "Base para carga"
-    filas = list(ws.iter_rows(values_only=True))
-    assert filas[0][0] == "Grupo" and filas[0][10] == "Máx Camión" and filas[0][12] == "Unidades en la carga"
-    assert [(f[0], f[12]) for f in filas[1:]] == [("7777", 45), ("8888", 3)]
-    # sin completar las medidas la importación los ignora (informando), y completándolas desaparece la alerta
-    with SessionLocal() as s:
-        assert med_mod.importar(s, med_mod.leer_archivo(BytesIO(x.content))).ignorados == 2
-    ws["D2"], ws["E2"], ws["F2"], ws["G2"] = 30, 20, 10, 5
-    ws["D3"], ws["E3"], ws["F3"], ws["G3"] = 40, 30, 20, 8
-    b = BytesIO()
-    ws.parent.save(b)
-    b.seek(0)
-    assert c.post("/api/medidas/importar", files={"file": ("m.xlsx", b)}).status_code == 200
-    d = c.post("/api/cubicaje-libre", json={"lineas": d["lineas"], "modo": "MDA", "vista": "rampla"}).json()
-    assert d["faltantes"] == [] and d["desconocidos"] == [] and d["unidades"] == 58
-    assert c.get("/api/cubicaje-libre/faltantes.xlsx").status_code == 404      # ya no falta ninguno
-
-
-def test_carga_masiva_solo_con_productos_sin_medidas_no_se_pierde(datos):
-    from fastapi.testclient import TestClient
-    from app.main import app
-    c = TestClient(app)
-    with SessionLocal() as s:
-        _medida(s, "9000", "9000 PRODUCTO A")
-        s.commit()
-    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga([("7777", 12, "")]))})
-    assert r.status_code == 200, r.text
-    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("7777", 12)]
-
-
-def test_reparto_por_sucursal_con_producto_sin_medidas_no_rompe(datos):
-    from fastapi.testclient import TestClient
-    from app.main import app
-    c = TestClient(app)
-    with SessionLocal() as s:
-        _medida(s, "9000", "9000 PRODUCTO A")
-        s.commit()
-    r = c.post("/api/cubicaje-libre/importar", files={"file": ("c.xlsx", _excel_carga(
-        [("9000", 10, "SUC A"), ("7777", 4, "SUC A"), ("9000", 6, "SUC B")]))})
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert [(f["sku"], f["unidades"]) for f in d["faltantes"]] == [("7777", 4)]
-    assert d["unidades"] == 16
-
-
-def test_pedido_con_productos_sin_medidas_tambien_alerta(datos):
-    from io import BytesIO
-    from fastapi.testclient import TestClient
-    from openpyxl import load_workbook
-    from app.main import app
-    c = TestClient(app)
-    with SessionLocal() as s:
-        _medida(s, "9000", "9000 PRODUCTO A")
-        doc = _analisis_de_prueba()            # SKU 9000 y 9001: solo el primero tiene medidas
-        domain.guardar_config(s, "analisis:4005100000", doc)
-        s.commit()
-    r = c.post("/api/cubicaje/4005100000", json={"modo": "MDA", "caja_master": "SIN CAJA MASTER"})
-    assert r.status_code == 200, r.text
-    assert [(f["sku"], f["unidades"]) for f in r.json()["faltantes"]] == [("9001", 20)]
-    x = c.get("/api/cubicaje/4005100000/faltantes.xlsx")
-    assert [f[0] for f in list(load_workbook(BytesIO(x.content)).worksheets[0].iter_rows(values_only=True))[1:]] == ["9001"]
-
-
-# ---------- carga masiva con productos que no están en la Base de Medidas ----------
-def _excel_carga(filas):
-    from io import BytesIO
-    from openpyxl import Workbook
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Carga"
-    ws.append(["SKU", "Unidades", "Sucursal"])
-    for f in filas:
-        ws.append(list(f))
-    b = BytesIO()
-    wb.save(b)
-    b.seek(0)
-    return b
-
-
-def _medida(s, sku, desc):
-    from app.models import Medida
-    s.add(Medida(sku=sku, descripcion=desc, piezas=1, largo=60, ancho=50, alto=40, peso=10,
-                 apilar="Y", inclinar="N", rotar="N", max_camion=300, max_pallet=20))
-
-
 def test_los_productos_sin_medidas_no_se_cubican_y_se_alertan_con_sus_unidades(datos):
     from io import BytesIO
     from fastapi.testclient import TestClient
@@ -926,7 +817,7 @@ def test_el_analisis_de_un_regional_exporta_los_solicitantes_de_todo_el_grupo_so
     from app.integrations import sap
     c = TestClient(app)
     pedidos = []
-    t = _correr_analisis(c, monkeypatch, "", [], cliente="COOPELAN")      # el monkeypatch de zsd001_03 se pisa abajo
+    _correr_analisis(c, monkeypatch, "", [], cliente="COOPELAN")      # el monkeypatch de zsd001_03 se pisa abajo
     def captura(cod, *a, **k):
         pedidos.append(cod)
         return []
