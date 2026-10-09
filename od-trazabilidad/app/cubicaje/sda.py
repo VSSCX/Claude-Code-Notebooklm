@@ -584,19 +584,21 @@ def restricciones_piso() -> Restric:
 def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L: float,
                        pal_W: float, pal_H: float, usa_caja_master: bool, pedidos: list[str],
                        pasa_filtro=None, cam_offset: int = 0, orientacion: str = "excel",
-                       capacidad: str = "geometria"):
+                       capacidad: str = "geometria", kits: dict | None = None, kits_mezclar: bool = False):
     """Modo SDA Stock completo: bloques -> pallets -> camiones -> piso -> salida."""
+    from .kits import armar_pallets_kit, separar_kits
     from .mda import Camion, Fila03, Resultado
     from .vb import vb_round
 
     res = Resultado(modo="SDA STOCK")
     restric = restricciones_sda()
+    posiciones, lineas_kit = separar_kits(posiciones, kits, pasa_filtro)
     bloques, sin_medidas, sin_caja = construir_bloques(posiciones, cache, usa_caja_master, pasa_filtro)
     res.sin_medidas = sin_medidas
     res.no_encontrados = [p.sku for p in posiciones if str(p.desc).strip() == NO_ENCONTRADO]
     if sin_caja:
         res.avisos.append("Sin caja master, cubicados individuales: " + ", ".join(sin_caja))
-    if not bloques:
+    if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables en SDA Stock.")
         return res
 
@@ -615,6 +617,15 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
                       for i, p in enumerate(pallets)}
     else:
         pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric)
+    if lineas_kit:                      # los kits van en pallets propios, completos
+        kp, kplc, kpiso, kav, ksm = armar_pallets_kit(lineas_kit, cache, bloques, pack_L, pack_W, pal_H, restric,
+                                                      mezclar=kits_mezclar)
+        for pk, plk in zip(kp, kplc):
+            placements[len(pallets)] = plk
+            pallets.append(pk)
+        piso = list(piso) + kpiso
+        res.avisos += kav
+        res.sin_medidas += [x for x in ksm if x not in res.sin_medidas]
     if not pallets and not piso:
         res.avisos.append("SDA Stock: sin pallets resultantes.")
         return res
@@ -626,7 +637,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
                                                  restricciones_piso())
     res.placed = colocados + piso_pl
     res.filas04 = filas04 + piso_filas
-    res.pallets = [{"numero": i + 1, "tipo": "Mono" if p.k == 1 else "Mix",
+    res.pallets = [{"numero": i + 1, "tipo": p.tipo if p.tipo.startswith("Kit") else ("Mono" if p.k == 1 else "Mix"),
                     "vehiculo": geo.get(i + 1, {}).get("veh", 0),
                     "x": geo.get(i + 1, {}).get("x", 0.0), "y": geo.get(i + 1, {}).get("y", 0.0),
                     "dl": pal_W, "dw": pal_L} for i, p in enumerate(pallets)]

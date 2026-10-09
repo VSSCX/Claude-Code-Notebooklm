@@ -594,7 +594,7 @@ def publicar_export(origen, carpeta=None) -> dict:
     return {"ok": False, "ruta": str(destino), "motivo": motivo}
 
 
-def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str, avisar=None, publicado=None) -> list[dict]:
+def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: str, nombre: str, avisar=None, publicado=None) -> list[dict]:
     """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios.
     SAP guarda en una carpeta LOCAL (corta, sin tildes, sin permisos de red que pidan confirmación) y de ahí se publica
     una copia en la ruta fija de la macro. `publicado` (dict) recibe el resultado de la publicación."""
@@ -641,8 +641,24 @@ def zsd001_03(cliente_cod: str, materiales: list[str], carpeta: str, nombre: str
     desde, hasta = _sumar_meses(hoy, -1), _sumar_meses(hoy, 1)   # igual que DateAdd("m", ±1)
     _texto(ses, "wnd[0]/usr/ctxtSOFECPED-LOW", desde.strftime("%d.%m.%Y"))
     _texto(ses, "wnd[0]/usr/ctxtSOFECPED-HIGH", hasta.strftime("%d.%m.%Y"))
-    if cliente_cod:
-        _texto(ses, "wnd[0]/usr/ctxtSOSOLIC-LOW", cliente_cod)
+    codigos = [cliente_cod] if isinstance(cliente_cod, str) else [str(c) for c in cliente_cod if c]
+    if len(codigos) == 1:
+        _texto(ses, "wnd[0]/usr/ctxtSOSOLIC-LOW", codigos[0])
+    elif codigos:
+        # Clientes que comparten plan (REGION 2 / REGION 3): todos sus solicitantes en una sola consulta
+        _presionar(ses, "wnd[0]/usr/btn%_SOSOLIC_%_APP_%-VALU_PUSH", 10)
+        if _por_id(ses, "wnd[1]") is not None:
+            _presionar(ses, "wnd[1]/tbar[0]/btn[16]", 3)
+            cargados = _cargar_multiseleccion(ses, codigos)
+            if cargados < len(codigos) and avisar:
+                avisar(f"Se cargaron {cargados} de {len(codigos)} solicitantes del grupo en ZSD001_03: "
+                       "la Qty en entrega puede salir incompleta.")
+            _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
+            _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
+        else:
+            _texto(ses, "wnd[0]/usr/ctxtSOSOLIC-LOW", codigos[0])
+            if avisar:
+                avisar("No se pudo abrir la selección múltiple de solicitantes: se consultó solo el cliente analizado.")
 
     if materiales:
         _presionar(ses, "wnd[0]/usr/btn%_SOCODMAT_%_APP_%-VALU_PUSH", 10)

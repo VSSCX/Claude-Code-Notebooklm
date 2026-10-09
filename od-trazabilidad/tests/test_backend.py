@@ -919,6 +919,32 @@ def test_el_analisis_toma_la_oc_de_sql_y_si_no_esta_del_reporte(monkeypatch, dat
     assert c.get("/api/analisis/4005100000").json()["oc_sap"] == "ZSD-77"
 
 
+def test_el_analisis_de_un_regional_exporta_los_solicitantes_de_todo_el_grupo_sop(monkeypatch, datos):
+    """REGION 2 y REGION 3 comparten plan: la Qty en entrega se consulta con todos los solicitantes del grupo."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.integrations import sap
+    c = TestClient(app)
+    pedidos = []
+    t = _correr_analisis(c, monkeypatch, "", [], cliente="COOPELAN")      # el monkeypatch de zsd001_03 se pisa abajo
+    def captura(cod, *a, **k):
+        pedidos.append(cod)
+        return []
+    monkeypatch.setattr(sap, "zsd001_03", captura)
+    r = c.post("/api/analisis/4005100001", json={"puesto": "PN01", "cliente": "COOPELAN", "fecha": "2026-10-01"})
+    _esperar(c, r.json()["id"])
+    assert isinstance(pedidos[0], list) and pedidos[0][0] == "231934"           # el del cliente analizado, primero
+    assert "261764" in pedidos[0] and "231882" in pedidos[0]                     # otros de REGION 2
+    assert "237384" not in pedidos[0]                                           # CARRASCO es REGION 3: otro plan
+    assert len(pedidos[0]) == len(set(pedidos[0]))
+    a = c.get("/api/analisis/4005100001").json()
+    assert a["solicitantes"] == pedidos[0]
+    pedidos.clear()
+    r = c.post("/api/analisis/4005100002", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
+    _esperar(c, r.json()["id"])
+    assert pedidos[0] == "266566"                                               # un cliente sin grupo compartido: solo el suyo
+
+
 def test_una_oc_escrita_a_mano_no_se_pisa_y_el_conflicto_queda_en_el_analisis(monkeypatch, datos):
     from fastapi.testclient import TestClient
     from app.main import app

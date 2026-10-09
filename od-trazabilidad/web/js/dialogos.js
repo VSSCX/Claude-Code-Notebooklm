@@ -423,6 +423,7 @@ document.addEventListener('click', ev => {
     case 'cargarImp': cargarImportacion(); break;
     case 'cargarPkg': cargarPaquete(); break;
     case 'borrarArchivo': borrarArchivo(t.dataset.id); break;
+    case 'borrarKit': borrarKit(t.dataset.sku); break;
     case 'guardarConexion': guardarConexion(); break;
     case 'probarConexion': probarConexion(); break;
     case 'nuevoCliente': UI.cliEdit = {nuevo:true, pallet:[120,100,140], canal:'RETAIL', region:'RM'}; render(); break;
@@ -484,6 +485,7 @@ document.addEventListener('keydown', ev => {
   if (el.matches && el.matches('[name="lsOc"]')){ ev.preventDefault(); buscarPorOc(el.value.trim()); return; }
   if (el.matches && el.matches('[data-q]')){ ev.preventDefault(); UI.q = el.value; render(); }
   else if (el.matches && el.matches('[data-buscarmed]')){ ev.preventDefault(); UI.medidasBuscar = el.value; cargarMedidas(); }
+  else if (el.matches && el.matches('[data-buscarkit]')){ ev.preventDefault(); UI.kitsBuscar = el.value; cargarKits(); }
 });
 document.addEventListener('toggle', ev => {
   if (ev.target.matches && ev.target.matches('[data-ajustes]')) UI.verAjustes = ev.target.open;
@@ -504,6 +506,8 @@ document.addEventListener('change', async ev => {
   else if (el.matches('[data-analista]')){ const c = clone(config()); c.analista = el.value.trim(); if (await save('config', 'app', c)) toast('Analista guardado'); }
   else if (el.matches('[data-predistimport]') && el.files[0]){ await importarPredist(el, el.dataset.predistimport); el.value = ''; }
   else if (el.matches('[data-medidas]') && el.files[0]){ await importarMedidas(el); el.value = ''; }
+  else if (el.matches('[data-kits]') && el.files[0]){ await importarKits(el); el.value = ''; }
+  else if (el.matches('[data-kitmezcla]')){ await cambiarMezclaKits(el.checked); }
   else if (el.matches('[data-subir]') && el.files[0]){ await subirArchivo(el); el.value = ''; }
   else if (el.matches('[data-asignar]') && el.value){ await asignarArchivo(el.dataset.asignar, el.value); }
   else if (el.matches('[data-cubmodo]')){ UI.cubOpts.modo = el.value; render(); }

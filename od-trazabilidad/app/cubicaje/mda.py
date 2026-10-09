@@ -191,9 +191,11 @@ def escribir_03(placed: list[Placement], n_cont: int, cont_box: list[int], boxes
 
 
 def cubicaje_mda(posiciones: list[Posicion], pedidos: list[str], cache: dict[str, Dims],
-                 boxes: list[Box], pasa_filtro=None, cam_offset: int = 0) -> Resultado:
+                 boxes: list[Box], pasa_filtro=None, cam_offset: int = 0, kits: dict | None = None) -> Resultado:
     """Cubicaje_MDA completo: items -> cascada de camiones -> filas de 03."""
+    from .kits import cascada_con_kits, separar_kits
     res = Resultado(modo="MDA")
+    posiciones, lineas_kit = separar_kits(posiciones, kits, pasa_filtro)
     if not boxes:
         res.avisos.append("No hay camiones configurados.")
         return res
@@ -201,12 +203,14 @@ def cubicaje_mda(posiciones: list[Posicion], pedidos: list[str], cache: dict[str
     res.sin_medidas, res.no_encontrados = sin_med, no_enc
     if huerfanos:
         res.avisos.append("SKUs ignorados (pedido fuera de la lista): " + "; ".join(huerfanos))
-    if not items:
+    if not items and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables en MDA.")
         return res
 
     placed: list[Placement] = []
-    n_cont, cont_box = cascada(items, boxes, restricciones_mda(), placed)
+    n_cont, cont_box, av_kit, sm_kit = cascada_con_kits(items, lineas_kit, cache, boxes, restricciones_mda(), placed)
+    res.avisos += av_kit
+    res.sin_medidas += [x for x in sm_kit if x not in res.sin_medidas]
     res.placed = placed
     res.filas03, res.camiones = escribir_03(placed, n_cont, cont_box, boxes, pedidos, cam_offset)
 

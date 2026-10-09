@@ -227,15 +227,18 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
                                 cache: dict[str, Dims], pal_L: float, pal_W: float, pal_H: float,
                                 usa_caja_master: bool, cliente: str, pasa_filtro=None,
                                 cam_offset: int = 0, hibrido: bool | None = None,
-                                orientacion: str = "excel", capacidad: str = "geometria") -> Resultado:
+                                orientacion: str = "excel", capacidad: str = "geometria",
+                                kits: dict | None = None, kits_mezclar: bool = False) -> Resultado:
+    from .kits import armar_pallets_kit, separar_kits_predist
     res = Resultado(modo="SDA PREDISTRIBUIDO")
     restric = restricciones_sda()
+    posiciones, predist, lineas_kit = separar_kits_predist(posiciones, predist, kits, pasa_filtro)
     bloques, sin_medidas, fuera = construir_bloques_predist(predist, posiciones, cache,
                                                             usa_caja_master, pasa_filtro)
     res.sin_medidas = sin_medidas
     if fuera:
         res.avisos.append("SKU del reparto que no están en el pedido: " + ", ".join(fuera))
-    if not bloques:
+    if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables en SDA Predistribuido.")
         return res
 
@@ -255,6 +258,15 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     else:
         pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric,
                                               misma_sucursal=True)
+    if lineas_kit:                      # kits completos en pallets propios, por sucursal
+        kp, kplc, kpiso, kav, ksm = armar_pallets_kit(lineas_kit, cache, bloques, pack_L, pack_W, pal_H, restric,
+                                                      mezclar=kits_mezclar)
+        for pk, plk in zip(kp, kplc):
+            placements[len(pallets)] = plk
+            pallets.append(pk)
+        piso = list(piso) + kpiso
+        res.avisos += kav
+        res.sin_medidas += [x for x in ksm if x not in res.sin_medidas]
     if not pallets and not piso:
         res.avisos.append("SDA Predistribuido: sin pallets resultantes.")
         return res

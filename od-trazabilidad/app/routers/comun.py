@@ -47,7 +47,21 @@ def _sop_de(cliente: str, s: Session = None) -> tuple[str, str]:
     return grupo, codigo
 
 
-AJUSTES_DEFECTO = {"orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria"}   # 1 cm: más fiel a la carga real (el Excel usa 2 cm)
+def solicitantes_del_grupo(cliente: str, s: Session = None) -> list[str]:
+    """Códigos de solicitante de TODOS los clientes del mismo grupo SOP que `cliente` (el suyo primero).
+    Los regionales (REGION 2 / REGION 3) comparten plan: sus entregas bajan el saldo de todo el grupo, así que
+    la Qty en entrega se exporta con todos los solicitantes del grupo."""
+    grupo, propio = _sop_de(cliente, s)
+    codigos = [propio] if propio else []
+    if s is not None and grupo:
+        for c in cli_mod.todos(s):
+            g, cod = _sop_de(c.nombre, s)
+            if g == grupo and cod and cod not in codigos:
+                codigos.append(cod)
+    return codigos
+
+
+AJUSTES_DEFECTO = {"orientacion_pallet": "largo", "celda_cm": 1, "capacidad_pallet": "geometria", "kits_mezclar": False}   # 1 cm: más fiel a la carga real (el Excel usa 2 cm)
 
 # Medidas útiles de los vehículos (cm): (nombre, largo, ancho, alto). Se pueden cambiar en Configuración → Medidas de los camiones.
 CAMIONES_BASE = {

@@ -38,8 +38,14 @@ def _items(bloques: list[Bloque], por_sucursal: bool) -> tuple[list[Item], dict[
 
 def cubicaje_sda_a_piso(posiciones: list[Posicion], cache: dict[str, Dims], boxes: list[Box],
                         usa_caja_master: bool, predist: list[FilaPredist] | None = None,
-                        pasa_filtro=None, cam_offset: int = 0) -> Resultado:
+                        pasa_filtro=None, cam_offset: int = 0, kits: dict | None = None) -> Resultado:
+    from .kits import cascada_con_kits, expandir_a_componentes, separar_kits
     por_suc = predist is not None
+    lineas_kit = []
+    if por_suc:                       # por sucursal, cada kit pasa a ser sus componentes (quedan en su sucursal)
+        posiciones, predist, usados = expandir_a_componentes(posiciones, predist, kits)
+    else:
+        posiciones, lineas_kit = separar_kits(posiciones, kits, pasa_filtro)
     res = Resultado(modo="SDA PREDISTRIBUIDO" if por_suc else "SDA STOCK")
     if not boxes:
         res.avisos.append("No hay camiones configurados.")
@@ -52,14 +58,17 @@ def cubicaje_sda_a_piso(posiciones: list[Posicion], cache: dict[str, Dims], boxe
             res.avisos.append("Sin caja master, cubicados individuales: " + ", ".join(sin_caja))
     res.sin_medidas = sin_medidas
     res.no_encontrados = [p.sku for p in posiciones if str(p.desc).strip() == NO_ENCONTRADO]
-    if not bloques:
+    if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables.")
         return res
     res.avisos.append("Carga a piso (sin pallets): " + ("por sucursal." if por_suc else "las cajas van directo al camión."))
 
     items, mult = _items(bloques, por_suc)
     placed: list = []
-    n_cont, cont_box = cascada(items, boxes, restricciones_mda_predist() if por_suc else restricciones_piso(), placed)
+    n_cont, cont_box, av_kit, sm_kit = cascada_con_kits(
+        items, lineas_kit, cache, boxes, restricciones_mda_predist() if por_suc else restricciones_piso(), placed)
+    res.avisos += av_kit
+    res.sin_medidas += [x for x in sm_kit if x not in res.sin_medidas]
     res.placed = placed
 
     for c in range(1, n_cont + 1):

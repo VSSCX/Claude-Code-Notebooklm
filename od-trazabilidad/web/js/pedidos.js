@@ -72,22 +72,22 @@ const puedeJuntar = p => { const f = flujoDe(p); return f.enPlataforma && !f.des
 function seleccionJuntar(todos){
   const ps = [...UI.juntarSel].map(id => Store.get('pedidos', id)).filter(Boolean);
   const clientes_ = [...new Set(ps.map(p => (p.cliente || '').trim().toUpperCase()))];
-  return {ps, mismoCliente: clientes_.length <= 1, clientes: clientes_};
+  return {ps, clientes: clientes_.filter(Boolean)};
 }
 function barraJuntar(todos){
-  const {ps, mismoCliente, clientes: cs} = seleccionJuntar(todos);
-  const listo = ps.length >= 2 && mismoCliente && !UI.conjuntoCargando;
+  const {ps, clientes: cs} = seleccionJuntar(todos);
+  const listo = ps.length >= 2 && !UI.conjuntoCargando;
   const msg = !ps.length ? 'Marca los pedidos que viajarán juntos.'
     : ps.length === 1 ? 'Marca al menos otro pedido más.'
-    : !mismoCliente ? `Son de clientes distintos (${cs.map(c => c || 'sin cliente').join(', ')}): para juntarlos deben ser del mismo cliente.`
-    : `${ps.length} pedidos · ${fmt(ps.reduce((a, p) => a + resumen(p).tot.pedida, 0))} un. solicitadas`;
+    : `${ps.length} pedidos${cs.length > 1 ? ` de ${cs.length} clientes (${cs.join(', ')})` : ''} · ${fmt(ps.reduce((a, p) => a + resumen(p).tot.pedida, 0))} un. solicitadas`;
   return `<div class="juntar-bar" role="region" aria-label="Juntar pedidos">
-    <span class="small ${!mismoCliente ? 'warn-t' : ''}" aria-live="polite">${esc(msg)}</span>
+    <span class="small" aria-live="polite">${esc(msg)}</span>
     <button class="btn primary sm" data-act="cubicarJuntos" ${listo ? '' : 'disabled'}>${UI.conjuntoCargando ? 'Cubicando…' : 'Cubicar juntos'}</button></div>`;
 }
 async function cubicarJuntos(){
   const ids = UI.verConjunto && UI.conjunto ? [...UI.conjunto.conjunto.pedidos] : [...UI.juntarSel];
   if (ids.length < 2) return;
+  if (!(UI.verConjunto && UI.conjunto)) UI.conjOpts = null;       // un conjunto nuevo parte de cero, sin opciones de otro
   UI.conjuntoCargando = true; render();
   const opciones = {};
   for (const [k, v] of Object.entries(UI.conjOpts || {})) if (v) opciones[k] = v;
@@ -106,6 +106,7 @@ async function abrirConjuntoDe(cid){
 const entregasDelConjunto = cid => Store.list('entregas').filter(e => !e.anulada && (e.camion_ref || '').startsWith(cid + '-'));
 function vistaConjunto(){
   const d = UI.conjunto, cid = d.conjunto.id, peds = d.conjunto.pedidos;
+  const cliDe = d.conjunto.clientes || {}, distintos = d.conjunto.distintos || [];
   const ents = entregasDelConjunto(cid);
   const camiones = d.camiones.map(c => {
     const filas = d.filas.filter(f => f.camion === c.numero);
@@ -119,16 +120,16 @@ function vistaConjunto(){
   const faltanEnt = camiones.reduce((a, x) => a + x.faltan.length, 0), totalEnt = camiones.reduce((a, x) => a + Object.keys(x.porPed).length, 0);
   const sinGrupo = camiones.filter(x => !x.faltan.length && x.dePed.length && !x.grupo);
   const modos = ['MDA', 'MDA PREDISTRIBUIDO', 'SDA STOCK', 'SDA PREDISTRIBUIDO'];
-  const o = UI.conjOpts = UI.conjOpts || {modo: d.modo, caja_master: d.caja_master || '', piso_pallet: d.piso_pallet || ''};
+  const o = UI.conjOpts = UI.conjOpts || {modo: d.modo, caja_master: d.caja_master || '', piso_pallet: d.piso_pallet || '', cliente: d.conjunto.reglas_de || ''};
   const sel3 = (attr, opciones, valor) => `<select ${attr}>${opciones.map(x => `<option value="${esc(x.v)}" ${x.v === valor ? 'selected' : ''}>${esc(x.t)}</option>`).join('')}</select>`;
   const paso = (n, txt, hecho) => `<span class="cj-paso ${hecho ? 'ok' : ''}"><i>${hecho ? ICON.check : n}</i>${txt}</span>`;
   return `<div class="label" data-k="conjunto">
     <div class="label-top"><div style="min-width:0;flex:1">
       <h2 class="lab-num"><span class="lab-pre">Cubicaje conjunto</span> ${peds.length} pedidos</h2>
-      <p class="small muted" style="margin:4px 0 0">${esc(d.cliente || '')} · ${esc(d.modo)} · ${d.camiones.length} camión(es) · ${fmt(d.unidades)} un.</p></div>
+      <p class="small muted" style="margin:4px 0 0">${esc(distintos.length > 1 ? distintos.join(' + ') : d.cliente || '')} · ${esc(d.modo)} · ${d.camiones.length} camión(es) · ${fmt(d.unidades)} un.</p></div>
       <div class="label-act"><button class="btn sm" data-act="salirConjunto">Volver a los pedidos</button></div></div>
     <div class="cells">${peds.map(n => `<div class="cell"><span class="cap">Pedido</span><button class="enlace" data-sel="${esc(safeId(n))}" data-salir-conj style="font-size:var(--t-md);margin:0">${esc(n)}</button>
-      <span class="small muted num">${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span></div>`).join('')}</div>
+      <span class="small muted num">${distintos.length > 1 && cliDe[n] ? esc(cliDe[n]) + ' · ' : ''}${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span></div>`).join('')}</div>
     <div class="label-flujo"><div class="cj-pasos" role="list" aria-label="Pasos del cubicaje conjunto">
       ${paso(1, 'Cubicar juntos', true)}${paso(2, `Entregas ${totalEnt - faltanEnt} de ${totalEnt}`, totalEnt > 0 && !faltanEnt)}${paso(3, `Grupos ${camiones.length - sinGrupo.length - camiones.filter(x => x.faltan.length).length} de ${camiones.length}`, camiones.every(x => x.grupo))}</div></div>
     <div class="label-foot">
@@ -149,6 +150,7 @@ function vistaConjunto(){
     </tbody></table></div></div>
   ${d.visor ? `<div class="visor-caja" style="margin-top:16px;min-height:480px"><iframe title="Visor 3D del cubicaje conjunto" src="${esc(d.visor)}"></iframe></div>` : ''}
   <div class="row" style="gap:12px;align-items:flex-end;margin-top:16px">
+    ${distintos.length > 1 ? `<label class="f" title="Los pedidos son de clientes distintos: el pallet, la caja master y el híbrido se toman de este">Reglas de${sel3('data-conjcli', distintos.map(x => ({v: x, t: x})), o.cliente || d.conjunto.reglas_de)}</label>` : ''}
     <label class="f">Modo${sel3('data-conjmodo', modos.map(m => ({v: m, t: m})), o.modo)}</label>
     <label class="f">Caja master${sel3('data-conjcm', [{v: '', t: ''}, {v: 'CON CAJA MASTER', t: 'CON CAJA MASTER'}, {v: 'SIN CAJA MASTER', t: 'SIN CAJA MASTER'}], o.caja_master)}</label>
     <label class="f">Piso / pallet${sel3('data-conjpiso', [{v: '', t: 'Default del modo'}, {v: 'PISO', t: 'PISO'}, {v: 'PALLET', t: 'PALLET'}], o.piso_pallet)}</label>
@@ -179,7 +181,8 @@ async function gruposConjunto(){
   for (const ref of camiones){
     const es = entregasDelConjunto(cid).filter(e => e.camion_ref === ref);
     if (es.every(e => e.grupo)) continue;
-    await crearGrupoSap(es.map(e => e.entrega), false, ref.split('-').pop(), d.cliente);
+    const clis = [...new Set(es.map(e => (d.conjunto.clientes || {})[e.pedido]).filter(Boolean))];
+    await crearGrupoSap(es.map(e => e.entrega), false, ref.split('-').pop(), clis.length > 1 ? clis.join('+') : (clis[0] || d.cliente));
     if (!UI.job || UI.job.estado !== 'ok') return;            // ante el primer problema se detiene (el aviso ya salió)
   }
 }
@@ -187,6 +190,7 @@ document.addEventListener('change', ev => {
   const el = ev.target; if (!el.matches) return;
   if (el.matches('[data-jsel]')){ el.checked ? UI.juntarSel.add(el.dataset.jsel) : UI.juntarSel.delete(el.dataset.jsel); render(); }
   else if (el.matches('[data-conjmodo]')){ (UI.conjOpts = UI.conjOpts || {}).modo = el.value; }
+  else if (el.matches('[data-conjcli]')){ (UI.conjOpts = UI.conjOpts || {}).cliente = el.value; }
   else if (el.matches('[data-conjcm]')){ (UI.conjOpts = UI.conjOpts || {}).caja_master = el.value; }
   else if (el.matches('[data-conjpiso]')){ (UI.conjOpts = UI.conjOpts || {}).piso_pallet = el.value; }
 });
@@ -511,6 +515,7 @@ function vistaCubicaje(p){
     ${seccionPredist(p, modoElegido(cb))}
     ${problemas ? `<p class="small" style="margin-top:10px">${problemas}</p>` : ''}
     ${(cb.avisos || []).map(a => `<p class="small"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
+    ${(cb.kits || []).length ? `<p class="small muted" style="margin:6px 0"><span class="tag info">Kits</span> ${cb.kits.map(k => `<b>${esc(k.sku)}</b> × ${fmt(k.unidades)} (${k.componentes.map(c => esc(c.sku) + (c.por_kit > 1 ? ' ×' + c.por_kit : '')).join(' + ')})`).join(' · ')} — sus cajas viajan juntas.</p>` : ''}
     <div style="margin-top:12px">${camiones}</div>
     ${(cb.filas04 || []).length ? `<div class="panel" style="margin-top:14px"><div class="panel-h"><h3>Detalle por pallet</h3></div>
       <div class="scroll"><table class="tbl"><thead><tr><th class="n">Camión</th><th>Tipo vehículo</th><th class="n">Pallet</th>

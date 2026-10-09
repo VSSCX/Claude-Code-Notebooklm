@@ -37,6 +37,8 @@ class Entrada:
     hibrido: bool | None = None          # regla del cliente; None = se deduce del nombre
     orientacion_pallet: str = "largo"    # largo (como EasyCargo) | excel (como el VBA)
     capacidad_pallet: str = "geometria"  # geometria (cálculo exacto) | tabla (Máx Pallet)
+    kits: dict = field(default_factory=dict)     # SKU de kit -> KitDef (cajas separadas que viajan juntas)
+    kits_mezclar: bool = False                   # kits distintos en un mismo pallet (apagado: por validar)
 
 
 def _norm_cod_calefon(cod: str) -> str:
@@ -72,16 +74,17 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
         if modo == "SDA PREDISTRIBUIDO" and not e.predistribuido:
             raise ValueError("Falta la tabla Predistribuido (sucursal, SKU y unidades).")
         return cubicaje_sda_a_piso(e.posiciones, e.medidas, e.camiones, str(e.caja_master).upper() == "CON CAJA MASTER",
-                                   e.predistribuido if modo == "SDA PREDISTRIBUIDO" else None, pasa_filtro, cam_offset)
+                                   e.predistribuido if modo == "SDA PREDISTRIBUIDO" else None, pasa_filtro, cam_offset,
+                                   kits=e.kits)
     if modo == "MDA":
-        return cubicaje_mda(e.posiciones, e.pedidos, e.medidas, e.camiones, pasa_filtro, cam_offset)
+        return cubicaje_mda(e.posiciones, e.pedidos, e.medidas, e.camiones, pasa_filtro, cam_offset, kits=e.kits)
     if modo == "SDA STOCK":
         from ..analisis import pallet_cliente
         pal_L, pal_W, pal_H = e.pallet or pallet_cliente(e.cliente)
         return cubicaje_sda_stock(e.posiciones, e.medidas, pal_L, pal_W, pal_H,
                                   str(e.caja_master).upper() == "CON CAJA MASTER", e.pedidos,
                                   pasa_filtro, cam_offset, orientacion=e.orientacion_pallet,
-                                  capacidad=e.capacidad_pallet)
+                                  capacidad=e.capacidad_pallet, kits=e.kits, kits_mezclar=e.kits_mezclar)
     if modo == "SDA PREDISTRIBUIDO":
         from ..analisis import pallet_cliente
         if not e.predistribuido:
@@ -91,12 +94,13 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
                                            pal_H, str(e.caja_master).upper() == "CON CAJA MASTER",
                                            e.cliente, pasa_filtro, cam_offset, hibrido=e.hibrido,
                                            orientacion=e.orientacion_pallet,
-                                           capacidad=e.capacidad_pallet)
+                                           capacidad=e.capacidad_pallet, kits=e.kits,
+                                           kits_mezclar=e.kits_mezclar)
     if modo == "MDA PREDISTRIBUIDO":
         if not e.predistribuido:
             raise ValueError("Falta la tabla Predistribuido (sucursal, SKU y unidades).")
         return cubicaje_mda_predistribuido(e.posiciones, e.predistribuido, e.medidas, e.camiones,
-                                           pasa_filtro, cam_offset)
+                                           pasa_filtro, cam_offset, kits=e.kits)
     raise ModoNoPortado(
         f"El modo '{modo}' todavía no está disponible en la plataforma. "
         f"Modos disponibles: {', '.join(PORTADOS)}. Cubica ese pedido en el Excel.")

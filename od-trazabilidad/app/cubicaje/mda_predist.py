@@ -84,8 +84,10 @@ def topear_por_sop(predist: list[FilaPredist], sop: dict[str, int]) -> tuple[lis
 
 def cubicaje_mda_predistribuido(posiciones: list[Posicion], predist: list[FilaPredist],
                                 cache: dict[str, Dims], boxes: list[Box], pasa_filtro=None,
-                                cam_offset: int = 0) -> Resultado:
+                                cam_offset: int = 0, kits: dict | None = None) -> Resultado:
+    from .kits import expandir_a_componentes
     res = Resultado(modo="MDA PREDISTRIBUIDO")
+    posiciones, predist, _usados = expandir_a_componentes(posiciones, predist, kits)
     if not boxes:
         res.avisos.append("No hay camiones configurados.")
         return res

@@ -847,7 +847,7 @@ def test_fijar_productos_a_un_camion(c, tmp_path):
     assert len(antigua["camiones"]) == 1 and antigua["unidades"] == 40
 
 
-def _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400"):
+def _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400", cliente="PARIS"):
     import time
     from app.config import settings
     from app.integrations import base_medidas, bases, sap
@@ -864,7 +864,7 @@ def _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400"):
         "900276671": {"desc": "900276671 COCINA FM5SSC", "max_camion": 80}})
     plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
     object.__setattr__(settings, "plantilla_visor", str(plantilla))
-    tid = c.post(f"/api/analisis/{pedido}", json={"puesto": "PN01", "cliente": "PARIS"}).json()["id"]
+    tid = c.post(f"/api/analisis/{pedido}", json={"puesto": "PN01", "cliente": cliente}).json()["id"]
     for _ in range(100):
         t = c.get(f"/api/acciones/trabajos/{tid}").json()
         if t["estado"] != "en_curso":
@@ -1274,6 +1274,21 @@ def test_plantilla_de_carga_trae_grupos_y_el_importador_los_lee(c, tmp_path):
     assert sorted({g["grupo"] for g in d["grupos"]}) == [1, 2] or {g["grupo"] for g in d["grupos"]} >= {1, 2}
 
 
+def test_cubicaje_conjunto_acepta_clientes_distintos(c, tmp_path, monkeypatch):
+    """Los clientes regionales se juntan: pedidos de clientes distintos se cubican juntos con las reglas de uno."""
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4410", cliente="PARIS")
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4411", cliente="RIPLEY")
+    r = c.post("/api/cubicaje-conjunto", json={"pedidos": ["4410", "4411"]})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["conjunto"]["clientes"] == {"4410": "PARIS", "4411": "RIPLEY"}
+    assert d["conjunto"]["distintos"] == ["PARIS", "RIPLEY"] and d["cliente"] == "PARIS"
+    assert any("reglas distintas" in a for a in d["avisos"])
+    r2 = c.post("/api/cubicaje-conjunto", json={"pedidos": ["4410", "4411"], "cliente": "RIPLEY"})
+    assert r2.status_code == 200 and r2.json()["cliente"] == "RIPLEY"
+    assert r2.json()["conjunto"]["reglas_de"] == "RIPLEY"
+
+
 def test_cubicaje_conjunto_entregas_por_camion_y_pedido_y_camion_compartido(c, tmp_path, monkeypatch):
     """Multipedido como el Excel: los pedidos se cubican juntos, cada camión lleva cargas de varios pedidos, se crea una
     entrega por (camión, pedido) y las entregas de un mismo camión quedan vinculadas para agruparse."""
@@ -1314,3 +1329,68 @@ def test_cubicaje_conjunto_entregas_por_camion_y_pedido_y_camion_compartido(c, t
     # cada pedido solo crea lo suyo: nada de mezclar cantidades de otro pedido
     assert sum(sum(m.values()) for p, m in llamadas if p == "4400") == 50
     assert sum(sum(m.values()) for p, m in llamadas if p == "4401") == 50
+
+
+def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Kit código SAP", "Descripción del kit", "Componente código SAP", "Cantidad por kit"])
+    for f in filas:
+        ws.append(f)
+    ruta = tmp_path / nombre
+    wb.save(ruta)
+    return ruta.read_bytes()
+
+
+def test_kits_se_cargan_desde_excel_se_reemplazan_y_se_borran(c, tmp_path):
+    datos = _excel_kits(tmp_path, [["KIT-1", "Kit cocina", "900081624", 1], ["KIT-1", "", "900276671", 2],
+                                   ["KIT-2", "Otro", "900081624", 1], ["KIT-2", "", "", 1], ["KIT-3", "x", "900081624", 0]])
+    r = c.post("/api/kits/importar", files={"file": ("kits.xlsx", datos)})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["nuevos"] == 2 and d["ignoradas"] == 2 and len(d["problemas"]) == 2
+    kit1 = next(k for k in d["filas"] if k["sku"] == "KIT-1")
+    assert kit1["descripcion"] == "Kit cocina" and kit1["componentes"] == [
+        {"sku": "900081624", "cantidad": 1}, {"sku": "900276671", "cantidad": 2}]
+    # cargar de nuevo: lo igual no cambia, lo distinto se reemplaza
+    r2 = c.post("/api/kits/importar", files={"file": ("kits.xlsx", _excel_kits(tmp_path, [
+        ["KIT-1", "Kit cocina", "900081624", 1], ["KIT-1", "", "900276671", 2],
+        ["KIT-2", "Otro", "900276671", 3]], "k2.xlsx"))}).json()
+    assert r2["sin_cambios"] == 1 and r2["actualizados"] == 1 and r2["nuevos"] == 0
+    assert c.get("/api/kits?buscar=KIT-2").json()["filas"][0]["componentes"] == [{"sku": "900276671", "cantidad": 3}]
+    assert c.post("/api/kits/importar", files={"file": ("kits.txt", b"x")}).status_code == 422
+    assert c.delete("/api/kits/KIT-2").status_code == 200 and c.delete("/api/kits/KIT-2").status_code == 404
+    assert c.get("/api/kits").json()["total"] == 1
+    pl = c.get("/api/kits/plantilla")
+    assert pl.status_code == 200 and pl.content[:2] == b"PK"
+    # la plantilla se puede cargar tal cual
+    assert c.post("/api/kits/importar", files={"file": ("p.xlsx", pl.content)}).json()["nuevos"] == 2
+
+
+def test_un_kit_se_cubica_con_las_medidas_de_sus_componentes(c, tmp_path, monkeypatch):
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    with open(_archivo_medidas(tmp_path, [["1001", "1001 HORNO CHICO", 1, 30, 30, 30, 5, "Y", "N", "N", 500, 40],
+                                          ["1002", "1002 ENCIMERA", 1, 40, 20, 20, 5, "Y", "N", "N", 500, 40]]), "rb") as fh:
+        c.post("/api/medidas/importar", files={"file": ("Base de Medidas.xlsm", fh.read())})
+    c.post("/api/kits/importar", files={"file": ("k.xlsx", _excel_kits(tmp_path, [
+        ["KITX", "Kit horno + encimera", "1001", 1], ["KITX", "", "1002", 1]]))})
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "KITX", "qty": 20}], "modo": "SDA STOCK",
+                                            "caja_master": "SIN CAJA MASTER", "cliente": "SODIMAC"})
+    assert d.status_code == 200, d.text
+    d = d.json()
+    assert d["desconocidos"] == [] and d["faltantes"] == []
+    assert d["unidades"] == 40 and {p["tipo"] for p in d["pallets_detalle"]} == {"Kit"}
+    por_sku = {}
+    for f in d["filas04"]:
+        por_sku[f["sku"]] = por_sku.get(f["sku"], 0) + f["unidades"]
+    assert por_sku == {"1001": 20, "1002": 20}
+    # si a un componente le faltan medidas, se pide ese componente (no el kit)
+    c.post("/api/kits/importar", files={"file": ("k2.xlsx", _excel_kits(tmp_path, [
+        ["KITY", "Con faltante", "900081624", 1], ["KITY", "", "900999999", 1]], "k2.xlsx"))})
+    d2 = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "KITY", "qty": 5}], "modo": "SDA STOCK",
+                                             "caja_master": "SIN CAJA MASTER"}).json()
+    assert [f["sku"] for f in d2["faltantes"]] == ["900999999"] and d2["faltantes"][0]["unidades"] == 5

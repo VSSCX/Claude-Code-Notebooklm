@@ -170,6 +170,26 @@ class Cliente(Base):
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
 
 
+class Kit(Base):
+    """Kit: un SKU propio del pedido que reúne cajas separadas (horno + encimera + campana...) que viajan juntas."""
+    __tablename__ = "kits"
+    sku: Mapped[str] = mapped_column(Unicode(40), primary_key=True)
+    descripcion: Mapped[str] = mapped_column(Unicode(200), default="")
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
+    componentes: Mapped[list["KitComponente"]] = relationship(
+        back_populates="kit", cascade="all, delete-orphan", order_by="KitComponente.id")
+
+
+class KitComponente(Base):
+    __tablename__ = "kit_componentes"
+    __table_args__ = (UniqueConstraint("kit_sku", "sku", name="uq_kit_componente"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kit_sku: Mapped[str] = mapped_column(Unicode(40), ForeignKey("kits.sku", ondelete="CASCADE"), index=True)
+    sku: Mapped[str] = mapped_column(Unicode(40))
+    cantidad: Mapped[int] = mapped_column(Integer, default=1)
+    kit: Mapped["Kit"] = relationship(back_populates="componentes")
+
+
 class Config(Base):
     __tablename__ = "config"
     clave: Mapped[str] = mapped_column(Unicode(50), primary_key=True)

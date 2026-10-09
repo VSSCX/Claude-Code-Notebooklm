@@ -23,7 +23,7 @@ def _commit(s: Session):
         s.rollback()
         raise HTTPException(409, "El registro choca con otro existente.") from e
 
-from .comun import (_clave_analisis, _clave_cubicaje, _sop_de)
+from .comun import (_clave_analisis, _clave_cubicaje, _sop_de, solicitantes_del_grupo)
 
 router = APIRouter()
 
@@ -88,7 +88,7 @@ def analizar(numero: str, body: dict):
     from datetime import date as _date, datetime
     from ..analisis import calcular, en_entrega_por_modelo, oc_de_zsd
     from ..db import SessionLocal
-    from ..integrations import base_medidas, sap
+    from ..integrations import base_medidas, kits as kits_mod, sap
     from ..models import Config, Medida
 
     puesto = str(body.get("puesto", "")).strip().upper()
@@ -112,6 +112,8 @@ def analizar(numero: str, body: dict):
         aviso_pub = sap.revisar_publicacion()                  # la ruta fija de publicación, también antes de abrir SAP
         with SessionLocal() as ses:
             grupo, codigo = _sop_de(cliente, ses)
+            solicitantes = solicitantes_del_grupo(cliente, ses)
+            kits_def = kits_mod.definiciones(ses)
             # la Base de Medidas cargada en la plataforma manda; el archivo de red solo si no hay ninguna
             filas_med = ses.execute(select(Medida.sku, Medida.descripcion, Medida.max_camion)).all()
         if not codigo:
@@ -131,6 +133,9 @@ def analizar(numero: str, body: dict):
                 raise RuntimeError("No hay Base de Medidas cargada y no se pudo abrir la del servidor de archivos. "
                                    "Cárgala en Configuración → Base de Medidas. Detalle: " + _causa(e)) from e
 
+        for k in kits_def.values():                  # un kit no está en la Base de Medidas: se conoce por su listado
+            med.setdefault(k.sku, {"desc": f"{k.sku} {k.desc}".strip(), "max_camion": 0})
+
         avance("1/4 Leyendo el pedido en VL01N")
         lectura = sap.leer_pedido(numero, puesto, f.strftime("%d.%m.%Y"))
         if not lectura.posiciones:
@@ -140,12 +145,13 @@ def analizar(numero: str, body: dict):
 
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
-        avance("2/4 Consultando Qty en entrega en ZSD001_03")
+        avance("2/4 Consultando Qty en entrega en ZSD001_03" + (
+            f" ({len(solicitantes)} solicitantes del grupo {grupo})" if len(solicitantes) > 1 else ""))
         avisos_zsd: list[str] = []
         # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
         nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
         publicado: dict = {}
-        filas_zsd = sap.zsd001_03(codigo, [p["sku"] for p in posiciones],
+        filas_zsd = sap.zsd001_03(solicitantes if len(solicitantes) > 1 else codigo, [p["sku"] for p in posiciones],
                                   str(carpeta), nombre_zsd, avisar=avisos_zsd.append, publicado=publicado)
 
         avance("3/4 Calculando saldos y alertas")
@@ -168,7 +174,7 @@ def analizar(numero: str, body: dict):
         skus = [p["sku"] for p in posiciones]
         # Se guardan los datos usados, para recalcular ajustes sin volver a SAP
         doc = {"pedido": numero, "cliente": cliente, "grupo_sop": grupo, "puesto": puesto,
-               "fecha": f.isoformat(), "posiciones": posiciones, "en_entrega": en_ent,
+               "fecha": f.isoformat(), "posiciones": posiciones, "en_entrega": en_ent, "solicitantes": solicitantes,
                "plan": {k: plan[k] for k in skus if k in plan},
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},

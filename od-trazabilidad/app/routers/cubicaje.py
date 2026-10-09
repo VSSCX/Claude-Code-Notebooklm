@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import domain
 from ..db import get_session
-from ..integrations import clientes as cli_mod, maestra, medidas as med_mod
+from ..integrations import clientes as cli_mod, kits as kits_mod, maestra, medidas as med_mod
 
 
 
@@ -56,6 +56,51 @@ def importar_medidas(file: UploadFile = File(...), s: Session = Depends(get_sess
     return {**r.__dict__, **med_mod.estado(s)}
 
 
+@router.get("/kits")
+def get_kits(buscar: str = "", limite: int = 100, s: Session = Depends(get_session)):
+    from ..integrations import kits as kits_mod
+    return kits_mod.listar(s, buscar, limite)
+
+
+@router.post("/kits/importar")
+def importar_kits(file: UploadFile = File(...), s: Session = Depends(get_session)):
+    """Carga masiva del listado de kits (una fila por componente): agrega los nuevos y reemplaza los que vienen."""
+    from ..integrations import kits as kits_mod
+    if Path(file.filename or "").suffix.lower() not in (".xlsx", ".xlsm"):
+        raise HTTPException(422, "El archivo debe ser .xlsx")
+    try:
+        filas = kits_mod.leer_archivo(file.file)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"No se pudo leer el archivo: {str(e)[:200]}") from e
+    if not filas:
+        raise HTTPException(422, "No se encontraron filas: usa la plantilla (columnas Kit código SAP, "
+                                 "Descripción del kit, Componente código SAP, Cantidad por kit).")
+    r = kits_mod.importar(s, filas)
+    _commit(s)
+    return {**r.__dict__, "problemas": r.problemas[:20], **kits_mod.listar(s, "", 100)}
+
+
+@router.get("/kits/plantilla")
+def plantilla_kits():
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+
+    from ..integrations import kits as kits_mod
+    return StreamingResponse(BytesIO(kits_mod.plantilla()),
+                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="Plantilla_Kits.xlsx"'})
+
+
+@router.delete("/kits/{sku}")
+def borrar_kit(sku: str, s: Session = Depends(get_session)):
+    from ..integrations import kits as kits_mod
+    if not kits_mod.borrar(s, sku):
+        raise HTTPException(404, "Ese kit no existe.")
+    _commit(s)
+    return {"ok": True}
+
+
 @router.put("/medidas/{sku}")
 def put_medida(sku: str, body: dict, s: Session = Depends(get_session)):
     """Corrección puntual de un producto (por ejemplo, uno que falta y frena el cubicaje)."""
@@ -87,7 +132,9 @@ def put_ajustes_cubicaje(body: dict, s: Session = Depends(get_session)):
     cap = str(body.get("capacidad_pallet", "geometria")).lower()
     if cap not in ("geometria", "tabla"):
         raise HTTPException(422, "Capacidad no válida (geometria o tabla).")
-    datos = {"orientacion_pallet": orient, "celda_cm": celda, "capacidad_pallet": cap}
+    datos = {"orientacion_pallet": orient, "celda_cm": celda, "capacidad_pallet": cap,
+             "kits_mezclar": bool(body["kits_mezclar"]) if "kits_mezclar" in body
+             else bool(_ajustes_cubicaje(s).get("kits_mezclar", False))}
     cam = body.get("camiones")
     if cam is None:
         datos["camiones"] = medidas_camiones(s)                      # no se pisan las medidas al cambiar otro ajuste
@@ -398,10 +445,6 @@ def _cubicar(numero, body: dict, s: Session):
             raise HTTPException(422, f"Primero hay que analizar el pedido {n}: la carga sale del análisis."
                                 if multi else "Primero hay que analizar el pedido: la carga sale del análisis.")
         analisis[n] = _json.loads(ca.valor)
-    clientes_ = {(analisis[n].get("cliente") or "").strip().upper() for n in numeros}
-    if multi and len(clientes_) > 1:
-        raise HTTPException(422, "Para cubicar juntos, los pedidos deben ser del mismo cliente (hay: "
-                            + ", ".join(sorted(c or "sin cliente" for c in clientes_)) + ").")
     numero = numeros[0]
     an = analisis[numero]
     filas = [f for n in numeros for f in analisis[n]["resultado"]["filas"]]
@@ -413,7 +456,11 @@ def _cubicar(numero, body: dict, s: Session):
     cfg_val = _json.loads(cfg.valor) if cfg else {}
     camiones_cfg = body.get("camiones") or cfg_val.get("camiones") or camiones_defecto(s)
     modo = str(body.get("modo") or an.get("modo_cubicaje") or "MDA").strip().upper()
-    cliente = an.get("cliente", "")
+    # Pedidos de clientes distintos (p. ej. regionales): se cubican juntos con las reglas de un cliente
+    # (pallet, caja master, híbrido); por defecto el del primer pedido, o el que elija el analista.
+    clientes_pedidos = {n: (analisis[n].get("cliente") or "").strip() for n in numeros}
+    distintos = list(dict.fromkeys(c for c in clientes_pedidos.values() if c))
+    cliente = (str(body.get("cliente") or "").strip() or an.get("cliente", "")) if multi else an.get("cliente", "")
 
     med_filas = med_mod.filas_para_cubicaje(s)          # la cargada en la plataforma
     origen_medidas = "plataforma"
@@ -425,7 +472,9 @@ def _cubicar(numero, body: dict, s: Session):
 
     ajustes = _aplicar_ajustes(s)
     regla = cli_mod.buscar(s, cliente)
+    kits = kits_mod.definiciones(s)
     entrada = Entrada(
+        kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")),
         cliente=cliente, modo=modo,
         posiciones=[Posicion(sku=f["sku"], desc=f["descripcion"], carga=f["carga"],
                              pedido=n, fila=i + 5)
@@ -438,7 +487,7 @@ def _cubicar(numero, body: dict, s: Session):
         orientacion_pallet=ajustes["orientacion_pallet"],
         capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
         piso_pallet=str(body.get("piso_pallet") or ""),
-        calefones=set(body.get("calefones") or _calefones_de(cliente, s)),
+        calefones=set(body.get("calefones") or set().union(*(_calefones_de(c, s) for c in (distintos or [cliente])))),
         predistribuido=[FilaPredist(sucursal=f["sucursal"], sku=f["sku"], unidades=f["unidades"],
                                     por_bulto=int(f.get("por_bulto") or 0))
                         for f in _json.loads(pre.valor)["filas"]]
@@ -450,9 +499,11 @@ def _cubicar(numero, body: dict, s: Session):
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 
+    avisos_cli = _avisos_clientes(s, distintos, cliente) if multi else []
     doc = {"pedido": numero if not multi else " + ".join(numeros), "cliente": cliente, "modo": r.modo,
            "generado": _date.today().isoformat(),
-           "conjunto": {"id": cid, "pedidos": numeros} if multi else None,
+           "conjunto": {"id": cid, "pedidos": numeros, "clientes": clientes_pedidos,
+                        "distintos": distintos, "reglas_de": cliente} if multi else None,
            "caja_master": entrada.caja_master, "piso_pallet": entrada.piso_pallet,
            "pallet": list(entrada.pallet or (120.0, 100.0, 140.0)),
            "camiones": [{"numero": c.numero, "tipo": c.tipo, "L": c.L, "w": c.w, "h": c.h,
@@ -460,10 +511,11 @@ def _cubicar(numero, body: dict, s: Session):
            "filas": [f.__dict__ for f in r.filas03],
            "filas04": [f.__dict__ for f in r.filas04],
            "pallets_detalle": r.pallets,
-           "avisos": r.avisos, "sin_medidas": r.sin_medidas, "no_encontrados": r.no_encontrados,
+           "avisos": avisos_cli + list(r.avisos), "sin_medidas": r.sin_medidas, "no_encontrados": r.no_encontrados,
            "sin_ubicar": r.sin_ubicar, "unidades": r.unidades, "origen_medidas": origen_medidas,
            "ajustes": ajustes,
-           "faltantes": _faltantes_de([{"sku": f["sku"], "qty": f["carga"]} for f in filas if f["carga"] > 0],
+           "kits": _resumen_kits(kits, [(f["sku"], f["carga"]) for f in filas if f["carga"] > 0]),
+           "faltantes": _faltantes_de(_lineas_sin_kits([(f["sku"], f["carga"]) for f in filas if f["carga"] > 0], kits),
                                       lambda sku, _c=entrada.medidas: _c.get(sku.lower()) is not None)}
     nombre_visor = f"conjunto_{cid}" if multi else f"pedido_{numero}"
     if not multi:
@@ -509,6 +561,45 @@ def _cubicar(numero, body: dict, s: Session):
     if doc.get("visor_vivo"):
         doc["visor_json"] = datos_visor
     return doc
+
+
+def _lineas_sin_kits(lineas: list[tuple], kits: dict) -> list[dict]:
+    """Lineas (sku, cantidad) con cada kit reemplazado por sus componentes: lo que necesita medidas son las cajas."""
+    out = []
+    for sku, qty in lineas:
+        k = kits.get(domain.norm_sku(sku))
+        if k is None:
+            out.append({"sku": sku, "qty": qty})
+        else:
+            out += [{"sku": c, "qty": float(qty) * q} for c, q in k.componentes]
+    return out
+
+
+def _resumen_kits(kits: dict, lineas: list[tuple]) -> list[dict]:
+    """Los kits de la carga, con sus componentes, para mostrarlos en el cubicaje."""
+    out = {}
+    for sku, qty in lineas:
+        k = kits.get(domain.norm_sku(sku))
+        if k is not None:
+            f = out.setdefault(k.sku, {"sku": k.sku, "descripcion": k.desc, "unidades": 0,
+                                       "componentes": [{"sku": c, "por_kit": q} for c, q in k.componentes]})
+            f["unidades"] += int(qty)
+    return list(out.values())
+
+
+def _avisos_clientes(s: Session, distintos: list[str], base: str) -> list[str]:
+    """Aviso cuando los pedidos juntos son de clientes con reglas distintas: el cubicaje usa las de `base`."""
+    if len(distintos) < 2:
+        return []
+    firmas = set()
+    for c in distintos:
+        r = cli_mod.buscar(s, c)
+        firmas.add((r.pallet_largo, r.pallet_ancho, r.pallet_alto, r.caja_master, r.hibrido, r.calefon_aparte)
+                   if r else None)
+    if len(firmas) <= 1:
+        return []
+    return [f"Clientes con reglas distintas ({', '.join(distintos)}): el cubicaje usa las de {base or distintos[0]} "
+            "(pallet, caja master, híbrido). Si corresponden otras, elígelas en «Reglas de» y vuelve a cubicar."]
 
 
 def _guardar_conjunto(s: Session, doc: dict, numeros: list[str], cid: str) -> None:
@@ -751,11 +842,20 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     else:
         camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
 
+    kits = kits_mod.definiciones(s)
     posiciones = []
     desconocidos = []
     for i, l in enumerate(lineas):
         sku = domain.norm_sku(l.get("sku"))
         d = cache.get(sku.lower())
+        if d is None and sku in kits:                       # un kit se cubica con las medidas de sus componentes
+            faltan_k = [c for c, _ in kits[sku].componentes if cache.get(c.lower()) is None]
+            if faltan_k:
+                desconocidos += [c for c in faltan_k if c not in desconocidos]
+            else:
+                posiciones.append(Posicion(sku=sku, desc=kits[sku].desc or sku, carga=float(l.get("qty") or 0),
+                                           pedido=str(body.get("pedido") or "LIBRE"), fila=i + 1))
+            continue
         if d is None:
             desconocidos.append(sku)
             continue
@@ -766,7 +866,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     pre = [FilaPredist(sucursal=str(x.get("sucursal", "")).strip().upper(),
                        sku=domain.norm_sku(x.get("sku")), unidades=float(x.get("qty") or 0))
            for x in (body.get("predistribuido") or [])
-           if cache.get(domain.norm_sku(x.get("sku")).lower()) is not None]      # sin medidas no se reparte
+           if cache.get(domain.norm_sku(x.get("sku")).lower()) is not None
+           or domain.norm_sku(x.get("sku")) in kits]      # sin medidas no se reparte
 
     # Grupos de carga: el 1 va al fondo y cada grupo empieza donde terminó el anterior. Es el mismo mecanismo
     # de bloques de un predistribuido, con el grupo en lugar de la sucursal.
@@ -789,7 +890,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
                           orientacion_pallet=ajustes["orientacion_pallet"],
-                          capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"))
+                          capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
+                          kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")))
         try:
             partes.append(segmentar(entrada))
         except (ModoNoPortado, ValueError) as e:
@@ -835,7 +937,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
            "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,
            "desconocidos": desconocidos, "modo_usado": modo,
-           "faltantes": _faltantes_de(lineas, lambda sku: cache.get(sku.lower()) is not None)}
+           "faltantes": _faltantes_de(_lineas_sin_kits([(x.get("sku"), x.get("qty") or 0) for x in lineas], kits),
+                                      lambda sku: cache.get(sku.lower()) is not None)}
 
     # Las cajas master cuentan como un bulto con varias unidades: 10 cajas de 4 = 40 unidades en 10 bultos.
     # El motor coloca cajas; aquí las unidades de cada fila y el total se llevan a unidades de producto.

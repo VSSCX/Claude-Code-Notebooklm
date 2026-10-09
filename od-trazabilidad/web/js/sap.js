@@ -208,7 +208,7 @@ function vistaAnalisis(p){
   }).join('');
   const cuenta = k => r.filas.filter(f => f.alerta === k).length;
   return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
@@ -385,6 +385,68 @@ function seccionMedidas(){
   </div></div>`;
 }
 
+/* ============ Kits: cajas separadas que viajan juntas ============ */
+UI.kits = null; UI.kitsBuscar = '';
+async function cargarKits(){
+  try { UI.kits = await api('GET', '/kits' + (UI.kitsBuscar ? `?buscar=${encodeURIComponent(UI.kitsBuscar)}` : '')); }
+  catch(e){ UI.kits = {error: e.message, filas: [], total: 0}; }
+  if (!UI.ajustes) await cargarAjustes();
+  render();
+}
+async function importarKits(input){
+  const f = input.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  toast('Cargando kits…');
+  try {
+    const r = await fetch('/api/kits/importar', {method: 'POST', body: fd});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'No se pudo importar');
+    toast(`${d.nuevos} nuevos · ${d.actualizados} actualizados · ${d.sin_cambios} sin cambios` + (d.ignoradas ? ` · ${d.ignoradas} filas ignoradas` : ''));
+    if (d.problemas && d.problemas.length) Avisos.agregar('warn', 'Filas de kits que no se cargaron', d.problemas.join(' · '));
+    UI.kits = null; await cargarKits();
+    UI.cubicaje = {}; UI.autoCub = {};
+  } catch(e){ toast(e.message); }
+}
+async function borrarKit(sku){
+  if (!await preguntar({titulo: `Eliminar el kit ${sku}`, texto: 'Se quita del listado. Los pedidos que lo traigan dejarán de cubicarse como kit.', ok: 'Eliminar', peligro: true})) return;
+  try { await api('DELETE', '/kits/' + encodeURIComponent(sku)); UI.kits = null; await cargarKits(); toast('Kit eliminado'); }
+  catch(e){ toast(e.message); }
+}
+function seccionKits(){
+  const k = UI.kits;
+  if (!k) setTimeout(cargarKits, 0);
+  const filas = (k && k.filas) || [];
+  const mezclar = !!(UI.ajustes && UI.ajustes.kits_mezclar);
+  return `<div class="panel" style="margin-bottom:20px"><div class="panel-h" style="justify-content:space-between">
+      <h2>Kits</h2>
+      <div class="small muted">${k ? `${fmt(k.total)} kits` : 'Cargando…'}</div>
+    </div><div class="panel-b">
+    <p style="margin-top:0;max-width:72ch">Un kit es un SKU que reúne <b>cajas separadas</b> (por ejemplo horno + encimera + campana). Se cubica con las medidas de cada componente, que deben estar en la Base de Medidas, y <b>sus cajas siempre viajan juntas</b>: en el mismo pallet, o juntas en el camión si va a piso. Cargar de nuevo un kit reemplaza su composición.</p>
+    <div class="row">
+      <label class="btn primary">Cargar listado de kits<input type="file" accept=".xlsx,.xlsm" data-kits style="display:none"></label>
+      <a class="btn" href="/api/kits/plantilla" download>Descargar plantilla</a>
+      <input type="search" placeholder="Buscar kit y Enter" value="${esc(UI.kitsBuscar)}" data-buscarkit style="min-width:200px">
+    </div>
+    <label class="row tight" style="margin-top:14px;align-items:flex-start"><input type="checkbox" data-kitmezcla ${mezclar ? 'checked' : ''} style="margin-top:3px">
+      <span><b>Permitir kits distintos en un mismo pallet</b> <span class="tag warn">Por validar con los analistas</span><br>
+      <span class="small muted">Apagado: cada pallet lleva un solo tipo de kit. Encendido: los restos de kits distintos (los pallets que quedan incompletos) se juntan si caben todos.</span></span></label>
+    ${k && k.error ? `<p class="small"><span class="tag err">Error</span> ${esc(k.error)}</p>` : ''}
+    ${filas.length ? `<div class="scroll" style="margin-top:12px"><table class="tbl"><thead><tr><th>Kit</th><th>Descripción</th><th>Componentes (por kit)</th><th></th></tr></thead><tbody>
+      ${filas.map(f => `<tr><td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
+        <td>${f.componentes.map(c => `<span class="tag">${esc(c.sku)}${c.cantidad > 1 ? ' × ' + c.cantidad : ''}</span>`).join(' ')}</td>
+        <td><button class="btn quiet sm" data-act="borrarKit" data-sku="${esc(f.sku)}" aria-label="Eliminar kit ${esc(f.sku)}">${ICON.x}</button></td></tr>`).join('')}
+    </tbody></table></div>${filas.length >= 100 ? '<p class="small muted">Se muestran los primeros 100. Usa el buscador para encontrar un kit.</p>' : ''}`
+    : (k && !k.error ? '<p class="small muted" style="margin-top:12px">Todavía no hay kits cargados. Descarga la plantilla, complétala con tu listado y súbela aquí.</p>' : '')}
+  </div></div>`;
+}
+async function cambiarMezclaKits(on){
+  try { UI.ajustes = await api('PUT', '/ajustes-cubicaje', {...(UI.ajustes || {}), kits_mezclar: !!on}); }
+  catch(e){ return toast(e.message); }
+  UI.cubicaje = {}; UI.autoCub = {};
+  toast(on ? 'Kits distintos podrán compartir pallet' : 'Un solo tipo de kit por pallet');
+  render();
+}
+
 /* ============ Archivos (visor 3D y PDFs) ============ */
 function archivosDe(pedido, grupo){
   return (Store.archivos || []).filter(a => (grupo ? a.grupo === grupo : a.pedido === pedido && !a.grupo));
@@ -527,5 +589,5 @@ function vistaConfiguracion(){
   return `<div class="panel" style="margin-bottom:20px"><div class="panel-b">
       <h2 style="margin:0 0 6px">Configuración</h2>
       <p class="small muted" style="margin:0;max-width:72ch">Los datos que usa el cubicaje y el análisis: las reglas de cada cliente y la Base de Medidas. Se cargan una vez y quedan guardados.</p>
-    </div></div>` + seccionConexion() + seccionCamiones() + seccionClientes() + seccionMedidas();
+    </div></div>` + seccionConexion() + seccionCamiones() + seccionClientes() + seccionMedidas() + seccionKits();
 }
