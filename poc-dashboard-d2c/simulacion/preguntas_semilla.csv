@@ -1,0 +1,188 @@
+﻿id;analista;plantilla;intencion_esperada
+1;ventas;cuanto vendimos {P};metrica=monto, accion=medir
+2;ventas;ventas {D};metrica=monto, accion=medir
+3;ventas;monto total vendido {P};metrica=monto, accion=medir
+4;ventas;total de ventas {D};metrica=monto, accion=medir
+5;ventas;cuanto facturamos {P};metrica=monto, accion=medir, estado=['facturado']
+6;ventas;cual es el ticket promedio {D};metrica=ticket
+7;ventas;cuantos pedidos tuvimos {P};metrica=pedidos
+8;ventas;cuantas unidades se vendieron {P};metrica=unidades
+9;ventas;ventas de {PR} {D};metrica=monto, producto=True
+10;ventas;cuantas unidades de {PR} vendimos {P};metrica=unidades, producto=True
+11;ventas;ventas de {C} {D};metrica=monto, cliente=['{C}']
+12;ventas;cuanto compro {C} {P};metrica=monto, cliente=['{C}']
+13;ventas;ventas por dia {D};metrica=monto, agrupar=dia
+14;ventas;ventas por cliente {D};metrica=monto, agrupar=cliente
+15;ventas;ventas por canal {D};metrica=monto, agrupar=canal
+16;ventas;ventas por bodega {D};metrica=monto, agrupar=bodega
+17;ventas;ventas por clasificacion {D};metrica=monto, agrupar=clasif2
+18;ventas;ventas por categoria {D};metrica=monto, agrupar=clasif2
+19;ventas;top 5 productos mas vendidos {D};agrupar=producto, top=5
+20;ventas;top 3 clientes por monto {D};agrupar=cliente, top=3, metrica=monto
+21;ventas;ventas facturadas {D};metrica=monto, estado=['facturado']
+22;ventas;unidades por producto {D};metrica=unidades, agrupar=producto
+23;tendencias;evolucion de ventas {D};metrica=monto, agrupar=dia
+24;tendencias;ventas diarias {D};metrica=monto, agrupar=dia
+25;tendencias;evolucion de los pedidos {D};metrica=pedidos, agrupar=dia
+26;tendencias;ventas semanales;metrica=monto, agrupar=semana
+27;tendencias;ventas por mes;metrica=monto, agrupar=mes
+28;tendencias;comparar ventas {D} con el periodo anterior;metrica=monto, comparar=True
+29;tendencias;ventas de este mes vs el mes pasado;metrica=monto, comparar=True, periodo=mes
+30;tendencias;pedidos de esta semana comparado con la semana pasada;metrica=pedidos, comparar=True, periodo=semana
+31;tendencias;como vamos este mes;accion=resumen, periodo=mes
+32;tendencias;como vamos hoy;accion=resumen, periodo=hoy
+33;tendencias;resumen {D};accion=resumen
+34;tendencias;que dia se vendio mas {D};agrupar=dia, orden=desc, top=1
+35;tendencias;cual fue el mejor dia {D};agrupar=dia, orden=desc, top=1
+36;tendencias;que dia hubo menos pedidos {D};agrupar=dia, orden=asc, top=1
+37;clientes;cual es el cliente que mas compra {P};agrupar=cliente, orden=desc, top=1
+38;clientes;ranking de clientes por monto {D};agrupar=cliente, metrica=monto
+39;clientes;pedidos por cliente {D};agrupar=cliente, metrica=pedidos
+40;clientes;cuantos clientes distintos compraron {P};metrica=distintos, agrupar=cliente
+41;clientes;que clientes no han comprado {P};accion=sin_ventas, agrupar=cliente
+42;clientes;ticket promedio por cliente {D};metrica=ticket, agrupar=cliente
+43;clientes;pedidos cancelados por cliente {D};estado=['cancelado'], agrupar=cliente
+44;clientes;quien es el cliente con mas cancelaciones {P};estado=['cancelado'], agrupar=cliente, top=1
+45;clientes;pedidos de {C} {P};metrica=pedidos, cliente=['{C}']
+46;clientes;ventas de {C} y {C2} {D};metrica=monto, clientes_ambos=True
+47;clientes;cuantos pedidos pendientes tiene {C};estado=['pendiente'], cliente=['{C}']
+48;clientes;mejor cliente {D};agrupar=cliente, orden=desc, top=1
+49;productos;ventas de {K} {D};metrica=monto, producto=True
+50;productos;que clasificacion vende mas {P};agrupar=clasif2, orden=desc, top=1
+51;productos;ventas de cada clasificacion {D};agrupar=clasif2
+52;productos;cuantos productos distintos se vendieron {P};metrica=distintos, agrupar=producto
+53;productos;productos sin ventas {P};accion=sin_ventas
+54;productos;producto mas vendido {D};agrupar=producto, orden=desc
+55;productos;productos menos vendidos {D};agrupar=producto, orden=asc
+56;productos;cuanto vendimos de {PR} {P};metrica=monto, producto=True
+57;productos;pedidos que incluyen {PR} {D};producto=True
+58;productos;ventas de {PR} por cliente {D};producto=True, agrupar=cliente
+59;productos;unidades de {PR} por dia {D};producto=True, agrupar=dia
+60;stock;cual es el stock de {PR};accion=stock, producto=True
+61;stock;hay stock de {PR};accion=stock, producto=True
+62;stock;cuantas unidades quedan de {PR};accion=stock, producto=True
+63;stock;que productos no tienen stock;accion=stock, stock_modo=sin
+64;stock;productos con poco stock;accion=stock, stock_modo=poco
+65;stock;cobertura de stock;accion=stock, stock_modo=cobertura
+66;stock;dias de inventario de {PR};accion=stock, stock_modo=cobertura, producto=True
+67;stock;stock total;accion=stock, stock_modo=todo
+68;stock;que productos se van a quebrar;accion=stock, stock_modo=poco
+69;stock;stock de {K};accion=stock, producto=True
+70;stock;tenemos {PR} disponible;accion=stock, producto=True
+71;stock;pedidos pendientes por quiebre de stock {D};estado=['quiebre']
+72;stock;cuantos pedidos estan esperando por falta de stock;estado=['quiebre']
+73;logistica;cuantos pedidos estan atrasados;estado=['vencido']
+74;logistica;pedidos con entrega vencida por cliente;estado=['vencido'], agrupar=cliente
+75;logistica;cual es el sla con mas atrasos;estado=['vencido'], agrupar=sla, top=1
+76;logistica;pedidos por sla {D};agrupar=sla
+77;logistica;pedidos por bodega {D};agrupar=bodega
+78;logistica;cuantos pedidos de {B} hay {P};bodega=['{BE}']
+79;logistica;pedidos pendientes {P};estado=['pendiente']
+80;logistica;cuantos pedidos se cancelaron {P};estado=['cancelado']
+81;logistica;porcentaje de cancelacion {D};metrica=pct_estado, estado=['cancelado']
+82;logistica;pedidos facturados sin despacho;estado=['sin_despacho']
+83;logistica;status de {B} {P};agrupar=status, bodega=['{BE}']
+84;finanzas;porcentaje de integracion {D};metrica=pct_integracion
+85;finanzas;cuantos pedidos no estan integrados {P};estado=['no_integrado']
+86;finanzas;cuanto monto esta en riesgo;metrica=monto_riesgo
+87;finanzas;cuanto tarda un pedido en integrarse;metrica=desfase
+88;finanzas;pedidos sin pv de mas de 2 dias;estado=['no_integrado'], edad_min=2
+89;finanzas;pedidos de mas de 1 millon {D};monto_min=1000000
+90;finanzas;pedidos de menos de 50 mil {D};monto_max=50000
+91;finanzas;los 10 pedidos mas caros {D};accion=listar, metrica=monto, orden=desc, top=10
+92;finanzas;pedido de mayor monto {D};accion=listar, metrica=monto, orden=desc, top=1
+93;finanzas;monto de pedidos pendientes {P};metrica=monto, estado=['pendiente']
+94;operacion;hay algo raro hoy;accion=alertas
+95;operacion;que debo revisar;accion=alertas
+96;operacion;que esta en riesgo;accion=alertas
+97;operacion;hay alertas;accion=alertas
+98;operacion;cuantos pedidos entraron en la ultima hora;periodo=hoy
+99;operacion;dame el listado de pedidos cancelados {P};accion=listar, estado=['cancelado']
+100;operacion;pedido {SEQ};accion=pedido
+101;operacion;que productos tiene el pedido {SEQ};accion=pedido, foco=productos
+102;operacion;cuantas lineas tiene el pedido {SEQ};accion=pedido, foco=lineas
+103;operacion;estado del pedido {SEQ};accion=pedido, foco=estado
+104;tiempo;pedidos del 5 de agosto;periodo=rango, desde=2026-08-05, hasta=2026-08-05
+105;tiempo;ventas entre el 1 y el 10 de agosto;periodo=rango, desde=2026-08-01, hasta=2026-08-10, metrica=monto
+106;tiempo;ventas de julio;periodo=rango, desde=2026-07-01, hasta=2026-07-31, metrica=monto
+107;tiempo;ventas del lunes;periodo=rango, desde=2026-08-10, hasta=2026-08-10, metrica=monto
+108;tiempo;ventas este año;periodo=rango, desde=2026-01-01, metrica=monto
+109;tiempo;pedidos del ultimo trimestre;periodo=ultimos, dias=90
+110;tiempo;ventas de la semana pasada por dia;periodo=semana_anterior, agrupar=dia
+111;tiempo;pedidos hace 3 dias;periodo=rango, desde=2026-08-08, hasta=2026-08-08
+112;tiempo;ventas del 15 de julio al 20 de julio;periodo=rango, desde=2026-07-15, hasta=2026-07-20, metrica=monto
+113;tiempo;cuantos pedidos hubo el 3 de agosto;periodo=rango, desde=2026-08-03, hasta=2026-08-03
+114;tiempo;ventas del viernes pasado;periodo=rango, desde=2026-08-07, hasta=2026-08-07, metrica=monto
+115;tiempo;pedidos de agosto por cliente;periodo=rango, desde=2026-08-01, hasta=2026-08-31, agrupar=cliente
+116;ventas;cuanta plata entro {P};metrica=monto
+117;ventas;como nos fue {P};accion=resumen
+118;ventas;cuanto se facturo {P};metrica=monto, estado=['facturado']
+119;ventas;dime las ventas totales {D};metrica=monto
+120;ventas;cuantas ordenes entraron {P};metrica=pedidos
+121;ventas;cuantos equipos de {PR} salieron {P};metrica=unidades, producto=True
+122;ventas;que tan bien vendio {C} {P};metrica=monto, cliente=['{C}']
+123;ventas;total vendido por {C} {P};metrica=monto, cliente=['{C}']
+124;ventas;cual es el valor promedio de cada pedido {D};metrica=ticket
+125;ventas;cuanto dejo cada cliente {D};agrupar=cliente, metrica=monto
+126;tendencias;como han ido las ventas dia a dia {D};agrupar=dia, metrica=monto
+127;tendencias;en que dia vendimos mas {D};agrupar=dia, orden=desc, top=1
+128;tendencias;cual fue el peor dia {D};agrupar=dia, orden=asc, top=1
+129;tendencias;las ventas subieron o bajaron {P} comparado con antes;metrica=monto, comparar=True
+130;tendencias;dame un balance {D};accion=resumen
+131;tendencias;cual es el panorama {P};accion=resumen
+132;tendencias;como estamos {P};accion=resumen
+133;tendencias;venta mensual;agrupar=mes, metrica=monto
+134;clientes;quienes son nuestros mejores clientes {D};agrupar=cliente
+135;clientes;quien nos compra mas {P};agrupar=cliente, orden=desc, top=1
+136;clientes;cuantos clientes hicieron pedidos {P};metrica=distintos, agrupar=cliente
+137;clientes;que cliente tiene mas pedidos cancelados {P};estado=['cancelado'], agrupar=cliente, top=1
+138;clientes;cuanto nos compro {C} {P};metrica=monto, cliente=['{C}']
+139;clientes;pedidos atrasados de {C};estado=['vencido'], cliente=['{C}']
+140;clientes;que ordenes hay de {C} {P};cliente=['{C}']
+141;productos;que es lo que mas se vende {P};agrupar=producto, orden=desc
+142;productos;cuales son los 5 productos estrella {D};agrupar=producto, top=5
+143;productos;que modelos casi no se venden {P};agrupar=producto, orden=asc
+144;productos;que categoria factura mas {P};agrupar=clasif2, orden=desc, top=1
+145;productos;reparto de ventas por familia de producto {D};agrupar=clasif2
+146;productos;cuantos modelos distintos vendimos {P};metrica=distintos, agrupar=producto
+147;productos;que productos no se han vendido {P};accion=sin_ventas
+148;stock;quedan {PR};accion=stock, producto=True
+149;stock;cuantos {PR} tenemos en bodega;accion=stock, producto=True
+150;stock;hay existencias de {PR};accion=stock, producto=True
+151;stock;que modelos estan por acabarse;accion=stock, stock_modo=poco
+152;stock;que se nos esta agotando;accion=stock, stock_modo=poco
+153;stock;que productos estan agotados;accion=stock, stock_modo=sin
+154;stock;para cuantos dias alcanza el stock de {PR};accion=stock, stock_modo=cobertura, producto=True
+155;stock;cuanto inventario tenemos en total;accion=stock, stock_modo=todo
+156;stock;que pedidos estan detenidos por falta de stock;estado=['quiebre']
+157;logistica;que pedidos van atrasados;estado=['vencido']
+158;logistica;pedidos que ya pasaron su fecha de entrega;estado=['vencido']
+159;logistica;cuantas ordenes siguen pendientes {P};estado=['pendiente'], metrica=pedidos
+160;logistica;cuantos pedidos se anularon {P};estado=['cancelado']
+161;logistica;que tanto se cancela {D};metrica=pct_estado, estado=['cancelado']
+162;logistica;pedidos ya facturados {P};estado=['facturado']
+163;logistica;que bodega despacha mas pedidos {P};agrupar=bodega, orden=desc, top=1
+164;logistica;cual es el tipo de despacho mas usado {P};agrupar=sla, orden=desc, top=1
+165;finanzas;cuantos pedidos no han llegado a sap {P};estado=['no_integrado']
+166;finanzas;cuantos dias demora un pedido en pasar a sap;metrica=desfase
+167;finanzas;que porcentaje de pedidos ya esta en sap {D};metrica=pct_integracion
+168;finanzas;cuanta plata esta en juego por pedidos atrasados;metrica=monto_riesgo
+169;finanzas;ordenes de mas de 500 mil pesos {D};monto_min=500000
+170;finanzas;pedidos grandes de mas de 2 millones {D};monto_min=2000000
+171;finanzas;cual es el pedido mas caro {D};accion=listar, metrica=monto, orden=desc, top=1
+172;finanzas;muestrame los 5 pedidos de mayor valor {D};accion=listar, metrica=monto, orden=desc, top=5
+173;operacion;hay algun problema hoy;accion=alertas
+174;operacion;que cosas debo atender primero;accion=alertas
+175;operacion;algo anormal en las ventas;accion=alertas
+176;operacion;pedidos sin ingresar de hace mas de 3 dias;estado=['no_integrado'], edad_min=3
+177;operacion;detalle del pedido {SEQ};accion=pedido
+178;operacion;que lleva el pedido {SEQ};accion=pedido, foco=productos
+179;operacion;en que estado va el pedido {SEQ};accion=pedido, foco=estado
+180;tiempo;ventas del 1 al 7 de agosto;periodo=rango, desde=2026-08-01, hasta=2026-08-07, metrica=monto
+181;tiempo;cuantos pedidos entraron el 10 de agosto;periodo=rango, desde=2026-08-10, hasta=2026-08-10
+182;tiempo;ventas de este trimestre;periodo=rango, desde=2026-07-01, metrica=monto
+183;tiempo;ventas del año hasta hoy;periodo=rango, desde=2026-01-01, metrica=monto
+184;tiempo;pedidos de anteayer;periodo=rango, desde=2026-08-09, hasta=2026-08-09
+185;tiempo;ventas de los ultimos 3 dias;periodo=ultimos, dias=3, metrica=monto
+186;tiempo;pedidos de las ultimas 2 semanas;periodo=ultimos, dias=14
+187;tiempo;ventas de los ultimos 2 meses;periodo=ultimos, dias=60, metrica=monto

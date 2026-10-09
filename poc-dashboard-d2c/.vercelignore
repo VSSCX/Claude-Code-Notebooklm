@@ -1,0 +1,11 @@
+# No viajan a Vercel: instalador local, herramientas, capturas de revision y documentos de trabajo.
+POC_Dashboard*.py
+construir_instalador.py
+verificar_vercel.py
+.impeccable/
+PRODUCT.md
+DESIGN.md
+.env
+.venv/
+__pycache__/
+run.bat

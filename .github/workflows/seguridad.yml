@@ -1,0 +1,46 @@
+name: Seguridad y pruebas
+# Cada cambio (pull request o push) pasa por pruebas y auditoria antes de poder publicarse (control de gestion de cambios).
+on:
+  pull_request:
+    paths: ["poc-dashboard-d2c/**", ".github/workflows/seguridad.yml"]
+  push:
+    branches: [main]
+    paths: ["poc-dashboard-d2c/**"]
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: poc-dashboard-d2c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # la auditoria revisa tambien el historial de git en busca de claves
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt httpx pip-audit
+      - name: Pruebas del asistente
+        run: python probar_asistente.py
+        env:
+          DEMO: "1"
+      - name: Simulacion de analistas (948 preguntas)
+        run: python simulacion_analistas.py --umbral 0.97
+        env:
+          DEMO: "1"
+      - name: Pruebas de seguridad
+        run: python probar_seguridad.py
+      - name: Verificacion de Vercel
+        run: python verificar_vercel.py
+        env:
+          DEMO: "1"
+      - name: Auditoria de seguridad (evidencia)
+        run: python auditar_seguridad.py --informe EVIDENCIA_AUDITORIA.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidencia-auditoria
+          path: poc-dashboard-d2c/EVIDENCIA_AUDITORIA.md

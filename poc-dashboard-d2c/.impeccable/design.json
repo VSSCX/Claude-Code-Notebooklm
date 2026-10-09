@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T00:00:00Z",
+  "title": "Design System: Dashboard D2C · Cruce VTEX vs SAP",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Ant Blue", "canonical": "#1677FF", "tonalRamp": ["#003EB3", "#0958D9", "#1677FF", "#4096FF", "#69B1FF", "#91CAFF", "#BAE0FF", "#E6F4FF"] },
+      "primary-strong": { "role": "primary", "displayName": "Deep Ant Blue", "canonical": "#0958D9", "tonalRamp": ["#002C8C", "#003EB3", "#0958D9", "#1677FF", "#4096FF", "#69B1FF", "#91CAFF", "#E6F4FF"] },
+      "canvas": { "role": "neutral", "displayName": "Canvas Grey", "canonical": "#F5F5F5", "tonalRamp": ["#141414", "#262626", "#434343", "#8C8C8C", "#BFBFBF", "#D9D9D9", "#EBEBEB", "#F5F5F5"] },
+      "surface": { "role": "neutral", "displayName": "Surface White", "canonical": "#FFFFFF", "tonalRamp": ["#1F1F1F", "#4B5563", "#9CA3AF", "#D1D5DB", "#EBEBEB", "#F3F4F6", "#FAFAFA", "#FFFFFF"] },
+      "text": { "role": "neutral", "displayName": "Ink", "canonical": "#111827", "tonalRamp": ["#111827", "#1F2937", "#374151", "#4B5563", "#5F6673", "#9CA3AF", "#D1D5DB", "#F3F4F6"] },
+      "ok": { "role": "state", "displayName": "Invoiced Green", "canonical": "#15803D", "tonalRamp": ["#14532D", "#15803D", "#16A34A", "#22C55E", "#4ADE80", "#86EFAC", "#DCFCE7", "#F0FDF4"] },
+      "warn": { "role": "state", "displayName": "Pending Amber", "canonical": "#B45309", "tonalRamp": ["#78350F", "#B45309", "#D97706", "#F59E0B", "#FBBF24", "#FCD34D", "#FEF3C7", "#FFFBEB"] },
+      "err": { "role": "state", "displayName": "Overdue Red", "canonical": "#DC2626", "tonalRamp": ["#7F1D1D", "#B91C1C", "#DC2626", "#EF4444", "#F87171", "#FCA5A5", "#FEE2E2", "#FEF2F2"] }
+    },
+    "typographyMeta": {
+      "text-base": { "displayName": "Body", "purpose": "Default text, inputs and selects. Plus Jakarta Sans 14px." },
+      "card-title": { "displayName": "Card title", "purpose": "Card headings and the header h1. 16px bold." },
+      "kpi-value": { "displayName": "KPI value", "purpose": "Six indicator cells; scales with the card by container query." },
+      "table-cell": { "displayName": "Table cell", "purpose": "Dense table and matrix text, 13px, tabular." },
+      "label": { "displayName": "Label", "purpose": "Filter labels, table headers, sublines, tags. 12px, sentence case." },
+      "code": { "displayName": "Code", "purpose": "Order codes, sequence numbers and count chips in JetBrains Mono." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 2px rgba(17,24,39,.04)", "purpose": "Faint ambient shadow on cards; none in dark." },
+      { "name": "popover", "value": "0 6px 16px rgba(17,24,39,.12), 0 3px 6px -4px rgba(17,24,39,.12), 0 9px 28px 8px rgba(17,24,39,.05)", "purpose": "Floating layers only: notification panel, toasts, progress card." },
+      { "name": "focus-halo", "value": "0 0 0 3px #E6F4FF", "purpose": "Focused inputs, paired with a primary border." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(.23,1,.32,1)", "purpose": "All transitions, 120ms for hover and press." },
+      { "name": "panel-open", "value": "140ms scale .97 + translateY(-4px) to none", "purpose": "Notification popover entry." },
+      { "name": "toast-in", "value": "220ms translateX(1rem) to none; auto-close 7s; out 180ms", "purpose": "Toast top right." },
+      { "name": "bell-ring", "value": "900ms rotate keyframes, badge pop 350ms", "purpose": "New order arrives." },
+      { "name": "skeleton-shimmer", "value": "1.4s ease-in-out infinite", "purpose": "Loading skeleton blocks." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "max-width 899px (page scrolls, Filtros disclosure, stacked cards)" },
+      { "name": "status-line", "value": "max-width 1700px (second status line hidden)" },
+      { "name": "flow", "value": "scale below 0.9 locks to 0.9 and the page scrolls" },
+      { "name": "tv-canvas", "value": "1280x720 reference (desktop reference 1440x860)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Nav item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Icon + label header item; active is Deep Blue with a 2px underline.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-i\" aria-current=\"page\">Pedidos</button><button class=\"ds-nav-i\">Resumen</button></nav>",
+      "css": ".ds-nav{display:flex;height:56px;background:#fff;border-bottom:1px solid #EBEBEB;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px}.ds-nav-i{display:flex;align-items:center;padding:0 14px;position:relative;border:0;background:none;color:#4B5563;font-weight:500;cursor:pointer;transition:color 120ms,background-color 120ms}.ds-nav-i:hover{color:#111827;background:#FAFAFA}.ds-nav-i:focus-visible{outline:2px solid #1677FF;outline-offset:-2px}.ds-nav-i[aria-current=page]{color:#0958D9;font-weight:600}.ds-nav-i[aria-current=page]::after{content:'';position:absolute;left:14px;right:14px;bottom:0;height:2px;background:#1677FF;border-radius:2px 2px 0 0}"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Outlined 32px button; blue border and text on hover.",
+      "html": "<button class=\"ds-btn\">Modo TV</button>",
+      "css": ".ds-btn{height:32px;padding:0 14px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#111827;font:500 14px 'Plus Jakarta Sans',system-ui,sans-serif;cursor:pointer;transition:border-color 120ms,color 120ms,transform 120ms}.ds-btn:hover{border-color:#1677FF;color:#0958D9}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid #1677FF;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Filled Deep Blue button with white text.",
+      "html": "<button class=\"ds-btn-p\">Aplicar</button>",
+      "css": ".ds-btn-p{height:32px;padding:0 14px;border:1px solid #0958D9;border-radius:8px;background:#0958D9;color:#fff;font:500 14px 'Plus Jakarta Sans',system-ui,sans-serif;cursor:pointer;transition:background-color 120ms,transform 120ms}.ds-btn-p:hover{background:#1677FF;border-color:#1677FF}.ds-btn-p:active{transform:scale(.97)}.ds-btn-p:focus-visible{outline:2px solid #1677FF;outline-offset:2px}"
+    },
+    {
+      "name": "Alert marker",
+      "kind": "chip",
+      "refersTo": "alert-marker",
+      "description": "Toggle button with a mono count chip; critical chip is red-soft, active fills Deep Blue.",
+      "html": "<button class=\"ds-mk\">Sin facturar <b class=\"ds-mk-c\">12</b></button>",
+      "css": ".ds-mk{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 8px 0 14px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#111827;font:600 14px 'Plus Jakarta Sans',system-ui,sans-serif;cursor:pointer;transition:border-color 120ms,color 120ms}.ds-mk:hover{border-color:#1677FF;color:#0958D9}.ds-mk-c{font:700 13px 'JetBrains Mono',monospace;background:#FEE2E2;color:#B91C1C;border-radius:4px;padding:0 8px;min-width:32px;text-align:center;line-height:24px}.ds-mk:focus-visible{outline:2px solid #1677FF;outline-offset:2px}"
+    },
+    {
+      "name": "Filter field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Sentence-case label over a 32px select or input; blue border and soft halo on focus.",
+      "html": "<label class=\"ds-f\"><span>Canal</span><input class=\"ds-in\" placeholder=\"Buscar\"></label>",
+      "css": ".ds-f{display:flex;flex-direction:column;gap:2px;font:500 12px 'Plus Jakarta Sans',system-ui,sans-serif;color:#5F6673}.ds-in{height:32px;padding:0 10px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#111827;font:400 14px 'Plus Jakarta Sans',system-ui,sans-serif;transition:border-color 120ms,box-shadow 120ms}.ds-in:hover{border-color:#1677FF}.ds-in:focus-visible{outline:none;border-color:#1677FF;box-shadow:0 0 0 3px #E6F4FF}.ds-in::placeholder{color:#5F6673}"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag-blue",
+      "description": "24px, 4px radius; soft fill with strong text. Blue variant shown.",
+      "html": "<span class=\"ds-tag\">En proceso</span>",
+      "css": ".ds-tag{display:inline-block;height:24px;line-height:22px;padding:0 8px;border-radius:4px;border:1px solid #91CAFF;background:#E6F4FF;color:#0958D9;font:500 12px 'Plus Jakarta Sans',system-ui,sans-serif;white-space:nowrap}"
+    },
+    {
+      "name": "Card with table",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White 8px card with hairline; Ant-style table with grey header and hover rows.",
+      "html": "<section class=\"ds-card\"><h2>Pedidos</h2><table class=\"ds-t\"><thead><tr><th>Pedido</th><th class=\"n\">Monto</th></tr></thead><tbody><tr><td class=\"c\">1523-01</td><td class=\"n\">$ 48.900</td></tr><tr><td class=\"c\">1523-02</td><td class=\"n\">$ 12.300</td></tr></tbody></table></section>",
+      "css": ".ds-card{background:#fff;border:1px solid #EBEBEB;border-radius:8px;box-shadow:0 1px 2px rgba(17,24,39,.04);overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#111827}.ds-card h2{margin:0;padding:10px 16px 6px;font-size:16px;font-weight:700}.ds-t{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}.ds-t th{background:#FAFAFA;text-align:left;font-size:12px;font-weight:600;color:#4B5563;padding:8px 10px;border-bottom:1px solid #EBEBEB}.ds-t td{padding:5px 10px;border-bottom:1px solid #EBEBEB}.ds-t .n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}.ds-t .c{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.9em}.ds-t tbody tr:hover td{background:#FAFAFA}"
+    },
+    {
+      "name": "Notification bell",
+      "kind": "custom",
+      "refersTo": "notification-bell",
+      "description": "36px icon button with a red count badge; opens the popover list.",
+      "html": "<button class=\"ds-bell\" aria-label=\"Notificaciones\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6\"/><path d=\"M9 17v1a3 3 0 0 0 6 0v-1\"/></svg><span class=\"ds-bell-n\">3</span></button>",
+      "css": ".ds-bell{position:relative;display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:8px;background:none;color:#4B5563;cursor:pointer;transition:background-color 120ms,color 120ms,transform 120ms}.ds-bell:hover{background:#F3F4F6;color:#111827}.ds-bell:active{transform:scale(.95)}.ds-bell:focus-visible{outline:2px solid #1677FF;outline-offset:2px}.ds-bell-n{position:absolute;top:2px;right:1px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:#DC2626;color:#fff;font:700 11px/17px 'Plus Jakarta Sans',sans-serif;text-align:center;box-shadow:0 0 0 2px #fff}"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Top-right order notice: blue icon disc, bold title, muted subline, close button.",
+      "html": "<div class=\"ds-toast\"><span class=\"ds-toast-i\"></span><div><b>2 pedidos nuevos en VTEX</b><span>Canal web, Sequence 1523</span></div></div>",
+      "css": ".ds-toast{display:flex;gap:12px;align-items:flex-start;width:352px;padding:14px 16px;background:#fff;border:1px solid #EBEBEB;border-radius:8px;box-shadow:0 6px 16px rgba(17,24,39,.12),0 3px 6px -4px rgba(17,24,39,.12),0 9px 28px 8px rgba(17,24,39,.05);font:14px 'Plus Jakarta Sans',system-ui,sans-serif;color:#111827}.ds-toast-i{flex:none;width:32px;height:32px;border-radius:50%;background:#E6F4FF}.ds-toast b{display:block;font-weight:700}.ds-toast span+*,.ds-toast div span{display:block;color:#5F6673;font-size:13px;margin-top:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Seller Center",
+    "overview": "This is a replacement world. The board is an enterprise seller-center console in the Ant Design idiom: a white header strip sits on a light grey canvas, content lives in white cards with a 1px hairline and an 8px radius, and a single blue carries every interactive and selected state. It is an operations dashboard, not a marketing page, so there is no hero, the board fits the window without scrolling, tables are dense, and color is spent on order state rather than decoration.\n\nThe taste rules behind it: one accent, one radius scale (4 and 8), a real icon library (Tabler outline), skeleton loaders instead of spinners, no em dash, a rationed middle dot, and dials VARIANCE 3 / MOTION 3 / DENSITY 6. Motion is short (120 to 220 ms, ease-out) and reserved for feedback.",
+    "keyCharacteristics": [
+      "White surfaces on a grey canvas, separated by 1px hairlines rather than shadows.",
+      "One blue (#1677FF family); text and filled buttons use the stronger #0958D9 so white text keeps contrast.",
+      "Five order-state colors (--st-*) drive charts, heat matrices, tags and legends from the same tokens.",
+      "Sentence-case labels above controls, tabular numerals everywhere, monospace for codes and counts.",
+      "The whole board scales with window size through one variable, 1rem = 16px x scale."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Interactive and selected state is Ant Blue and nothing else. Green, amber and red mean order state only, never decoration or hover.", "section": "colors" },
+      { "name": "The Strong-Blue-For-Text Rule", "body": "Blue text and filled-button backgrounds use primary-strong; the brighter primary is for fills, rings and chart marks. In dark the roles invert in lightness, but the same split holds.", "section": "colors" },
+      { "name": "The Token-Read Rule", "body": "Charts, matrices and tags read the same --st-* and surface tokens (Chart.js reads them through computed style), so a theme switch repaints everything with no second palette.", "section": "colors" },
+      { "name": "The Sentence-Case Rule", "body": "Labels, headers and buttons are sentence case in Spanish; no uppercase micro-labels with letter-spacing.", "section": "typography" },
+      { "name": "The Tabular Rule", "body": "Every number uses tabular numerals; identifiers and counts that must align use the mono.", "section": "typography" },
+      { "name": "The Hairline-First Rule", "body": "Separate with a 1px line or a tonal step before reaching for a shadow; shadows belong only to floating layers.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Ant Blue only for interactive and selected state; use primary-strong for blue text and filled buttons.",
+      "Do separate surfaces with a 1px line hairline on white cards over the #F5F5F5 canvas.",
+      "Do use 8px radius for containers and controls and 4px for tags and chips; no third radius.",
+      "Do read colors from the tokens (CSS and Chart.js) so light and dark stay in sync; check any new pair for contrast.",
+      "Do keep the board fitted to the window: new content must share the existing grid and scale with --u.",
+      "Do use Tabler outline icons through the local icon map, and skeletons for loading.",
+      "Do write labels in sentence case with tabular numerals; use JetBrains Mono for codes and counts."
+    ],
+    "donts": [
+      "Don't add a second accent hue or use green, amber or red for anything but order and alert state.",
+      "Don't add hero bands, gradients as decoration, or hard offset shadows; floating layers only use the popover shadow.",
+      "Don't use em dashes or glyph or emoji icons; use the middle dot sparingly.",
+      "Don't let the board scroll on desktop; use the existing flow mode below 0.9 scale instead.",
+      "Don't put white text on primary (#1677FF); use primary-strong for that pairing."
+    ],
+    "knownGaps": [
+      "TV mode is still the desktop board enlarged, not a room recomposition.",
+      "The closing combo chart with two or more closed months is unverified because demo data has one closed month.",
+      "The image-to-code step used the reference preview image and its DESIGN.md instead of a generated mock, because no image generation was available."
+    ]
+  }
+}
