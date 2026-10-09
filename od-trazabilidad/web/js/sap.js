@@ -47,6 +47,29 @@ async function retomarTrabajo(){
   await seguirJob();
   if (eraAnalisis) cierreAnalisis();
 }
+/* Clientes para elegir: los de Configuración (con su código de solicitante) y los que ya tienen pedidos. Se puede escribir otro. */
+function opcionesClientes(){
+  return [...new Set([...(UI.clientes || []).map(x => x.nombre), ...clientes()].filter(Boolean))].sort();
+}
+/* Atajos de un clic: los clientes con más pedidos (el campo sigue aceptando cualquier otro) */
+function chipsClientes(){
+  const uso = {}; Store.list('pedidos').forEach(p => { if (p.cliente) uso[p.cliente] = (uso[p.cliente] || 0) + 1; });
+  const lista = opcionesClientes().sort((a, b) => (uso[b] || 0) - (uso[a] || 0) || a.localeCompare(b)).slice(0, 8);
+  return lista.map(c => `<button type="button" class="btn sm" data-cli-pick="${esc(c)}">${esc(c)}</button>`).join('');
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-cli-pick]'); if (!b) return;
+  const campo = dlg.querySelector('[name="lsCliente"]'); if (!campo) return;
+  campo.value = b.dataset.cliPick; campo.dispatchEvent(new Event('input', {bubbles: true})); campo.focus();
+});
+function avisoCliente(){
+  const campo = dlg.querySelector('[name="lsCliente"]'), nota = dlg.querySelector('[data-cli-aviso]'); if (!campo || !nota) return;
+  const v = campo.value.trim().toUpperCase();
+  const conf = (UI.clientes || []).find(x => x.nombre.toUpperCase() === v);
+  nota.textContent = !v || !UI.clientes ? '' : !conf ? 'Este cliente no está en Configuración → Clientes: agrégalo con su código de solicitante para poder analizar.'
+    : !conf.codigo ? 'A este cliente le falta el código de solicitante en Configuración → Clientes.' : '';
+}
+document.addEventListener('input', ev => { if (ev.target.matches && ev.target.matches('#dlg [name="lsCliente"]')) avisoCliente(); });
 function abrirLecturaSap(modo){
   const p = UI.sel && Store.get('pedidos', UI.sel);
   const cfg = config();
@@ -60,11 +83,19 @@ function abrirLecturaSap(modo){
       <label class="f">…o la orden de compra<input type="text" name="lsOc" placeholder="OC del cliente y Enter"></label>
       <label class="f">Puesto de expedición<input type="text" name="lsPuesto" value="${esc(cfg.puesto || 'PN01')}"></label>
       <label class="f">Fecha de picking<input type="date" name="lsFecha" value="${new Date().toISOString().slice(0,10)}"></label>
-      <label class="f">Cliente<input type="text" name="lsCliente" list="dl-cli2" value="${esc(p ? p.cliente : (UI.cliente || 'PARIS'))}"></label>
+      <label class="f">Cliente<input type="text" name="lsCliente" list="dl-cli2" autocomplete="off" placeholder="Elige o escribe un cliente" value="${esc(p ? p.cliente : (UI.cliente || ''))}"></label>
     </div>
     <div class="oc-res" data-oc-res aria-live="polite"></div>
-    <datalist id="dl-cli2">${[...new Set([...clientes(), 'PARIS', 'HITES'])].map(c => `<option value="${esc(c)}">`).join('')}</datalist>`,
+    <div class="row tight" data-cli-chips style="margin-top:8px">${chipsClientes()}</div>
+    <p class="small muted" data-cli-aviso aria-live="polite" style="margin:6px 0 0;min-height:18px"></p>
+    <datalist id="dl-cli2">${opcionesClientes().map(c => `<option value="${esc(c)}">`).join('')}</datalist>`,
     `<button class="btn primary" data-act="${analizar ? 'analizarSap' : 'leerSap'}">${analizar ? 'Analizar' : 'Leer desde SAP'}</button>`);
+  if (!UI.clientes) cargarClientes().then(() => {                       // el desplegable se completa apenas llegan los clientes
+    const dl = dlg.querySelector('#dl-cli2'); if (dl) dl.innerHTML = opcionesClientes().map(c => `<option value="${esc(c)}">`).join('');
+    const ch = dlg.querySelector('[data-cli-chips]'); if (ch) ch.innerHTML = chipsClientes();
+    avisoCliente();
+  });
+  else avisoCliente();
 }
 async function analizarSap(){
   const body = {puesto:dval('lsPuesto').toUpperCase(), fecha:dval('lsFecha'), cliente:dval('lsCliente')};

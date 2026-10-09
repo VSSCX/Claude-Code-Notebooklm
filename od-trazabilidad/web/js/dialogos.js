@@ -255,15 +255,7 @@ async function guardarReprog(key){
 async function crearEntregasSap(pedido, ensayo){
   const cb = UI.cubicaje[pedido];
   if (!cb || !cb.camiones || !cb.camiones.length) return toast('Primero hay que cubicar el pedido');
-  let confirmar = '';
-  if (!ensayo){
-    const r = await preguntar({titulo: 'Crear entregas en SAP', texto: `Se van a <b>crear ${cb.camiones.length} entrega(s)</b> en SAP para el pedido <span class="code">${esc(pedido)}</span>.`,
-      campos: [{nombre: 'c', etiqueta: `Escribe ${pedido} para confirmar`}], ok: 'Crear en SAP', peligro: true,
-      validar: v => v.c === String(pedido) ? '' : 'Lo escrito no coincide con el N° de pedido.'});
-    if (!r) return toast('Cancelado');
-    confirmar = r.c;
-  }
-  try { UI.job = await api('POST', '/sap/crear_entregas', {pedido, ensayo, confirmar}); render(); }
+  try { UI.job = await api('POST', '/sap/crear_entregas', {pedido, ensayo}); render(); }
   catch(e){ return toast(e.message); }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok'){
@@ -279,17 +271,9 @@ async function crearEntregasSap(pedido, ensayo){
 }
 async function crearGrupoSap(entregas, ensayo, camion){
   if (!entregas.length) return toast('No hay entregas para agrupar');
-  let confirmar = '';
-  if (!ensayo){
-    const r = await preguntar({titulo: 'Crear grupo en SAP', texto: `Se van a <b>agrupar ${entregas.length} entrega(s)</b> en SAP.`,
-      campos: [{nombre: 'c', etiqueta: 'Escribe agrupar para confirmar'}], ok: 'Crear grupo', peligro: true,
-      validar: v => v.c.toLowerCase() === 'agrupar' ? '' : 'Escribe la palabra agrupar.'});
-    if (!r) return toast('Cancelado');
-    confirmar = 'agrupar';
-  }
   const p = Store.get('pedidos', UI.sel) || {};
   try { UI.job = await api('POST', '/sap/crear_grupo',
-      {entregas, ensayo, confirmar, camion: camion || '1', cliente: p.cliente || ''}); render(); }
+      {entregas, ensayo, camion: camion || '1', cliente: p.cliente || ''}); render(); }
   catch(e){ return toast(e.message); }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok'){

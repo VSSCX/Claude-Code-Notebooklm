@@ -271,7 +271,9 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
             bulto = max(0, int(b))
         grupo = 0
         if j_grupo is not None and not _vacio(celda(f, j_grupo)):
-            g = _cantidad(celda(f, j_grupo))
+            crudo = str(celda(f, j_grupo)).strip()
+            m = re.fullmatch(r"(?i)(?:grupo|gr|g)\s*0*(\d{1,3})", crudo)       # «Grupo 2», «G2»
+            g = float(m.group(1)) if m else _cantidad(celda(f, j_grupo))
             if g is None or g < 0 or g != int(g):
                 grupo_invalido = True                 # no es una columna de grupos de carga (p. ej. un lote en texto)
             else:

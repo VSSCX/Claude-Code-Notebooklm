@@ -909,12 +909,10 @@ def test_crear_entregas_ensayo_y_real(c, tmp_path, monkeypatch):
     assert sum(llamadas[0]["materiales"].values()) > 0
     assert _estado(c)["entregas"] == []
 
-    # de verdad: exige confirmar con el número de pedido
-    assert c.post("/api/sap/crear_entregas", json={"pedido": "4400", "ensayo": False}).status_code == 422
+    # de verdad: crear ya no pide confirmación (solo borrar la pide)
     llamadas.clear()
     t = _esperar_job(c, c.post("/api/sap/crear_entregas",
-                               json={"pedido": "4400", "ensayo": False,
-                                     "confirmar": "4400"}).json()["id"])
+                               json={"pedido": "4400", "ensayo": False}).json()["id"])
     assert t["estado"] == "ok", str(t)[:400]
     ents = _estado(c)["entregas"]
     assert len(ents) == len(cub["camiones"])                  # una entrega por camión
@@ -956,11 +954,9 @@ def test_crear_grupo_y_cita_por_grupo(c, monkeypatch):
     assert t["estado"] == "ok" and vistos["ensayo"] and vistos["camion"] == "2"
     assert all(e["grupo"] == "" for e in _estado(c)["entregas"])      # el ensayo no agrupa
 
-    assert c.post("/api/sap/crear_grupo", json={"entregas": ["8705700001"],
-                                                "ensayo": False}).status_code == 422
     t = _esperar_job(c, c.post("/api/sap/crear_grupo",
                                json={"entregas": ["8705700001", "8705700002"], "ensayo": False,
-                                     "confirmar": "agrupar", "camion": "2",
+                                     "camion": "2",
                                      "referencia": "CITA-123"}).json()["id"])
     assert t["estado"] == "ok" and vistos["referencia"] == "CITA-123"
     assert all(e["grupo"] == "1392270" for e in _estado(c)["entregas"])
@@ -1062,7 +1058,7 @@ def test_plantilla_y_carga_masiva(c, tmp_path):
     assert r.status_code == 200 and "plantilla_cubicaje.xlsx" in r.headers["content-disposition"]
     wb = load_workbook(BytesIO(r.content))
     assert wb.sheetnames == ["Carga", "Cómo se usa"]
-    assert [x.value for x in wb["Carga"][1]] == ["SKU", "Unidades", "Sucursal (opcional)", "Grupo (opcional)"]
+    assert [x.value for x in wb["Carga"][1]] == ["SKU", "Unidades", "Grupo (opcional)", "Sucursal (opcional)"]
 
     # armar un archivo como lo haría el usuario
     libro = Workbook(); ws = libro.active; ws.title = "Carga"
@@ -1257,3 +1253,22 @@ def test_el_cubicaje_sda_asigna_vehiculos_con_las_medidas_editadas():
         assert (v[0].L, v[0].w, v[0].h) == (1500, 240, 240) and v[1].h == 225
     finally:
         sda.usar_camiones(*original)
+
+
+def test_plantilla_de_carga_trae_grupos_y_el_importador_los_lee(c, tmp_path):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    _cargar_medidas_basicas(c, tmp_path)
+    r = c.get("/api/cubicaje-libre/plantilla")
+    assert r.status_code == 200
+    wb = load_workbook(BytesIO(r.content))
+    ws = wb["Carga"]
+    assert [x.value for x in ws[1]] == ["SKU", "Unidades", "Grupo (opcional)", "Sucursal (opcional)"]
+    assert len({ws.cell(row=i, column=3).value for i in range(2, ws.max_row + 1)}) >= 2       # el ejemplo ya muestra grupos
+    assert "Cómo se usa" in wb.sheetnames
+    # lo que trae la plantilla se importa y las tandas llegan como grupos; «Grupo 2» / «G1» también se entienden
+    ws["C2"], ws["C3"], ws["C4"] = "Grupo 1", "G1", 2
+    buf = BytesIO(); wb.save(buf)
+    d = c.post("/api/cubicaje-libre/importar", files={"file": ("p.xlsx", buf.getvalue(), "application/vnd.ms-excel")},
+               data={"reemplazar": "si"}).json()
+    assert sorted({g["grupo"] for g in d["grupos"]}) == [1, 2] or {g["grupo"] for g in d["grupos"]} >= {1, 2}

@@ -373,8 +373,6 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
         puesto = (_json.loads(an.valor).get("puesto", "") if an else "").upper()
     if not puesto:
         raise HTTPException(422, "Falta el puesto de expedición (PN01, PN02…).")
-    if not ensayo and str(body.get("confirmar", "")).strip() != numero:
-        raise HTTPException(422, "Para crear de verdad hay que confirmar escribiendo el pedido.")
 
     # Un camión = una entrega: {camión: {sku: unidades}}
     por_camion: dict[int, dict] = {}
@@ -437,8 +435,6 @@ def sap_crear_grupo(body: dict, s: Session = Depends(get_session)):
     referencia = str(body.get("referencia") or "")
     if not entregas:
         raise HTTPException(422, "No hay entregas para agrupar.")
-    if not ensayo and str(body.get("confirmar", "")).strip().lower() != "agrupar":
-        raise HTTPException(422, "Para crear el grupo hay que confirmar escribiendo 'agrupar'.")
 
     def correr(avance):
         avance(f"{'Ensayo' if ensayo else 'Creando grupo'} del camión {camion} "
