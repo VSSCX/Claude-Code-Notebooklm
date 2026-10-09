@@ -11,13 +11,15 @@ import pandas as pd
 
 from .texto import sa
 
-ACCIONES = ("medir", "listar", "pedido", "stock", "alertas", "ayuda", "info")
-METRICAS = ("unidades", "pedidos", "monto", "lineas", "ticket", "pct_integracion", "pct_pendiente", "antiguedad", "monto_riesgo", "desfase")
+ACCIONES = ("medir", "listar", "pedido", "stock", "alertas", "resumen", "sin_ventas", "ayuda", "info")
+METRICAS = ("unidades", "pedidos", "monto", "lineas", "ticket", "pct_integracion", "pct_pendiente", "antiguedad", "monto_riesgo", "desfase", "distintos", "upp", "pct_estado")
 PERIODOS = ("hoy", "ayer", "semana", "semana_anterior", "mes", "mes_anterior", "ultimos", "todo", "rango")
 # estado = filtros sobre el estado del pedido (los mismos conceptos del tablero)
 ESTADOS = ("no_integrado", "integrado", "cancelado", "pendiente", "facturado", "vencido", "sin_despacho",
            "alerta_bws", "alerta_post", "alerta_mkp", "quiebre")
-AGRUPAR = ("dia", "semana", "mes", "cliente", "canal", "bodega", "estado", "status", "sla", "producto", "causa")
+AGRUPAR = ("dia", "semana", "mes", "cliente", "canal", "bodega", "estado", "status", "sla", "producto", "causa", "clasif2")
+STOCK_MODOS = ("sin", "poco", "cobertura", "todo")
+FOCOS = ("productos", "lineas", "estado")
 LISTAS = ("canal", "cliente", "bodega", "sla")
 
 ALIAS_CLIENTE = {"mercadolibre": "MELI", "mercado libre": "MELI"}
@@ -28,7 +30,8 @@ ALIAS_BODEGA = {"post": "POST_Fechado", "pos": "POST_Fechado", "postfechado": "P
 def plan_vacio() -> dict:
     return {"accion": None, "metrica": None, "producto": None, "sku": None, "pedido": None, "periodo": None, "dias": None,
             "desde": None, "hasta": None, "canal": [], "cliente": [], "bodega": [], "sla": [], "estado": [],
-            "agrupar": None, "orden": None, "top": None, "comparar": False}
+            "agrupar": None, "orden": None, "top": None, "comparar": False,
+            "monto_min": None, "monto_max": None, "edad_min": None, "stock_modo": None, "foco": None}
 
 
 def conocidos(dim: pd.DataFrame) -> dict:
@@ -69,6 +72,18 @@ def validar(p, K: dict) -> dict:
         except (TypeError, ValueError):
             out[k] = None
     out["comparar"] = p.get("comparar") is True
+    out["stock_modo"] = p.get("stock_modo") if p.get("stock_modo") in STOCK_MODOS else None
+    out["foco"] = p.get("foco") if p.get("foco") in FOCOS else None
+    for k in ("monto_min", "monto_max"):
+        try:
+            v = float(p.get(k)) if p.get(k) not in (None, "") else None
+            out[k] = v if v is not None and 0 <= v < 1e13 else None
+        except (TypeError, ValueError):
+            out[k] = None
+    try:
+        out["edad_min"] = max(1, min(int(p.get("edad_min")), 1000)) if p.get("edad_min") not in (None, "") else None
+    except (TypeError, ValueError):
+        out["edad_min"] = None
     if out["periodo"] == "rango" and not (out["desde"] or out["hasta"]):
         out["periodo"] = None
     if out["periodo"] == "ultimos" and not out["dias"]:

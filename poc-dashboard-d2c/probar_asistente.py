@@ -248,7 +248,7 @@ r = p("asdf qwer zxcv")
 prueba("si no entiende, ofrece ejemplos", r["ok"] is False and r.get("ejemplos"))
 
 # --- alertas, IA que explica (sin cambiar cifras), deteccion de la tabla de stock, informe de aprendizaje
-for q in ("hay algo raro hoy", "que debo revisar", "como vamos"):
+for q in ("hay algo raro hoy", "que debo revisar"):
     r = p(q)
     prueba(f"alertas: «{q}»", r["ok"] and r.get("tipo") == "alertas" and len(r["tabla"]["filas"]) >= 1, r.get("texto"))
 r = p("hay algo raro hoy")
@@ -278,6 +278,91 @@ def _roto(sql):
 _q.leer_sap = _roto
 prueba("si la consulta falla, el error queda para explicarlo", len(_q.q_stock_vtex()) == 0 and "bi_vtex_stock" in _q.ERROR_STOCK[0])
 _q.leer_sap = _orig
+
+
+# --- verdad independiente: cada respuesta se compara con un calculo directo sobre los datos
+print("Respuestas contra el calculo directo")
+import pandas as _pd
+import time as _t
+from app import servicio as _sv
+_dim, _hoy = _sv.base_pedidos()
+_m0 = _hoy.replace(day=1)
+_mes = _dim[(_dim["Creation_Date"] >= _m0) & (_dim["Creation_Date"] <= _hoy)]
+_ok = _mes[_mes["Status"] != "canceled"]
+_n = lambda v: f"{v:,.0f}".replace(",", ".")  # noqa: E731
+r = p("porcentaje de cancelacion")
+prueba("% de cancelacion = cancelados / todos los pedidos del mes", abs(r["valor"] - (_mes["Status"] == "canceled").mean()) < 1e-9, r["texto"])
+prueba("«cancelados vs total» tambien es un porcentaje", abs(p("pedidos cancelados vs total")["valor"] - (_mes["Status"] == "canceled").mean()) < 1e-9)
+r = p("cuantos pedidos no estan integrados")
+prueba("«no estan integrados» cuenta los NO integrados (no los integrados)", r["valor"] == int((_ok["Estado Ingreso"] == "No ingresado").sum()), r["texto"])
+r = p("cual fue el mejor dia")
+_d = _ok.groupby("Creation_Date")["Total_Value"].sum()
+prueba("el mejor dia es el de mayor venta", _d.idxmax().strftime("%d-%m-%Y") in r["texto"] and _n(_d.max()) in r["texto"], r["texto"])
+r = p("pedidos del 5 de agosto")
+prueba("«del 5 de agosto» filtra ese dia", r["valor"] == int((_ok["Creation_Date"] == "2026-08-05").sum()), r["texto"])
+r = p("pedidos entre el 1 y el 10 de agosto")
+prueba("«entre el 1 y el 10 de agosto» es un rango", r["valor"] == int(((_ok["Creation_Date"] >= "2026-08-01") & (_ok["Creation_Date"] <= "2026-08-10")).sum()), r["texto"])
+r = p("ventas del mes de julio")
+_jul = _dim[(_dim["Creation_Date"] >= "2026-07-01") & (_dim["Creation_Date"] <= "2026-07-31") & (_dim["Status"] != "canceled")]
+prueba("«ventas del mes de julio» es julio (no el mes en curso)", abs(r["valor"] - _jul["Total_Value"].sum()) < 1, r["texto"])
+r = p("cuantos clientes distintos")
+prueba("clientes distintos", r["valor"] == _ok["SalesChannelName"].nunique(), r["texto"])
+r = p("pedidos de mas de 1 millon")
+prueba("filtro por monto", r["valor"] == int((_ok["Total_Value"] >= 1_000_000).sum()), r["texto"])
+r = p("los 3 pedidos mas caros")
+_top = set(_ok.sort_values("Total_Value", ascending=False).head(3)["Sequence"])
+prueba("los pedidos mas caros son los de mayor monto", {f[0] for f in r["tabla"]["filas"]} == _top, r["texto"])
+r = p("ventas por clasificacion")
+prueba("ventas por clasificacion suman las ventas del mes", abs(sum(f[3] for f in r["tabla"]["filas"]) - _ok["Total_Value"].sum()) < 1, r["texto"])
+r = p("quien es el cliente con mas cancelaciones")
+_c = _mes[_mes["Status"] == "canceled"].groupby("SalesChannelName").size()
+prueba("el cliente con mas cancelaciones", _c.idxmax() in r["texto"] and f"({_c.max()})" in r["texto"], r["texto"])
+r = p("pedidos sin pv de mas de 2 dias")
+prueba("pedidos no integrados con mas de 2 dias",
+       r["valor"] == int(((_ok["Estado Ingreso"] == "No ingresado") & (_ok["Creation_Date"] <= _hoy - _pd.Timedelta(days=2))).sum()), r["texto"])
+r = p("promedio de unidades por pedido")
+prueba("unidades por pedido", abs(r["valor"] - _ok["Unidades"].sum() / len(_ok)) < 1e-9, r["texto"])
+r = p("comparar ventas con el mes pasado")
+prueba("si el mes anterior no esta cargado, lo dice en vez de inventar", r["comparacion"] is None and any("anterior" in n for n in r["notas"]), r["notas"])
+r = p("ventas por mes")
+prueba("ventas por mes: una fila por mes", len(r["tabla"]["filas"]) == _dim["Creation_Date"].dt.to_period("M").nunique(), r["texto"])
+
+print("Stock, resumen y pedidos: respuestas distintas para preguntas distintas")
+a, b, c = p("productos con poco stock"), p("que productos no tienen stock"), p("stock total")
+prueba("poco stock, sin stock y stock total no responden lo mismo", len({a["texto"], b["texto"], c["texto"]}) == 3, [a["texto"], b["texto"], c["texto"]])
+prueba("la cobertura se ordena de menor a mayor", [f[6] for f in a["tabla"]["filas"] if f[6] is not None] == sorted(f[6] for f in a["tabla"]["filas"] if f[6] is not None))
+r = p("como vamos este mes")
+prueba("«como vamos» da el resumen del periodo con comparacion", r.get("tipo") == "resumen" and any(f[0] == "Pedidos" for f in r["tabla"]["filas"]), r["texto"])
+x, y, z = p("que productos tiene el pedido 3506611"), p("cuantas lineas tiene el pedido 3506611"), p("estado del pedido 3506611")
+prueba("las tres preguntas sobre el mismo pedido responden distinto", len({x["texto"], y["texto"], z["texto"]}) == 3, [x["texto"], y["texto"], z["texto"]])
+r = p("productos sin ventas")
+prueba("productos sin ventas responde (aunque sea que todos vendieron)", r["ok"] and r["tipo"] == "sin_ventas", r["texto"])
+r = p("que clientes no han comprado hoy")
+prueba("clientes sin pedidos en el periodo", r["ok"] and r["tipo"] == "sin_ventas", r["texto"])
+
+print("Conversacion: sin repetir y sin quedar colgado")
+r1 = p("cuantos pedidos hay este mes")
+r2 = p("cuantos pedidos hay este mes", r1["plan"])
+prueba("la misma consulta seguida avisa que es repetida", any("misma consulta" in n for n in r2["notas"]), r2["notas"])
+s1 = r1["seguir"]
+r3 = asistente.responder("cuantos pedidos hay este mes", None, [x for x in s1])
+prueba("los seguimientos no repiten lo que ya se pregunto", not set(s1) & set(r3["seguir"]) or len(set(s1) ^ set(r3["seguir"])) > 0 and r3["seguir"] != s1, (s1, r3["seguir"]))
+prueba("«gracias» no devuelve la ayuda", "De nada" in p("gracias")["texto"])
+prueba("«que dia es hoy» responde la fecha", _hoy.strftime("%d-%m-%Y") in p("que dia es hoy")["texto"])
+r = p("cual es el clima")
+prueba("fuera de alcance se dice claro (no se sugiere una pregunta absurda)", r.get("fuera_de_alcance") and "Quisiste decir" not in r["texto"], r["texto"])
+r = p("cuantos pedidos entraron en la ultima hora")
+prueba("sin hora en los datos, lo avisa", any("sin hora" in n for n in r["notas"]), r["notas"])
+import asyncio as _aio
+from fastapi.testclient import TestClient as _TC
+from app import main as _main
+_o_resp, _o_t = asistente.responder, _main.TIEMPO_MAX_CHAT
+asistente.responder = lambda *a, **k: __import__("time").sleep(1.5) or {"ok": True}
+_main.TIEMPO_MAX_CHAT = 0.3
+_t0 = _t.time()
+_r = _TC(_main.app).post("/api/chat", json={"pregunta": "x"}).json()
+asistente.responder, _main.TIEMPO_MAX_CHAT = _o_resp, _o_t
+prueba("una consulta lenta no deja el chat colgado", _r.get("ok") is False and _r.get("reintentar") and _t.time() - _t0 < 1.2, _r)
 
 # --- el stock se carga aparte: una consulta lenta no frena el tablero y no se repite
 import time as _t

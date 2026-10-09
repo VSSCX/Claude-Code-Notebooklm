@@ -38,7 +38,9 @@ SCHEMA = {"type": "object", "additionalProperties": False, "properties": {
     "bodega": {"type": "array", "items": {"type": "string"}}, "sla": {"type": "array", "items": {"type": "string"}},
     "estado": {"type": "array", "items": {"type": "string", "enum": list(E.ESTADOS)}},
     "agrupar": {"type": "string", "enum": list(E.AGRUPAR)}, "orden": {"type": "string", "enum": ["asc", "desc"]},
-    "top": {"type": "integer"}, "comparar": {"type": "boolean"}}}
+    "top": {"type": "integer"}, "comparar": {"type": "boolean"},
+    "monto_min": {"type": "number"}, "monto_max": {"type": "number"}, "edad_min": {"type": "integer"},
+    "stock_modo": {"type": "string", "enum": list(E.STOCK_MODOS)}, "foco": {"type": "string", "enum": list(E.FOCOS)}}}
 
 
 def prompt_sistema(K: dict, hoy: pd.Timestamp, ejemplos: list | None = None) -> str:
@@ -47,13 +49,14 @@ def prompt_sistema(K: dict, hoy: pd.Timestamp, ejemplos: list | None = None) -> 
 devuelve SOLO un objeto JSON con los campos que apliquen (omite los que no).
 Hoy es {hoy.strftime('%Y-%m-%d')}.
 Campos:
-- accion: medir (cifra o desglose), listar (lista de pedidos con sus productos), pedido (un pedido por su numero), stock, ayuda, info (hasta cuando hay datos).
-- metrica: unidades | pedidos | monto (ventas) | lineas | ticket | pct_integracion | pct_pendiente | antiguedad | desfase (dias entre crear en VTEX e ingresar a SAP) | monto_riesgo.
+- accion: medir (cifra o desglose), listar (lista de pedidos con sus productos), pedido (un pedido por su numero; foco = productos|lineas|estado), stock (stock_modo = sin|poco|cobertura|todo), alertas (que revisar, anomalias), resumen (como vamos: KPIs del periodo), sin_ventas (productos sin ventas), ayuda, info (hasta cuando hay datos).
+- metrica: unidades | pedidos | monto (ventas) | lineas | ticket | pct_integracion | pct_pendiente | antiguedad | desfase (dias entre crear en VTEX e ingresar a SAP) | monto_riesgo | distintos (cuantos clientes/productos distintos; con agrupar) | upp (unidades por pedido) | pct_estado (porcentaje de pedidos en el estado indicado, por ejemplo cancelados).
+monto_min / monto_max filtran pedidos por monto total en pesos; edad_min = pedidos creados hace mas de N dias.
 - producto: nombre o modelo del producto tal como lo dijo el usuario (por ejemplo "med165b" o "lavadora 8,5 kg"). sku: codigo SAP de 9 digitos. pedido: numero de pedido (Sequence) o de pedido SAP.
 - periodo: hoy | ayer | semana | semana_anterior | mes (mes en curso) | mes_anterior | ultimos (con dias) | todo | rango (con desde y hasta AAAA-MM-DD). Si no dice el periodo usa mes.
 - canal (subconjunto de {j(K['canal'])}), cliente ({j(K['cliente'])}), bodega ({j(K['bodega'])}; "post fechado" es POST_Fechado), sla ({j(K['sla'])}).
 - estado (lista): no_integrado, integrado, cancelado (status canceled), pendiente (ready-for-handling), facturado (invoiced), vencido (entrega vencida), sin_despacho (facturado en SAP y pendiente en VTEX), alerta_bws, alerta_post, alerta_mkp, quiebre (pendiente por falta de stock).
-- agrupar: dia | semana | mes | cliente | canal | bodega | estado | status | sla | producto | causa. orden: asc | desc. top: cuantas filas. comparar: true si pide comparar con el periodo anterior.
+- agrupar: dia | semana | mes | cliente | canal | bodega | estado | status | sla | producto | causa | clasif2 (clasificacion/categoria del producto). orden: asc | desc. top: cuantas filas. comparar: true si pide comparar con el periodo anterior.
 Reglas: con producto y sin metrica usa unidades. "venta(s)" es monto. "status de X" es agrupar por status. "el ultimo mes" son los ultimos 30 dias. "Mercado Libre" es el cliente MELI.
 Ejemplos:
 "cual es la venta de los ultimos 7 dias del med165b" -> {{"accion":"medir","metrica":"monto","producto":"med165b","periodo":"ultimos","dias":7}}

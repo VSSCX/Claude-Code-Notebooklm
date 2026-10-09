@@ -121,3 +121,14 @@ un pedido con productos de varias clasificaciones se reparte en proporción al v
 - **IA que explica (opcional):** con `IA_MODO` y `IA_REDACTAR=1` la IA redacta 2-4 frases sobre las cifras ya calculadas. A la IA solo salen cifras agregadas de esa respuesta (nunca pedidos). Si el texto trae una cifra que no estaba en los datos, se descarta y queda la frase base.
 - **Aprendizaje:** `GET /api/chat/aprendizaje` lista las preguntas no entendidas o marcadas como no útiles, con la pregunta validada más parecida, para decidir qué reglas o ejemplos agregar.
 - **Stock más robusto:** si `bi_stock_vtex` falla o sus columnas no calzan, se buscan solas las tablas parecidas (stock, inventario, existencias) y se mapean las columnas. `/api/diagnostico` muestra qué tabla se usó. Se puede fijar con `STOCK_TABLA` y `STOCK_COL_*`.
+
+## Novedades v3.9 (el asistente responde más y mejor, sin IA)
+- **Fechas:** «del 5 de agosto», «entre el 1 y el 10 de agosto», «del 15 de julio al 20 de julio», «ventas de julio», «el lunes», «este trimestre», «este año», «último trimestre». Si el tablero no tiene hora (solo fecha), lo avisa.
+- **Rankings:** «el mejor día», «el cliente con más cancelaciones», «el SLA con más atrasos», «productos con más pedidos pendientes», «los 10 pedidos más caros».
+- **Agrupaciones:** por clasificación/categoría, evolución diaria, por semana y por mes.
+- **Cálculos nuevos:** % de cancelación (o facturados, vencidos) sobre el total, clientes o productos distintos, unidades por pedido, monto en riesgo, filtros por monto («de más de 1 millón») y por antigüedad («de más de 2 días»), clientes o productos sin ventas.
+- **Resumen:** «¿cómo vamos este mes?» entrega los indicadores clave contra el período anterior (el mes en curso se compara con los mismos días del mes pasado).
+- **Stock:** «poco stock», «cobertura», «stock total» y «sin stock» dan respuestas distintas.
+- **Pedidos:** «qué productos tiene», «cuántas líneas tiene» y «estado del pedido» ya no devuelven el mismo texto.
+- **Sin repetirse ni colgarse:** avisa si repites la consulta, los «seguir con» no repiten lo ya preguntado, el servidor corta una consulta lenta a los 40 s y el navegador a los 50 s (con botón Reintentar).
+- **Honestidad:** si una parte de la pregunta no se pudo usar, se dice; las preguntas ajenas a los datos se reconocen como tales.

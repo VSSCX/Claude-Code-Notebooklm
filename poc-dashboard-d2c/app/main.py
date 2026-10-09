@@ -1,4 +1,5 @@
 """FastAPI del dashboard D2C. Sirve el frontend y expone los datos por /api."""
+import asyncio
 import mimetypes
 import re
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from . import asistente, auditoria, auth, servicio, ventas
 from .seguridad import CABECERAS
 
 log = logging.getLogger("dashboard")
+TIEMPO_MAX_CHAT = 40          # segundos: pasado esto el chat responde que se esta tardando en vez de quedar colgado
 
 PUBLIC = BASE_DIR / "public"   # los archivos estaticos viven en public/: asi Vercel los sirve directo desde su CDN
 
@@ -293,7 +295,12 @@ async def api_chat(request: Request):
         cuerpo = {}
     previo = cuerpo.get("previo") if isinstance(cuerpo.get("previo"), dict) else None
     try:
-        res = await run_in_threadpool(asistente.responder, cuerpo.get("pregunta", ""), previo)
+        previas = [str(x)[:300] for x in cuerpo.get("previas", [])[:12]] if isinstance(cuerpo.get("previas"), list) else []
+        try:
+            res = await asyncio.wait_for(run_in_threadpool(asistente.responder, cuerpo.get("pregunta", ""), previo, previas), timeout=TIEMPO_MAX_CHAT)
+        except asyncio.TimeoutError:                       # el calculo sigue en segundo plano, pero el chat nunca queda colgado
+            return {"ok": False, "texto": "Esta consulta está tardando más de lo normal (probablemente se están cargando los datos). Vuelve a preguntar en unos segundos.",
+                    "reintentar": str(cuerpo.get("pregunta", ""))[:300]}
         auditoria.registrar("pregunta_asistente", _quien(request), pregunta=str(cuerpo.get("pregunta", ""))[:200], via=res.get("via"), ok=res.get("ok"))
         return res
     except Exception as e:  # noqa: BLE001

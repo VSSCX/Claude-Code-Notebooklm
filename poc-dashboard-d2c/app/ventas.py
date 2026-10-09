@@ -29,6 +29,11 @@ def _base(filtros: dict):
         return None, err, cand
     pedidos = servicio.filtrar_pedidos(filtros)
     pedidos = pedidos[pedidos["Status"] != "canceled"][["Sequence", "Total_Value"]]
+    return repartir(lin, pedidos, mae), None, []
+
+
+def repartir(lin: pd.DataFrame, pedidos: pd.DataFrame, mae: pd.DataFrame) -> pd.DataFrame:
+    """Una fila por linea con su Clasif2, Producto y la venta (monto del pedido repartido). Lo usan el grafico y el asistente."""
     m = lin.merge(pedidos, on="Sequence", how="inner").merge(mae, on="SKU", how="left")
     m["Clasif2"] = m["Clasif2"].fillna(SIN_CLASIFICAR)
     prod = m["Producto"].where(m["Producto"].fillna("").astype(bool), m["Descripcion"])
@@ -42,7 +47,7 @@ def _base(filtros: dict):
         m = pd.concat([m, pd.DataFrame({"Sequence": sin["Sequence"], "Qty": 0.0, "SKU": "", "Clasif2": SIN_LINEAS,
                                         "Producto": "Pedidos sin detalle de líneas", "Venta": sin["Total_Value"].astype(float)})], ignore_index=True)
     m.attrs["maestra"] = mae.attrs.get("tabla")
-    return m, None, []
+    return m
 
 
 def ventas(filtros: dict, clasif: str | None = None) -> dict:

@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pandas as pd
 
-from app import maestra, modelo, queries, servicio
+from app import maestra, modelo, queries, servicio, ventas
 
 from . import catalogo
 from .texto import lista_es
@@ -18,7 +18,7 @@ STATUS_ES = {"ready-for-handling": "Pendiente (ready-for-handling)", "invoiced":
              "canceled": "Cancelado (canceled)"}
 STATUS_CORTO = {"ready-for-handling": "Pendiente", "invoiced": "Facturado", "canceled": "Cancelado"}
 DIM_ETQ = {"dia": "Día", "semana": "Semana", "mes": "Mes", "cliente": "Cliente", "canal": "Canal", "bodega": "Bodega",
-           "estado": "Estado", "status": "Status", "sla": "SLA Type", "producto": "Producto", "causa": "Causa pendiente"}
+           "estado": "Estado", "status": "Status", "sla": "SLA Type", "producto": "Producto", "causa": "Causa pendiente", "clasif2": "Clasificación"}
 DIM_COL = {"cliente": "SalesChannelName", "canal": "Canal", "bodega": "warehouse", "estado": "Estado Pedido",
            "sla": "SLA_Type", "causa": "Causa Pendiente"}
 CRONO = ("dia", "semana", "mes")
@@ -106,6 +106,15 @@ def filtrar(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, chips: list, notas
     for e in plan["estado"]:
         d = d[_mascara(d, e, hoy)]
         chips.append(ESTADO_ETQ[e])
+    if plan.get("monto_min") is not None:
+        d = d[d["Total_Value"] >= plan["monto_min"]]
+        chips.append(f"Monto desde ${plan['monto_min']:,.0f}".replace(",", "."))
+    if plan.get("monto_max") is not None:
+        d = d[d["Total_Value"] <= plan["monto_max"]]
+        chips.append(f"Monto hasta ${plan['monto_max']:,.0f}".replace(",", "."))
+    if plan.get("edad_min"):
+        d = d[d["Creation_Date"] <= hoy - timedelta(days=plan["edad_min"])]
+        chips.append(f"Creados hace más de {plan['edad_min']} días")
     if plan["agrupar"] == "causa":
         d = d[_mascara(d, "pendiente", hoy) & (d["Estado Ingreso"] == "Ingresado")]
         notas.append("La causa solo existe para pedidos pendientes ya integrados en SAP.")
@@ -129,6 +138,10 @@ def medidas(x: pd.DataFrame, con_lineas: bool) -> dict:
         monto = x["Monto"].sum(min_count=1)
         return {"pedidos": int(x["Sequence"].nunique()), "unidades": float(x["Qty"].sum()), "monto": _num(monto), "lineas": int(len(x))}
     return {"pedidos": int(len(x)), "unidades": float(x["Unidades"].sum()), "monto": float(x["Total_Value"].sum()), "lineas": None}
+
+
+DIM_PLURAL = {"cliente": "clientes", "canal": "canales", "bodega": "bodegas", "sla": "SLA", "producto": "productos", "estado": "estados",
+              "status": "status", "dia": "días", "semana": "semanas", "mes": "meses", "causa": "causas", "clasif2": "clasificaciones"}
 
 
 def _clave(df: pd.DataFrame, g: str) -> pd.Series:
@@ -228,7 +241,10 @@ def _tabla_grupos(plan, base, con_lineas, hoy, metrica):
 
 def _listar(plan, base, con_lineas, cap):
     # lo que se suele pedir (pedido, producto, cantidad, monto) va primero: el panel es angosto y la tabla se desplaza hacia el lado
-    b = base.sort_values(["Creation_Date", "Sequence"], ascending=[False, False])
+    if plan["metrica"] == "monto" and plan["orden"] in ("asc", "desc"):            # "los 10 pedidos mas caros"
+        b = base.sort_values("Total_Value", ascending=plan["orden"] == "asc")
+    else:
+        b = base.sort_values(["Creation_Date", "Sequence"], ascending=[False, False])
     total = len(b)
     b = b.head(cap)
     st = b["Status"].map(STATUS_CORTO).fillna(b["Status"]).tolist()
@@ -245,13 +261,64 @@ def _listar(plan, base, con_lineas, cap):
     return cols, filas, total
 
 
+def _pct_estado(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp) -> dict:
+    """% de los pedidos del periodo que estan en el estado pedido (cancelados, facturados, vencidos). El total INCLUYE cancelados."""
+    chips: list[str] = []
+    notas: list[str] = []
+    d, etq = filtrar({**plan, "estado": [], "agrupar": "status", "monto_min": plan.get("monto_min"), "monto_max": plan.get("monto_max")}, dim, hoy, chips, notas)
+    m = pd.Series(True, index=d.index)
+    for e in plan["estado"]:
+        m &= _mascara(d, e, hoy)
+    n, tot = int(m.sum()), len(d)
+    etiqueta = lista_es([ESTADO_ETQ[e].lower() for e in plan["estado"]])
+    notas.append(f"{n} de {tot} pedidos del período (el total incluye cancelados).")
+    return {"ok": True, "tipo": "valor", "metrica": "pct_estado", "chips": chips + [f"% {etiqueta}"], "notas": notas, "productos": [], "etiqueta": etq, "tabla": None,
+            "comparacion": None, "resumen": {"pedidos": tot, "unidades": 0.0, "monto": 0.0, "lineas": None}, "con_lineas": False,
+            "valor": (n / tot) if tot else None, "formato": "pct", "unidad": f"de los pedidos están {etiqueta}"}
+
+
+def _clasif2_tabla(plan: dict, d: pd.DataFrame, lin_fn, notas: list):
+    """Ventas (monto del pedido repartido por linea, igual que el grafico) por Clasif2 de la maestra."""
+    mae, err, _ = maestra.cargar()
+    if mae is None:
+        return None, "No puedo agrupar por clasificación: " + (err or "no hay maestra de productos cargada.")
+    lin, _ = lin_fn()
+    m = ventas.repartir(lin, d[["Sequence", "Total_Value"]], mae)
+    g = m.groupby("Clasif2").agg(Pedidos=("Sequence", "nunique"), Unidades=("Qty", "sum"), Monto=("Venta", "sum")).reset_index()
+    return g, None
+
+
 def medir_o_listar(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn) -> dict:
     notas: list[str] = []
     chips: list[str] = []
     accion = plan["accion"] or "medir"
+    if plan["metrica"] == "pct_estado" and plan["estado"]:
+        return _pct_estado(plan, dim, hoy)
     d, etq = filtrar(plan, dim, hoy, chips, notas)
+    if plan["agrupar"] == "clasif2":
+        g, err = _clasif2_tabla(plan, d, lin_fn, notas)
+        if g is None:
+            return {"ok": False, "texto": err, "chips": chips, "notas": notas}
+        col = {"pedidos": "Pedidos", "unidades": "Unidades"}.get(plan["metrica"], "Monto")
+        g = g.sort_values(col, ascending=plan["orden"] == "asc").reset_index(drop=True)
+        total = len(g)
+        g = g.head(plan["top"] or 30)
+        cols = [{"n": "Clasificación", "f": "t"}, {"n": "Pedidos", "f": "n"}, {"n": "Unidades", "f": "n"}, {"n": "Monto", "f": "$"}]
+        filas = [[str(r["Clasif2"]), float(r["Pedidos"]), float(r["Unidades"]), float(r["Monto"])] for _, r in g.iterrows()]
+        notas.append("La venta es el monto del pedido repartido entre las clasificaciones de sus líneas (igual que el gráfico «Ventas por Clasif2»); "
+                     "los pedidos que cuentan en varias clasificaciones se suman en cada una." if col != "Monto" else
+                     "La venta es el monto del pedido repartido entre las clasificaciones de sus líneas (igual que el gráfico «Ventas por Clasif2»).")
+        tot_monto, tot_ped = float(d["Total_Value"].sum()), int(len(d))
+        return {"ok": True, "tipo": "tabla", "metrica": plan["metrica"] or "monto", "chips": chips + ["Por clasificación"], "notas": notas, "productos": [], "etiqueta": etq,
+                "tabla": {"cols": cols, "filas": filas}, "total_filas": total, "agrupar": "clasif2", "comparacion": None,
+                "resumen": {"pedidos": tot_ped, "unidades": float(d["Unidades"].sum()), "monto": tot_monto, "lineas": None}, "con_lineas": True,
+                "valor": tot_monto if col == "Monto" else (float(g[col].sum()) if len(g) else 0.0), "formato": "$" if col == "Monto" else "n",
+                "unidad": "" if col == "Monto" else col.lower()}
     metrica = plan["metrica"] or ("unidades" if (plan["producto"] or plan["sku"] or plan["agrupar"] == "producto") else "pedidos")
-    con_lineas = bool(plan["producto"] or plan["sku"]) or metrica == "lineas" or plan["agrupar"] == "producto" or accion == "listar"
+    if metrica == "distintos" and not plan["agrupar"]:
+        plan = {**plan, "agrupar": "cliente"}
+    ranking_pedidos = accion == "listar" and metrica == "monto" and plan["orden"] in ("asc", "desc") and not (plan["producto"] or plan["sku"])
+    con_lineas = bool(plan["producto"] or plan["sku"]) or metrica == "lineas" or plan["agrupar"] == "producto" or (accion == "listar" and not ranking_pedidos)
     base, productos = d, []
     if con_lineas:
         try:
@@ -281,6 +348,10 @@ def medir_o_listar(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn) -> 
     elif metrica == "ticket":
         res.update(valor=_num(resumen["monto"] / resumen["pedidos"]) if resumen["pedidos"] and resumen["monto"] is not None else None,
                    formato="$", unidad="de ticket promedio por pedido")
+    elif metrica == "upp":
+        res.update(valor=(resumen["unidades"] / resumen["pedidos"]) if resumen["pedidos"] else None, formato="n1", unidad="unidades por pedido en promedio")
+    elif metrica == "distintos":
+        res.update(valor=0.0, formato="n", unidad="distintos")
     else:
         res.update(valor=resumen[metrica] if resumen[metrica] is not None else 0.0, formato="$" if metrica == "monto" else "n",
                    unidad={"unidades": "unidades", "pedidos": "pedidos", "monto": "", "lineas": "líneas"}[metrica])
@@ -290,13 +361,15 @@ def medir_o_listar(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn) -> 
         cols, filas, total = _listar(plan, base, con_lineas, min(cap, 300))
         res.update(tipo="lista", tabla={"cols": cols, "filas": filas}, total_filas=total, metrica="pedidos", valor=float(resumen["pedidos"]), formato="n", unidad="pedidos")
         if total > len(filas):
-            notas.append(f"Se muestran {len(filas)} de {total} filas (más recientes primero). Acota el período o los filtros para ver el resto.")
+            notas.append(f"Se muestran {len(filas)} de {total} filas ({'los de mayor monto primero' if ranking_pedidos else 'más recientes primero'}). Acota el período o los filtros para ver el resto.")
     else:
         g = plan["agrupar"] or ("producto" if len(productos) > 1 else None)
         if g and len(base):
             plan2 = {**plan, "agrupar": g}
             cols, filas, total = _tabla_grupos(plan2, base, con_lineas, hoy, metrica)
             res.update(tipo="tabla", tabla={"cols": cols, "filas": filas}, total_filas=total, agrupar=g)
+            if metrica == "distintos":
+                res.update(valor=float(total), unidad=f"{DIM_PLURAL.get(g, g)} distintos con pedidos")
             if g not in CRONO and total > len(filas) and plan["top"] != 1:
                 notas.append(f"Se muestran los primeros {len(filas)} de {total}.")
         if plan["comparar"]:
@@ -311,7 +384,22 @@ def _comparar(plan, dim, hoy, lin_fn, res):
         return None
     largo = (fin - ini).days + 1
     pini, pfin = ini - timedelta(days=largo), ini - timedelta(days=1)
+    if plan["periodo"] in ("mes_anterior", "rango") and ini.day == 1 and (fin + timedelta(days=1)).day == 1:    # un mes calendario completo: contra el mes de antes
+        pini = (ini - pd.offsets.MonthBegin(1)).normalize()
+        pfin = ini - timedelta(days=1)
+    elif plan["periodo"] == "mes":                                  # el mes en curso se compara con los mismos dias del mes anterior
+        pini = (ini - pd.offsets.MonthBegin(1)).normalize()
+        pfin = min(pini + timedelta(days=largo - 1), ini - timedelta(days=1))
+    elif plan["periodo"] == "semana":                             # la semana en curso, con los mismos dias de la semana pasada
+        pini = ini - timedelta(days=7)
+        pfin = pini + timedelta(days=largo - 1)
     p2 = {**plan, "periodo": "rango", "desde": pini.strftime("%Y-%m-%d"), "hasta": pfin.strftime("%Y-%m-%d"), "agrupar": None, "comparar": False, "accion": "medir"}
+    fmin = dim["Creation_Date"].min()
+    if pfin < fmin:                                               # el periodo anterior es anterior a los datos cargados
+        res["notas"].append(f"No puedo comparar: el período anterior ({pini.strftime('%d-%m')} al {pfin.strftime('%d-%m')}) es anterior a los datos cargados (desde el {fmin.strftime('%d-%m-%Y')}).")
+        return None
+    if pini < fmin:
+        res["notas"].append(f"El período anterior está incompleto: los datos parten el {fmin.strftime('%d-%m-%Y')}.")
     r2 = medir_o_listar(p2, dim, hoy, lin_fn)
     if not r2.get("ok") or r2.get("valor") is None or res.get("valor") is None:
         return None
@@ -340,6 +428,7 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
     diaria = rec.groupby("SKU")["Qty"].sum() / 14                       # venta diaria promedio de los ultimos 14 dias
     chips = ["Stock VTEX = VTEX − Reservado"] + ([f"Stock al {queries.INFO_STOCK['fecha']}"] if queries.INFO_STOCK.get("fecha") else [])
     productos: list[dict] = []
+    modo = plan.get("stock_modo")
     if plan["producto"] or plan["sku"]:
         skus, aprox, sug = cat.buscar(plan["producto"], plan["sku"])
         if not skus:
@@ -359,14 +448,29 @@ def stock(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) ->
                          f"Códigos de ejemplo de esa tabla: {ej}. Si el formato difiere, avísame.")
         titulo, valor = "unidades disponibles", float(s["Disponible"].sum(skipna=True))
         s = s.sort_values("Disponible", na_position="last")
+        if modo in ("poco", "cobertura"):
+            s = s.sort_values("Cobertura", na_position="last")
     else:
         s = st.assign(Pend=st["SKU"].map(pend).fillna(0.0), Producto=st["SKU"].map(cat.desc).fillna(""))
         s["Cobertura"] = s["Disponible"] / s["SKU"].map(diaria)
-        sin = s[(s["Disponible"] <= 0)]
-        con_demanda = sin[sin["Pend"] > 0]
-        s = (con_demanda if len(con_demanda) else sin).sort_values("Pend", ascending=False)
-        chips.append("Sin stock disponible")
-        titulo, valor = "productos sin stock disponible" + (" con pedidos pendientes" if len(con_demanda) else ""), float(len(s))
+        vende = s["SKU"].map(diaria).fillna(0) > 0
+        if modo == "todo":
+            chips.append("Todos los productos")
+            titulo, valor = "unidades disponibles en total", float(s["Disponible"].sum())
+            s = s.sort_values("Disponible", ascending=False)
+            notas.append(f"{int((s['Disponible'] <= 0).sum())} de {len(s)} productos están sin stock disponible.")
+        elif modo in ("poco", "cobertura"):
+            chips.append("Menos días de cobertura primero")
+            conv = s[(s["Disponible"] > 0) & vende].sort_values("Cobertura")
+            s = conv if modo == "cobertura" else conv[conv["Cobertura"] < 14]
+            titulo, valor = ("productos con menos de 14 días de cobertura" if modo == "poco" else "productos con venta y stock (ordenados por cobertura)"), float(len(s))
+            notas.append("Cobertura = stock disponible ÷ venta diaria de los últimos 14 días. Los productos sin stock no se incluyen aquí: pregunta «¿qué productos no tienen stock?».")
+        else:
+            sin = s[(s["Disponible"] <= 0)]
+            con_demanda = sin[sin["Pend"] > 0]
+            s = (con_demanda if len(con_demanda) else sin).sort_values("Pend", ascending=False)
+            chips.append("Sin stock disponible")
+            titulo, valor = "productos sin stock disponible" + (" con pedidos pendientes" if len(con_demanda) else ""), float(len(s))
     total = len(s)
     s = s.head(plan["top"] or 30)
     num = lambda v: None if pd.isna(v) else float(v)  # noqa: E731
@@ -463,3 +567,98 @@ def alertas(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) 
 
 def _dia(d: pd.Timestamp) -> str:
     return ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][d.weekday()]
+
+
+# ------------------------------------------------------------------ resumen del periodo y productos sin ventas
+def resumen(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn) -> dict:
+    """«¿Como vamos?»: los indicadores clave del periodo frente al periodo anterior de igual largo."""
+    p = {**plan, "periodo": plan["periodo"] or "mes", "estado": [], "agrupar": None, "metrica": None, "accion": "medir"}
+    ini, fin, etq = rango(p, hoy)
+    chips: list[str] = []
+    notas: list[str] = []
+
+    def kpis(a, b):
+        pl = {**p, "periodo": "rango", "desde": a.strftime("%Y-%m-%d"), "hasta": b.strftime("%Y-%m-%d")} if a is not None else p
+        todos, _ = filtrar({**pl, "agrupar": "status"}, dim, hoy, [], [])
+        d = todos[todos["Status"] != "canceled"]
+        n, can = len(d), int((todos["Status"] == "canceled").sum())
+        rfh = d["Status"] == "ready-for-handling"
+        return {"Pedidos": n, "Ventas": float(d["Total_Value"].sum()), "Unidades": float(d["Unidades"].sum()),
+                "Ticket promedio": float(d["Total_Value"].sum() / n) if n else None,
+                "Cancelados": can, "% cancelación": (can / len(todos)) if len(todos) else None,
+                "% integración": float((d["Estado Ingreso"] == "Ingresado").mean()) if n else None,
+                "Pendientes": int(rfh.sum()), "Con entrega vencida": int((rfh & (d["Shipping_Estimate_Date"] < hoy)).sum()),
+                "Facturados sin despacho": int((d["Facturado Sin Despacho"] == "Facturado sin despacho").sum())}
+    act = kpis(ini, fin) if ini is not None else kpis(None, None)
+    ant = None
+    if ini is not None and fin is not None:
+        largo = (fin - ini).days + 1
+        ant = kpis(ini - timedelta(days=largo), ini - timedelta(days=1))
+    fmt = {"Ventas": "$", "Ticket promedio": "$", "% cancelación": "pct", "% integración": "pct"}
+    filas = []
+    for k, v in act.items():
+        a = ant[k] if ant else None
+        var = None if (a in (None, 0) or v is None or fmt.get(k) == "pct") else (v - a) / a
+        filas.append([k, v, a, var, fmt.get(k, "n")])
+    cols = [{"n": "Indicador", "f": "t"}, {"n": "Actual", "f": "x"}, {"n": "Período anterior", "f": "x"}, {"n": "Variación", "f": "pct"}]
+    if ini is not None:
+        chips.append(f"Comparado con el período anterior de {(fin - ini).days + 1} día(s)")
+    p_ = lambda x: None if x is None else float(x)  # noqa: E731
+    tabla = [[k, p_(v), p_(a), p_(var), f] for k, v, a, var, f in filas]
+    mi = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
+    t = (f"{etq}: {mi(act['Pedidos'])} pedidos, {_peso(act['Ventas'])} en ventas, ticket {_peso(act['Ticket promedio'])}. "
+         f"{mi(act['Cancelados'])} cancelados ({_pctf(act['% cancelación'])}), integración {_pctf(act['% integración'])}, "
+         f"{mi(act['Pendientes'])} pendientes ({mi(act['Con entrega vencida'])} con entrega vencida).")
+    if ant and ant["Pedidos"]:
+        v = act["Pedidos"] / ant["Pedidos"] - 1
+        t += (f" Pedidos {'+' if v >= 0 else '−'}{abs(v) * 100:.1f}%".replace(".", ",") + " frente al período anterior"
+              + (f" y ventas {'+' if act['Ventas'] >= ant['Ventas'] else '−'}{abs(act['Ventas'] / ant['Ventas'] - 1) * 100:.1f}%".replace(".", ",") if ant["Ventas"] else "") + ".")
+    return {"ok": True, "tipo": "resumen", "texto": t, "valor": float(act["Pedidos"]), "formato": "n", "unidad": "pedidos", "tabla": {"cols": cols, "filas": tabla, "formato_celda": True},
+            "chips": chips, "notas": notas, "etiqueta": etq, "resumen": None, "comparacion": None, "metrica": "resumen", "productos": []}
+
+
+def _peso(v) -> str:
+    return "sin dato" if v is None else "$" + f"{v:,.0f}".replace(",", ".")
+
+
+def _pctf(v) -> str:
+    return "sin dato" if v is None else f"{v * 100:.1f}%".replace(".", ",")
+
+
+def sin_ventas(plan: dict, dim: pd.DataFrame, hoy: pd.Timestamp, lin_fn, stock_fn) -> dict:
+    """Productos del catalogo (lineas + maestra) que no se vendieron en el periodo."""
+    chips: list[str] = []
+    notas: list[str] = []
+    g = plan["agrupar"]
+    d, etq = filtrar({**plan, "estado": [e for e in plan["estado"] if e != "cancelado"], "agrupar": None}, dim, hoy, chips, notas)
+    if g in ("cliente", "canal", "bodega", "sla"):               # "que clientes no compraron": valores conocidos sin pedidos en el periodo
+        col = DIM_COL[g]
+        ult = dim.groupby(col)["Creation_Date"].max()
+        faltan = sorted(set(dim[col].dropna().unique()) - set(d[col].dropna().unique()))
+        filas = [[str(v), ult[v].strftime("%d-%m-%Y")] for v in faltan]
+        texto = (f"{etq}: " + (f"{len(filas)} {DIM_PLURAL[g]} sin pedidos: {', '.join(r[0] for r in filas[:8])}." if filas
+                              else f"todos los {DIM_PLURAL[g]} tuvieron pedidos en el período."))
+        return {"ok": True, "tipo": "sin_ventas", "texto": texto, "valor": float(len(filas)), "formato": "n", "unidad": f"{DIM_PLURAL[g]} sin pedidos",
+                "tabla": {"cols": [{"n": DIM_ETQ[g], "f": "t"}, {"n": "Último pedido", "f": "t"}], "filas": filas}, "chips": chips, "notas": notas,
+                "etiqueta": etq, "resumen": None, "comparacion": None, "metrica": "sin_ventas", "productos": []}
+    lin, _ = lin_fn()
+    mae = maestra.cargar()[0]
+    cat = catalogo.de_union(lin, mae)
+    vendidos = set(lin.merge(d[["Sequence"]], on="Sequence")["SKU"])
+    faltan = [k for k in cat.desc if k not in vendidos and k]
+    st = stock_fn()
+    disp = dict(zip(st["SKU"], st["Disponible"])) if st is not None and not st.empty else {}
+    filas = [[k, cat.desc[k], disp.get(k)] for k in faltan]
+    filas.sort(key=lambda r: (r[2] is None, -(r[2] or 0)))
+    cols = [{"n": "Código SAP", "f": "t"}, {"n": "Producto", "f": "t"}, {"n": "Stock disponible", "f": "n"}]
+    total = len(filas)
+    filas = filas[:plan["top"] or 30]
+    if total > len(filas):
+        notas.append(f"Se muestran {len(filas)} de {total}; los de más stock primero (más capital detenido).")
+    if mae is None:
+        notas.append("Sin maestra de productos solo se revisan los productos que alguna vez aparecieron en pedidos.")
+    texto = (f"{etq}: {total} producto{'s' if total != 1 else ''} del catálogo sin ventas." if total
+             else f"{etq}: todos los productos del catálogo tuvieron ventas.")
+    return {"ok": True, "tipo": "sin_ventas", "texto": texto, "valor": float(total), "formato": "n", "unidad": "productos sin ventas", "tabla": {"cols": cols, "filas": filas},
+            "chips": chips + ["Sin ventas en el período"], "notas": notas, "etiqueta": etq, "resumen": None, "comparacion": None, "metrica": "sin_ventas", "productos": [],
+            "total_filas": total, "agrupar": "producto"}

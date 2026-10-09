@@ -2,25 +2,27 @@
    por ejemplo "¿cuál es la venta de los últimos 7 días del MED165B?". La pregunta se traduce en el servidor a un plan
    validado y la cifra la calcula el servidor con sus propios datos (ver app/asistente y ASISTENTE.md). */
 const CHAT_MAX=30;
-S.chat={open:false,msgs:[],espera:false,prev:null,motor:null};
+S.chat={open:false,msgs:[],espera:false,lento:false,prev:null,motor:null};
 (function(){try{const a=JSON.parse(sessionStorage.getItem('d2c.chat')||'[]');if(Array.isArray(a))S.chat.msgs=a.slice(-CHAT_MAX);}catch(e){}})();
 const guardarChat=()=>{try{sessionStorage.setItem('d2c.chat',JSON.stringify(S.chat.msgs.slice(-CHAT_MAX)));}catch(e){}};
 
 /* formatos de columna que manda el servidor: t texto, n número, $ pesos, pct porcentaje, dias, d fecha, p pedido (abre el detalle) */
-const NUMERICO={n:1,'$':1,pct:1,dias:1};
-const celdaIA=(v,f)=>{
+const NUMERICO={n:1,n1:1,x:1,'$':1,pct:1,dias:1};
+const celdaIA=(v,f,fila)=>{
+  if(f==='x')f=fila?fila[fila.length-1]:'n';       // formato distinto en cada fila (resumen de indicadores)
   if(v==null)return 'sin dato';
+  if(f==='n1')return dec1(v);
   if(f==='n')return fmt(v);if(f==='$')return peso(v);if(f==='pct')return pct(v);if(f==='dias')return dec1(v)+' d';if(f==='d')return fd(v);
   if(f==='p')return `<button class="ia-pv" data-pv="${esc(v)}" aria-haspopup="dialog" title="Ver el detalle del pedido">${esc(v)}</button>`;
   return esc(v);
 };
-const valorIA=(v,f)=>f==='$'?peso(v):f==='pct'?pct(v):f==='dias'?dec1(v)+' d':fmt(v);
+const valorIA=(v,f)=>f==='$'?peso(v):f==='pct'?pct(v):f==='dias'?dec1(v)+' d':f==='n1'?dec1(v):fmt(v);
 const ejBtn=t=>`<button class="ia-ej" data-chat-ej="${esc(t)}">${esc(t)}</button>`;
 
 function tablaIA(t,i){
   if(!t||!t.filas.length)return '';
   const cab=t.cols.map(c=>`<th scope="col" class="${NUMERICO[c.f]?'n':''}">${esc(c.n)}</th>`).join('');
-  const filas=t.filas.map(f=>`<tr>${f.map((v,j)=>`<td class="${NUMERICO[t.cols[j].f]?'n':'desc'}">${celdaIA(v,t.cols[j].f)}</td>`).join('')}</tr>`).join('');
+  const filas=t.filas.map(f=>`<tr>${t.cols.map((c,j)=>`<td class="${NUMERICO[c.f]?'n':'desc'}">${celdaIA(f[j],c.f,f)}</td>`).join('')}</tr>`).join('');
   return `<div class="ia-tw" tabindex="0" role="region" aria-label="Tabla de la respuesta"><table class="t ia-t"><thead><tr>${cab}</tr></thead><tbody>${filas}</tbody></table></div>
     <button class="link ia-csv" data-ia-csv="${i}">${ico('descarga',14)}Descargar CSV (${t.filas.length} filas)</button>`;
 }
@@ -36,14 +38,15 @@ function resHTML(r,i,util){
   const chips=(r.chips||[]).length?`<div class="ia-chips">${r.chips.map(c=>`<span class="tag">${esc(c)}</span>`).join('')}</div>`:'';
   const seguir=(r.seguir||[]).length?`<div class="ia-seguir"><span>Seguir con</span>${r.seguir.map(ejBtn).join('')}</div>`:'';
   if(!r.ok){
-    return `<p>${esc(r.texto)}</p>${(r.ejemplos||[]).length?`<div class="ia-ejs">${r.ejemplos.map(ejBtn).join('')}</div>`:''}${chips}${notas}${via}`;
+    const reint=r.reintentar?`<button class="btn sm" data-chat-ej="${esc(r.reintentar)}">Reintentar</button>`:'';
+    return `<p>${esc(r.texto)}</p>${reint}${(r.ejemplos||[]).length?`<div class="ia-ejs">${r.ejemplos.map(ejBtn).join('')}</div>`:''}${chips}${notas}${via}`;
   }
   if(r.tipo==='pedido'){
     const p=r.pedido;
     return `<p>${esc(r.texto)}</p>${(r.lineas||[]).slice(0,5).map(x=>`<div class="ia-lin"><span class="code">${esc(x.sku)}</span><span>${esc(x.descripcion)}</span><b>${fmt(x.qty)}</b></div>`).join('')}
       <button class="btn sm primario" data-pv="${esc(p.sequence)}">Ver el detalle completo${ico('ir',14)}</button>${notas}${utilIA(r,i,util)}${via}`;
   }
-  const num=r.valor!=null?`<div class="ia-num"><b>${valorIA(r.valor,r.formato)}</b><span>${esc(r.unidad||'')}</span></div>`:'';
+  const num=r.valor!=null&&['valor','tabla','lista'].includes(r.tipo)?`<div class="ia-num"><b>${valorIA(r.valor,r.formato)}</b><span>${esc(r.unidad||'')}</span></div>`:'';
   const rs=r.resumen,st=rs?[['pedidos',fmt(rs.pedidos),'pedidos'],['unidades',fmt(rs.unidades),'unidades'],['monto',rs.monto==null?null:peso(rs.monto),'en ventas']].filter(x=>x[1]!=null&&x[0]!==r.metrica):[];
   const stats=r.tipo==='valor'||r.tipo==='tabla'||r.tipo==='lista'?(st.length&&rs&&rs.pedidos?`<div class="ia-stats">${st.map(x=>`<span><b>${x[1]}</b> ${x[2]}</span>`).join('')}</div>`:''):'';
   return `${num}<p>${esc(r.texto)}</p>${stats}${chips}${tablaIA(r.tabla,i)}${notas}${seguir}${utilIA(r,i,util)}${via}`;
@@ -52,7 +55,7 @@ function renderChat(){
   const el=$('#chat-log'),m=S.chat.msgs;
   let h=m.map((x,i)=>x.rol==='u'?`<div class="ia-row u"><div class="ia-m u"><p>${esc(x.texto)}</p></div></div>`
     :`<div class="ia-row a"><span class="ia-av" aria-hidden="true">${ico('chispas',16)}</span><div class="ia-m a">${resHTML(x.res,i,x.util)}</div></div>`).join('');
-  if(S.chat.espera)h+=`<div class="ia-row a"><span class="ia-av" aria-hidden="true">${ico('chispas',16)}</span><div class="ia-m a espera" role="status"><div class="dr-sk" aria-hidden="true"><i></i><i></i></div><span class="sr">Consultando…</span></div></div>`;
+  if(S.chat.espera)h+=`<div class="ia-row a"><span class="ia-av" aria-hidden="true">${ico('chispas',16)}</span><div class="ia-m a espera" role="status"><div class="dr-sk" aria-hidden="true"><i></i><i></i></div><span class="${S.chat.lento?'':'sr'}">${S.chat.lento?'Sigue consultando: la primera consulta de líneas y stock puede tardar…':'Consultando…'}</span></div></div>`;
   if(!m.length&&!S.chat.espera){
     const ej=(S.chat.motor&&S.chat.motor.ejemplos)||[];
     const fr=((S.chat.motor&&S.chat.motor.frecuentes)||[]).filter(t=>!ej.includes(t));
@@ -64,7 +67,7 @@ function renderChat(){
 }
 function csvIA(t){   // el mismo contenido de la tabla; comillas dobles escapadas y punto y coma como separador (Excel en español)
   const c=v=>{const s=v==null?'':String(v);return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
-  return '﻿'+[t.cols.map(x=>c(x.n)).join(';'),...t.filas.map(f=>f.map(c).join(';'))].join('\r\n');
+  return '﻿'+[t.cols.map(x=>c(x.n)).join(';'),...t.filas.map(f=>t.cols.map((_,j)=>c(f[j])).join(';'))].join('\r\n');
 }
 function descargarCSV(i){
   const x=S.chat.msgs[i];if(!x||!x.res||!x.res.tabla)return;
@@ -93,14 +96,17 @@ function cerrarChat(devolverFoco=true){
 }
 async function preguntar(texto){
   texto=String(texto||'').trim().slice(0,300);if(!texto||S.chat.espera)return;
-  S.chat.msgs.push({rol:'u',texto});S.chat.espera=true;renderChat();$('#chat-q').value='';
+  const previas=S.chat.msgs.filter(x=>x.rol==='u').slice(-10).map(x=>x.texto);
+  S.chat.msgs.push({rol:'u',texto});S.chat.espera=true;S.chat.lento=false;renderChat();$('#chat-q').value='';
+  const ctl=new AbortController(),corte=setTimeout(()=>ctl.abort(),50000),aviso=setTimeout(()=>{S.chat.lento=true;renderChat();},8000);
   let res;
   try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pregunta:texto,previo:S.chat.prev})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,body:JSON.stringify({pregunta:texto,previo:S.chat.prev,previas})});
     res=await r.json();
-    if(!r.ok||res.error)res={ok:false,texto:res.error||'No pude responder en este momento.'};
-  }catch(e){res={ok:false,texto:'No hay conexión con el servidor.'};}
-  S.chat.espera=false;
+    if(!r.ok||res.error)res={ok:false,texto:res.error||'No pude responder en este momento.',reintentar:texto};
+  }catch(e){res=e&&e.name==='AbortError'?{ok:false,texto:'La consulta tardó más de 50 segundos y la corté para que el chat no se quede esperando. Los datos pueden estar cargándose; intenta de nuevo.',reintentar:texto}
+    :{ok:false,texto:'No hay conexión con el servidor.',reintentar:texto};}
+  finally{clearTimeout(corte);clearTimeout(aviso);S.chat.espera=false;S.chat.lento=false;}      // pase lo que pase, el chat queda libre
   if(res.ok&&res.plan)S.chat.prev=res.plan;
   S.chat.msgs.push({rol:'a',res});S.chat.msgs=S.chat.msgs.slice(-CHAT_MAX);guardarChat();renderChat();cargarMotorChat();
 }

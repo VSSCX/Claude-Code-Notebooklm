@@ -1,7 +1,7 @@
 """Redaccion de la respuesta en espanol: frase principal, desglose y preguntas de seguimiento."""
 from __future__ import annotations
 
-from .texto import lista_es
+from .texto import lista_es, sa
 
 ADJ = {"no_integrado": "no integrados", "integrado": "integrados", "cancelado": "cancelados", "pendiente": "pendientes",
        "facturado": "facturados", "vencido": "con entrega vencida", "sin_despacho": "facturados sin despacho",
@@ -13,7 +13,14 @@ EJEMPLOS = ["¿Cuál es la venta de los últimos 7 días del MED165B?",
             "¿Cuál es el status de POST Fechado hoy?",
             "¿Hay stock del refrigerador MED 165B?",
             "Top 5 clientes por monto este mes",
-            "¿Hay algo raro hoy? / ¿Qué debo revisar?"]
+            "¿Qué debo revisar hoy?",
+            "¿Cómo vamos este mes?",
+            "Ventas por clasificación",
+            "Los 10 pedidos más caros"]
+
+
+DIM_SING = {"cliente": "cliente", "dia": "día", "sla": "SLA", "producto": "producto", "canal": "canal", "bodega": "bodega", "mes": "mes",
+            "semana": "semana", "clasif2": "grupo de productos"}
 
 
 def num(v, f: str = "n") -> str:
@@ -23,6 +30,8 @@ def num(v, f: str = "n") -> str:
         return f"{v * 100:.1f}%".replace(".", ",")
     if f == "dias":
         return f"{v:.1f} días".replace(".", ",")
+    if f == "n1":
+        return f"{v:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
     s = f"{v:,.0f}".replace(",", ".")
     return "$" + s if f == "$" else s
 
@@ -57,6 +66,13 @@ def frase(res: dict, plan: dict, dim) -> str:
         sd = [f[1] for f in filas if f[4] is None]
         return (base + (f" entre {len(res['productos'])} productos" if res["productos"] else "") + "." + (f" Sin stock: {lista_es(sin)}." if sin else "")
                 + (f" Sin dato en la tabla de stock: {lista_es(sd)}." if sd else ""))
+    if res["tipo"] == "lista" and plan["metrica"] == "monto" and plan["orden"] and res.get("tabla") and res["tabla"]["filas"]:       # "los 10 pedidos mas caros"
+        t0 = res["tabla"]
+        i = next((k for k, c in enumerate(t0["cols"]) if c["n"] == "Monto"), 1)
+        ic = next((k for k, c in enumerate(t0["cols"]) if c["n"] == "Cliente"), None)
+        top = ", ".join(f"{f[0]} ({num(f[i], '$')}" + (f", {f[ic]}" if ic is not None else "") + ")" for f in t0["filas"][:3])
+        return (f"{et}: {'el pedido' if len(t0['filas']) == 1 else 'los pedidos'} de {'mayor' if plan['orden'] == 'desc' else 'menor'} monto{donde}: {top}"
+                + (" y más (ver la tabla)." if len(t0["filas"]) > 3 else "."))
     if res["tipo"] == "lista":
         n = res.get("total_filas", 0)
         if not res["resumen"]["pedidos"]:
@@ -65,6 +81,18 @@ def frase(res: dict, plan: dict, dim) -> str:
         prod = f" de {res['productos'][0]['descripcion']}" if res["productos"] else ""
         return (f"{et}: {num(r['pedidos'])} pedido{'s' if r['pedidos'] != 1 else ''}{(' ' + adjs) if adjs else ''}{donde}{prod}, "
                 f"{num(r['unidades'])} unidades, {num(r['monto'], '$')}.")
+    t0 = res.get("tabla")
+    if res["tipo"] == "lista" and plan["metrica"] == "monto" and plan["orden"] and t0 and t0["filas"]:     # "los 10 pedidos mas caros"
+        i = next((k for k, c in enumerate(t0["cols"]) if c["n"] == "Monto"), 1)
+        top = ", ".join(f"{f[0]} ({num(f[i], '$')}, {f[-2] if res.get('con_lineas') else f[4]})" for f in t0["filas"][:3])
+        return f"{et}: {'los pedidos de mayor monto' if plan['orden'] == 'desc' else 'los pedidos de menor monto'}{donde} son {top}" + (" y más (ver la tabla)." if len(t0["filas"]) > 3 else ".")
+    if res["tipo"] == "tabla" and t0 and t0["filas"] and plan["top"] == 1 and plan["agrupar"] in DIM_SING and plan["orden"]:
+        nombre = {"pedidos": "pedidos", "unidades": "unidades", "monto": "ventas", "lineas": "líneas", "ticket": "ticket"}.get(m, "pedidos")
+        col = {"pedidos": "Pedidos", "unidades": "Unidades", "monto": "Monto", "lineas": "Líneas", "ticket": "Ticket"}.get(m, "Pedidos")
+        i = next((k for k, c in enumerate(t0["cols"]) if c["n"] == col), 1)
+        f0 = t0["filas"][0]
+        return (f"{et}: el {DIM_SING[plan['agrupar']]} con {'más' if plan['orden'] == 'desc' else 'menos'} {nombre}{(' ' + adjs) if adjs else ''}{donde} es "
+                f"{f0[0]} ({num(f0[i], t0['cols'][i]['f'])}).")
     prod = ""
     if res["productos"]:
         n = len(res["productos"])
@@ -90,11 +118,19 @@ def frase(res: dict, plan: dict, dim) -> str:
         txt += f", en {num(r['pedidos'])} pedido{'s' if r['pedidos'] != 1 else ''}"
     txt += "."
     t = res.get("tabla")
-    if res["tipo"] == "tabla" and t and t["filas"] and (len(t["filas"]) <= 8 or plan["orden"]) and (plan["agrupar"] not in ("dia", "semana", "mes") or plan["orden"]):
+    crono = plan["agrupar"] in ("dia", "semana", "mes") and not plan["orden"]
+    if res["tipo"] == "tabla" and t and t["filas"] and crono and len(t["filas"]) > 1:        # evolucion: el maximo y el minimo, el detalle va en la tabla
+        nombre = {"pedidos": "Pedidos", "unidades": "Unidades", "monto": "Monto", "lineas": "Líneas", "ticket": "Ticket"}.get(m)
+        i = next((k for k, c in enumerate(t["cols"]) if c["n"] == nombre), 1)
+        con = [f for f in t["filas"] if f[i] is not None]
+        if con:
+            mx, mn = max(con, key=lambda f: f[i]), min(con, key=lambda f: f[i])
+            txt += f" Máximo: {mx[0]} ({num(mx[i], t['cols'][i]['f'])}); mínimo: {mn[0]} ({num(mn[i], t['cols'][i]['f'])}); {len(t['filas'])} períodos en la tabla."
+    if res["tipo"] == "tabla" and t and t["filas"] and not crono:
         nombre = {"pedidos": "Pedidos", "unidades": "Unidades", "monto": "Monto", "lineas": "Líneas", "ticket": "Ticket"}.get(m)
         i = next((k for k, c in enumerate(t["cols"]) if c["n"] == nombre), 1)
         visibles = t["filas"] if len(t["filas"]) <= 8 else t["filas"][:3]
-        txt += " " + ", ".join(f"{fl[0]}: {num(fl[i], t['cols'][i]['f'])}" for fl in visibles) + "."
+        txt += " " + ", ".join(f"{fl[0]}: {num(fl[i], t['cols'][i]['f'])}" for fl in visibles) + ("." if len(t["filas"]) <= 8 else f" y {res.get('total_filas', len(t['filas'])) - len(visibles)} más (ver la tabla).")
     c = res.get("comparacion")
     if c:
         signo = "+" if c["delta"] >= 0 else "−"
@@ -103,21 +139,31 @@ def frase(res: dict, plan: dict, dim) -> str:
     return txt
 
 
-def seguimientos(res: dict, plan: dict) -> list[str]:
+def seguimientos(res: dict, plan: dict, vistas: list | None = None) -> list[str]:
+    """Hasta 3 preguntas de seguimiento utiles para ESTA respuesta, sin repetir las que ya se hicieron en la conversacion."""
     acc, g = plan.get("accion") or "medir", plan.get("agrupar")
+    vistas = {sa(v) for v in (vistas or [])}
     if res.get("tipo") == "alertas":
-        return ["stock de los productos sin stock", "pedidos con entrega vencida", "pedidos no integrados"]
-    if res.get("tipo") == "stock":
-        return ["y las unidades vendidas hoy", "y los pedidos pendientes"]
-    if acc == "listar":
-        s = ["Resumen por status", "Por cliente", "Comparar con el período anterior"]
+        pool = ["productos con poco stock", "pedidos con entrega vencida", "pedidos no integrados", "¿cómo vamos este mes?", "pedidos facturados sin despacho"]
+    elif res.get("tipo") == "resumen":
+        pool = ["¿hay algo raro hoy?", "ventas por clasificación", "top 5 clientes por monto", "ventas por día", "stock total"]
+    elif res.get("tipo") == "stock":
+        pool = ["productos con poco stock", "cobertura de stock", "¿qué productos no tienen stock?", "productos sin ventas", "y las unidades vendidas hoy", "y los pedidos pendientes"]
+    elif res.get("tipo") == "sin_ventas":
+        pool = ["stock total", "ventas por clasificación", "top 5 productos más vendidos"]
+    elif acc == "listar":
+        pool = ["Resumen por status", "Por cliente", "Comparar con el período anterior", "Por bodega", "Exportar: ver los pedidos más caros"]
     elif g:
-        s = ["Ver los pedidos"] + (["Por día"] if g != "dia" else ["Por cliente"]) + ["Comparar con el período anterior"]
+        pool = ["Ver los pedidos", "Por día" if g != "dia" else "Por cliente", "Comparar con el período anterior", "Por canal" if g != "canal" else "Por bodega",
+                "Por clasificación" if g != "clasif2" else "Por cliente", "solo los cancelados", "Ticket promedio"]
     else:
-        s = ["Por día", "Por cliente", "Ver los pedidos"]
+        pool = ["Por día", "Por cliente", "Ver los pedidos", "Comparar con el período anterior", "Por clasificación", "Por bodega", "% de cancelación"]
         if plan.get("producto") or plan.get("sku"):
-            s = ["Ver los pedidos", "Por día", "y el stock"]
-    return s[:3]
+            pool = ["Ver los pedidos", "Por día", "y el stock", "Por cliente", "Comparar con el período anterior"]
+    if plan.get("comparar"):
+        pool = [x for x in pool if "Comparar" not in x]
+    nuevos = [x for x in pool if sa(x) not in vistas]
+    return (nuevos or pool)[:3]
 
 
 def ayuda(saludo: bool) -> tuple[str, list[str]]:

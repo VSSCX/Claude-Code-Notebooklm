@@ -18,35 +18,79 @@ def _dia(d) -> str:
     return pd.Timestamp(d).strftime(ISO)
 
 
-def _periodo(X: Texto, hoy: pd.Timestamp) -> dict:
+DIAS_SEM = {"lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3, "viernes": 4, "sabado": 5, "domingo": 6}
+_MES_RE = "|".join(L.MESES)
+
+
+def _fecha_dm(d, mes, a, hoy):
+    m = L.NUM_MES[mes]
+    y = int(a) if a else (hoy.year if m <= hoy.month else hoy.year - 1)
+    return pd.Timestamp(y, m, int(d))
+
+
+def _periodo(X: Texto, hoy: pd.Timestamp, avisos: list | None = None) -> dict:
     p: dict = {}
     t = X.t
+    # --- fechas con dia y mes escritos: "del 5 de agosto", "entre el 1 y el 10 de agosto", "del 15 de julio al 20 de julio"
+    try:
+        if (m := X.buscar(rf"\b(?:entre|del|desde|de)\s+(?:el\s+)?(\d{{1,2}})(?:\s+de\s+({_MES_RE}))?\s+(?:y|al|a|hasta)\s+(?:el\s+)?(\d{{1,2}})\s+de\s+({_MES_RE})(?:\s+(?:de|del)\s+(\d{{4}}))?\b")):
+            d1, m1, d2, m2, a = m.groups()
+            a_, b_ = _fecha_dm(d1, m1 or m2, a, hoy), _fecha_dm(d2, m2, a, hoy)
+            a_, b_ = min(a_, b_), max(a_, b_)
+            return {"periodo": "rango", "desde": _dia(a_), "hasta": _dia(b_)}
+        sueltas = []
+        while (m := X.buscar(rf"\b(?:el\s+|del\s+|de\s+)?(\d{{1,2}})\s+de\s+({_MES_RE})(?:\s+(?:de|del)\s+(\d{{4}}))?\b")):
+            sueltas.append(_fecha_dm(m.group(1), m.group(2), m.group(3), hoy))
+            t = X.t = X.t[:m.start()] + " " * (m.end() - m.start()) + X.t[m.end():]            # se consume para no volver a encontrarla
+        if sueltas:
+            return {"periodo": "rango", "desde": _dia(min(sueltas)), "hasta": _dia(max(sueltas))}
+    except ValueError:                                                                         # 31 de febrero, etc.
+        if avisos is not None:
+            avisos.append("Una de las fechas no existe en el calendario; usé el período por defecto.")
+    # --- el dia de la semana: "el lunes", "el viernes pasado"
+    if (m := X.buscar(r"\b(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+(pasado))?\b")):
+        objetivo, pasado = DIAS_SEM[m.group(1)], bool(m.group(2))
+        atras = (hoy.weekday() - objetivo) % 7
+        if atras == 0 and pasado:
+            atras = 7
+        d = _dia(hoy - timedelta(days=atras))
+        return {"periodo": "rango", "desde": d, "hasta": d}
+    # --- relativos
     if (m := X.buscar(r"(?:ultim\w+|pasad\w+)\s+(\d{1,3})\s+(dias?|semanas?|meses)")):
         n = int(m.group(1)) * {"d": 1, "s": 7, "m": 30}[m.group(2)[0]]
         p.update(periodo="ultimos", dias=max(1, min(n, 400)))
-    elif X.buscar(r"semana\s+(pasada|anterior)"):
+    elif X.buscar(r"\b(?:ultimo|ultimos|pasado)\s+trimestre\b|\btrimestre\s+(?:pasado|anterior)\b"):
+        p.update(periodo="ultimos", dias=90)
+    elif X.buscar(r"\b(?:ultimo|pasado)\s+semestre\b"):
+        p.update(periodo="ultimos", dias=180)
+    elif X.buscar(r"\bultimo\s+ano\b|\bano\s+(?:pasado|anterior)\b|\bultimos\s+12\s+meses\b"):
+        p.update(periodo="ultimos", dias=365)
+    elif X.buscar(r"\bsemana\s+(pasada|anterior)\b"):
         p["periodo"] = "semana_anterior"
-    elif X.buscar(r"mes\s+(pasado|anterior)"):
+    elif X.buscar(r"\bmes\s+(pasado|anterior)\b"):
         p["periodo"] = "mes_anterior"
-    elif X.buscar(r"ultimo mes|mes ultimo"):
+    elif X.buscar(r"\bultimo mes\b|\bmes ultimo\b"):
         p.update(periodo="ultimos", dias=30)                       # "el ultimo mes" = los ultimos 30 dias (se dice en la respuesta)
-    elif X.buscar(r"ultima semana"):
+    elif X.buscar(r"\bultima semana\b"):
         p.update(periodo="ultimos", dias=7)
     elif X.buscar(r"\banteayer\b"):
         d = _dia(hoy - timedelta(days=2))
         p.update(periodo="rango", desde=d, hasta=d)
-    elif (m := X.buscar(r"hace\s+(\d{1,3})\s+dias?")):
+    elif (m := X.buscar(r"\bhace\s+(\d{1,3})\s+dias?\b")):
         d = _dia(hoy - timedelta(days=int(m.group(1))))
         p.update(periodo="rango", desde=d, hasta=d)
     elif X.buscar(r"\bhoy\b"):
         p["periodo"] = "hoy"
     elif X.buscar(r"\bayer\b"):
         p["periodo"] = "ayer"
-    elif X.buscar(r"(?:esta|la)\s+semana|semanal"):
+    elif X.buscar(r"\beste\s+trimestre\b"):
+        q0 = pd.Timestamp(hoy.year, 3 * ((hoy.month - 1) // 3) + 1, 1)
+        p.update(periodo="rango", desde=_dia(q0), hasta=_dia(hoy))
+    elif X.buscar(r"\b(?:este|del|el|en el)\s+ano\b|\bytd\b|\bacumulado\b|\bdesde enero\b"):
+        p.update(periodo="rango", desde=_dia(pd.Timestamp(hoy.year, 1, 1)), hasta=_dia(hoy))
+    elif X.buscar(r"\b(?:esta|la)\s+semana\b"):
         p["periodo"] = "semana"
-    elif X.buscar(r"(?:este|el)\s+mes|mensual|mes en curso"):
-        p["periodo"] = "mes"
-    elif X.buscar(r"todo el periodo|historic\w*|desde siempre|en total|(?:este|el|todo el)\s+ano"):
+    elif X.buscar(r"\btodo el periodo\b|\bhistoric\w*|\bdesde siempre\b|\ben total\b|\btodo el tiempo\b"):
         p["periodo"] = "todo"
     fechas = []
     for d, mm, a in re.findall(r"\b(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?\b", t):
@@ -69,12 +113,19 @@ def _periodo(X: Texto, hoy: pd.Timestamp) -> dict:
                 X.usado[i] = True
     elif "periodo" not in p:
         for nom in L.MESES:
-            if nom in X.todos():
+            if nom in X.todos():                              # "julio", "ventas de julio", "el mes de julio"
                 mes = L.NUM_MES[nom]
-                ini = pd.Timestamp(hoy.year if mes <= hoy.month else hoy.year - 1, mes, 1)
+                a = re.search(rf"\b{nom}\s+(?:de|del)?\s*(20\d{{2}})\b", t)
+                anio = int(a.group(1)) if a else (hoy.year if mes <= hoy.month else hoy.year - 1)
+                ini = pd.Timestamp(anio, mes, 1)
                 p.update(periodo="rango", desde=_dia(ini), hasta=_dia(ini + pd.offsets.MonthEnd(0)))
-                X.marcar_tokens({nom})
+                X.marcar_tokens({nom, "mes"})
+                if a:
+                    X.marcar_tokens({a.group(1)})
                 break
+        else:
+            if X.buscar(r"\b(?:este|el)\s+mes\b|\bmes en curso\b"):
+                p["periodo"] = "mes"
     return p
 
 
@@ -145,6 +196,23 @@ def _agrupacion(X: Texto, plan: dict) -> None:
     elif X.buscar(L.P_RANKING):
         plan["agrupar"] = "cliente" if X.hay(r"\bclientes?\b") else "producto"
         plan["orden"] = "asc" if X.hay(r"menos vendid|peores") else "desc"
+    elif (m := X.buscar(L.P_SUPER_ANTES)):                               # "el mejor dia", "los peores clientes"
+        plan["agrupar"] = L.DIMENSIONES[m.group(2)]
+        plan["orden"] = "asc" if m.group(1) in ("peor", "menor") else "desc"
+        plan["top"] = plan["top"] or (5 if re.search(r"(?:es|s)$", m.group(0)) else 1)
+        plan["_super"] = True
+    elif (m := X.buscar(L.P_SUPER_DESPUES)) and L.DIMENSIONES.get(m.group(1)) not in (None,):
+        plan["agrupar"] = L.DIMENSIONES[m.group(1)]                    # "cliente con mas cancelaciones", "sla con mas atrasos", "productos con mas pedidos"
+        plan["orden"] = "asc" if m.group(2) in ("menos", "menor") else "desc"
+        if X.hay(r"\b(?:que|cual|quien)\b") and not X.hay(r"\b(?:" + m.group(1) + r")(?:es|s)\b"):
+            plan["top"] = plan["top"] or 1
+        plan["_super"] = True
+    elif X.buscar(L.P_EVOLUCION):
+        plan["agrupar"] = "dia"
+    elif X.buscar(L.P_MENSUAL):
+        plan["agrupar"] = "mes"
+    elif X.buscar(L.P_SEMANAL):
+        plan["agrupar"] = "semana"
     elif X.buscar(r"cada dia|dia a dia|diario"):
         plan["agrupar"] = "dia"
     if (n := X.buscar(r"\btop\s*(\d{1,2})\b|\b(?:los|las|primeros|primeras)\s+(\d{1,3})\b")):
@@ -160,6 +228,26 @@ def _metrica(X: Texto, plan: dict) -> None:
         if X.buscar(pat):
             plan["metrica"] = clave
             return
+
+
+def _cantidad(n: str, unidad: str | None) -> float:
+    v = float(n)
+    u = unidad or ""
+    if u.startswith("mill") or u == "m":
+        return v * 1_000_000
+    if u in ("mil", "k"):
+        return v * 1_000
+    return v
+
+
+def _numericos(X: Texto, plan: dict) -> None:
+    """Filtros por monto ("de mas de 1 millon", "menos de 100 mil") y por antiguedad ("de mas de 2 dias")."""
+    if (m := X.buscar(L.P_EDAD)):
+        plan["edad_min"] = int(m.group(1))
+    if (m := X.buscar(L.P_MONTO_MIN)):
+        plan["monto_min"] = _cantidad(m.group(1), m.group(2))
+    if (m := X.buscar(L.P_MONTO_MAX)):
+        plan["monto_max"] = _cantidad(m.group(1), m.group(2))
 
 
 def _pedido_o_sku(X: Texto, dim: pd.DataFrame, plan: dict) -> None:
@@ -186,15 +274,51 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
     """-> (plan, banderas). `cat_fn()` entrega el catalogo de productos solo si hace falta (cargar las lineas cuesta)."""
     X, K = Texto(q), conocidos(dim)
     plan, expl = plan_vacio(), set()
-    ban = {"ignoradas": [], "correcciones": {}, "entendio": False, "hereda": False}
+    ban = {"ignoradas": [], "correcciones": {}, "entendio": False, "hereda": False, "avisos": []}
 
     _pedido_o_sku(X, dim, plan)
-    per = _periodo(X, hoy)
+    _numericos(X, plan)
+    per = _periodo(X, hoy, ban["avisos"])
     plan.update(per)
+    if not per and X.hay(r"\b(?:del|de) dia\b") and X.hay(L.P_RESUMEN):
+        plan["periodo"] = "hoy"
+    if X.hay(L.P_HORAS):                                                  # el tablero solo guarda la fecha de creacion, no la hora
+        plan["periodo"] = plan["periodo"] or "hoy"
+        ban["avisos"].append("El tablero guarda solo la fecha de cada pedido (sin hora): te muestro el día completo.")
+        X.marcar_tokens({"hora", "horas", "ultima", "ultimas", "ultimo", "por"})
     _estados(X, plan)                         # primero: "alerta BWS" no es el canal BWS, "alerta post" no es la bodega
     _entidades(X, K, plan)
     _agrupacion(X, plan)
     _metrica(X, plan)
+    if X.hay(L.P_PCT_TOTAL) and plan["estado"] and plan["metrica"] in (None, "pedidos"):
+        plan["metrica"] = "pct_estado"                                    # "cancelados vs total" = que parte del total son
+        plan["comparar"] = False
+        X.buscar(L.P_PCT_TOTAL)
+    meses_citados = [m for m in L.MESES if m in X.todos()]
+    if plan["comparar"] and len(meses_citados) >= 2:                      # "agosto vs julio": el mas reciente contra el anterior
+        ult = max(meses_citados, key=lambda n: L.NUM_MES[n] if L.NUM_MES[n] <= hoy.month else L.NUM_MES[n] - 12)
+        mes = L.NUM_MES[ult]
+        ini = pd.Timestamp(hoy.year if mes <= hoy.month else hoy.year - 1, mes, 1)
+        plan.update(periodo="rango", desde=_dia(ini), hasta=_dia(ini + pd.offsets.MonthEnd(0)))
+        X.marcar_tokens(set(meses_citados))
+    if plan["metrica"] == "distintos":
+        m = re.search(r"(clientes|productos|skus?|canales|bodegas|modelos|articulos|clasificaciones|categorias)", X.t)
+        plan["agrupar"] = {"clientes": "cliente", "productos": "producto", "sku": "producto", "skus": "producto", "canales": "canal", "bodegas": "bodega",
+                           "modelos": "producto", "articulos": "producto", "clasificaciones": "clasif2", "categorias": "clasif2"}.get(m.group(1) if m else "", "cliente")
+    if (m := X.buscar(L.P_SIN_ACTIVIDAD)):
+        plan["agrupar"] = {"cliente": "cliente", "canal": "canal", "bodega": "bodega", "sla": "sla"}[m.group(1).rstrip("s").replace("canale", "canal")]
+        plan["_sin"] = True
+    super_ = plan.pop("_super", False)
+    if super_ and not plan["metrica"]:                                    # "el mejor dia" = ventas; "el cliente con mas cancelaciones" = pedidos
+        plan["metrica"] = "pedidos" if (plan["estado"] or X.hay(r"\bpedidos?\b|cancel|atras")) else "monto"
+    if plan["agrupar"] == "mes" and not per:
+        plan["periodo"] = "todo"                                          # "ventas por mes": todos los meses con datos
+    elif plan["agrupar"] == "semana" and not per:
+        plan["periodo"] = "ultimos"
+        plan["dias"] = 84
+    if plan["comparar"] and (m := re.search(r"(?:compar\w*|vs|versus|contra|respecto (?:a|al|del|de la))\s+(?:\w+\s+){0,4}?(?:el|la)\s+(mes|semana)\s+(?:pasad[oa]|anterior)", X.t)):
+        if plan["periodo"] in ("mes_anterior", "semana_anterior"):          # "comparar ventas con el mes pasado" = este mes contra el pasado
+            plan["periodo"] = "mes" if m.group(1) == "mes" else "semana"
     quitar = {"pct_integracion": "integrado", "pct_pendiente": "pendiente"}.get(plan["metrica"])
     if quitar in plan["estado"]:
         plan["estado"].remove(quitar)         # en "% pendiente" la palabra es la medida, no un filtro
@@ -204,9 +328,14 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
             expl.add("pedido" if k == "pedido" else "producto")
     if per:
         expl.add("periodo")
-    for k in ("sla", "cliente", "canal", "bodega", "estado", "agrupar", "metrica", "top", "orden"):
+    for k in ("sla", "cliente", "canal", "bodega", "estado", "agrupar", "metrica", "top", "orden", "monto_min", "monto_max", "edad_min"):
         if plan[k]:
             expl.add(k)
+    grande = X.buscar(L.P_PEDIDO_GRANDE)
+    if grande and not plan["agrupar"]:
+        plan.update(metrica="monto", orden="asc" if X.hay(r"\b(?:barato|chico|pequeno|menor)") else "desc",
+                    top=plan["top"] or (1 if not X.hay(r"\bpedidos\b|ordenes") else 10))
+        expl.update({"metrica", "orden", "top"})
     if plan["comparar"]:
         expl.add("comparar")
 
@@ -225,18 +354,28 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
             expl.add("producto")
 
     # accion
-    stock_cue = X.hay(L.P_STOCK) and not X.hay(r"\b(pedidos?|ordenes)\b")
-    listar = X.hay(L.P_LISTAR) and X.hay(L.P_ENTIDAD_LISTA) and not X.hay(L.P_CONTAR) and not plan["agrupar"]
+    sin_pedidos = not X.hay(r"\b(pedidos?|ordenes)\b")
+    stock_cue = (X.hay(L.P_STOCK) or X.hay(L.P_STOCK_POCO) or X.hay(L.P_STOCK_COB)) and sin_pedidos
+    listar = (X.hay(L.P_LISTAR) or bool(grande)) and (X.hay(L.P_ENTIDAD_LISTA) or bool(grande)) and not X.hay(L.P_CONTAR) and not plan["agrupar"]
     if X.hay(L.P_AYUDA) or (X.hay(L.P_SALUDO) and not expl):
         plan["accion"] = "ayuda"
     elif X.hay(L.P_INFO):
         plan["accion"] = "info"
     elif plan["pedido"]:
         plan["accion"] = "pedido"
-    elif X.hay(L.P_ALERTAS) and not {"estado", "metrica", "agrupar", "producto"} & expl:
-        plan["accion"] = "alertas"
+        plan["foco"] = ("lineas" if X.hay(L.P_FOCO_LINEAS) else "productos" if X.hay(L.P_FOCO_PRODUCTOS) else "estado" if X.hay(L.P_FOCO_ESTADO) else None)
+    elif plan.pop("_sin", False):
+        plan["accion"] = "sin_ventas"
+    elif X.hay(L.P_SIN_VENTAS) and X.hay(r"\bproductos?\b|\bmodelos?\b|\bskus?\b|\barticulos?\b|\bque\b"):
+        plan["accion"] = "sin_ventas"
     elif stock_cue:
         plan["accion"] = "stock"
+        plan["stock_modo"] = ("poco" if X.hay(L.P_STOCK_POCO) else "cobertura" if X.hay(L.P_STOCK_COB) else "todo" if X.hay(L.P_STOCK_TODO)
+                              else "sin" if X.hay(L.P_STOCK_SIN) else None)
+    elif X.hay(L.P_ALERTAS) and not {"estado", "metrica", "agrupar", "producto"} & expl:
+        plan["accion"] = "alertas"
+    elif X.hay(L.P_RESUMEN) and not {"agrupar", "metrica", "producto"} & expl and not plan["estado"]:
+        plan["accion"] = "resumen"
     elif listar or (X.hay(r"\bpedidos?\b|\bordenes\b") and not plan["metrica"] and not plan["agrupar"] and not X.hay(L.P_CONTAR)
                     and ({"estado", "cliente", "bodega", "canal", "sla", "producto"} & expl)):
         plan["accion"] = "listar"
@@ -248,7 +387,7 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
 
     # seguimiento ("y ayer?", "ver los pedidos", "por cliente"): hereda lo que no se menciona
     propio = {"metrica", "producto", "pedido", "cliente", "canal", "bodega", "sla", "estado"} & expl     # una pregunta con tema propio no hereda
-    corto = len(X.tok) <= 8 and not propio and bool(expl)
+    corto = len(X.tok) <= 8 and not propio and bool(expl) and plan["accion"] not in ("stock", "alertas", "resumen", "sin_ventas", "pedido")
     if previo and ban["entendio"] and plan["accion"] not in ("ayuda", "info") and (X.t.strip().startswith("y ") or corto):
         base = validar(previo, K)
         for k, v in plan.items():
@@ -263,6 +402,8 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
                     base[k] = v
             elif k == "comparar":
                 base[k] = base[k] or v
+            elif k in ("stock_modo", "foco") and v:
+                base[k] = v
             elif v not in (None, [], False) and k in expl:
                 base[k] = v
         plan = base
