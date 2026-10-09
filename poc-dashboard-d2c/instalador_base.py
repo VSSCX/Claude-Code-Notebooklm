@@ -10,6 +10,8 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v3.10: el asistente se probo con una simulacion de analistas (948 preguntas); corrige errores de tipeo en modelos (med65b), formas coloquiales
+("cuanta plata entro", "que se nos esta agotando") y filtros por cantidad.
 Novedades v3.9: el asistente entiende fechas escritas ("del 5 de agosto"), rankings ("el mejor dia"), clasificaciones, porcentajes,
 resumen ("como vamos"), stock por cobertura y no se repite ni se cuelga.
 Novedades v3.8: el stock VTEX se consulta aparte (ya no frena el tablero; se reutiliza 10 min y se corta a los 180 s) y
@@ -57,7 +59,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "3.9"
+VERSION = "3.10"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

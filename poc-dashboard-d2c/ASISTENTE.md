@@ -132,3 +132,11 @@ un pedido con productos de varias clasificaciones se reparte en proporción al v
 - **Pedidos:** «qué productos tiene», «cuántas líneas tiene» y «estado del pedido» ya no devuelven el mismo texto.
 - **Sin repetirse ni colgarse:** avisa si repites la consulta, los «seguir con» no repiten lo ya preguntado, el servidor corta una consulta lenta a los 40 s y el navegador a los 50 s (con botón Reintentar).
 - **Honestidad:** si una parte de la pregunta no se pudo usar, se dice; las preguntas ajenas a los datos se reconocen como tales.
+
+## Simulación de analistas (cómo se mide que responde bien)
+`python simulacion_analistas.py --escribir` simula un equipo de analistas (ventas, tendencias, clientes, productos, stock, logística, finanzas, operación y ventanas de tiempo):
+- **187 preguntas base** con la intención esperada de cada una (acción, métrica, agrupación, filtros, período). La ronda 2 (65 de ellas) son redacciones coloquiales escritas sin mirar las reglas.
+- De ahí se generan **948 preguntas distintas** (otros períodos, clientes, productos, bodegas, forma de escribir, mayúsculas, sin tildes, errores de tipeo en modelos) y todas pasan por el asistente.
+- Se mide si entendió lo esperado y, en 171 preguntas simples, si la **cifra** coincide con un cálculo directo sobre los datos.
+- Resultados en `simulacion/`: `preguntas_semilla.csv`, `respuestas.csv` (cada pregunta con su respuesta) e `INFORME.md`.
+- Primera pasada de la ronda a ciegas: 72,1 % de comprensión; tras ampliar el vocabulario: 100 % (con 8 semillas aleatorias distintas: entre 99,5 % y 100 %). Es una medida sobre datos de ejemplo y frases escritas por mí: sirve para no retroceder, no garantiza el mismo resultado con las frases reales de tu equipo (por eso existe `/api/chat/aprendizaje`).

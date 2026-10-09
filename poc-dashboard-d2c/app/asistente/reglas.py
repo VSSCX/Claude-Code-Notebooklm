@@ -79,6 +79,10 @@ def _periodo(X: Texto, hoy: pd.Timestamp, avisos: list | None = None) -> dict:
     elif (m := X.buscar(r"\bhace\s+(\d{1,3})\s+dias?\b")):
         d = _dia(hoy - timedelta(days=int(m.group(1))))
         p.update(periodo="rango", desde=d, hasta=d)
+    elif X.hay(r"\b(?:este|del|el|en el)\s+ano\b|\bytd\b|\bacumulado\b|\bdesde enero\b") and X.hay(r"\bhasta hoy\b|\bal dia de hoy\b|\bhasta la fecha\b"):
+        X.buscar(r"\b(?:este|del|el|en el)\s+ano\b|\bytd\b|\bacumulado\b|\bdesde enero\b")
+        X.buscar(r"\bhasta hoy\b|\bal dia de hoy\b|\bhasta la fecha\b")
+        p.update(periodo="rango", desde=_dia(pd.Timestamp(hoy.year, 1, 1)), hasta=_dia(hoy))
     elif X.buscar(r"\bhoy\b"):
         p["periodo"] = "hoy"
     elif X.buscar(r"\bayer\b"):
@@ -207,6 +211,14 @@ def _agrupacion(X: Texto, plan: dict) -> None:
         if X.hay(r"\b(?:que|cual|quien)\b") and not X.hay(r"\b(?:" + m.group(1) + r")(?:es|s)\b"):
             plan["top"] = plan["top"] or 1
         plan["_super"] = True
+    elif X.buscar(L.P_QUIEN_MAS):
+        plan.update(agrupar="cliente", orden="desc", top=plan["top"] or (5 if X.hay(r"\bmejores\b|\bquienes\b") else 1))
+        plan["_super"] = True
+    elif (m := X.buscar(L.P_LO_MAS_VENDIDO)):
+        plan["agrupar"] = "producto"
+        plan["orden"] = "asc" if re.search(r"menos|casi no|poco", m.group(0)) else "desc"
+        if re.search(r"estrella", m.group(0)):
+            plan["top"] = plan["top"] or 5
     elif X.buscar(L.P_EVOLUCION):
         plan["agrupar"] = "dia"
     elif X.buscar(L.P_MENSUAL):
@@ -316,7 +328,7 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
     elif plan["agrupar"] == "semana" and not per:
         plan["periodo"] = "ultimos"
         plan["dias"] = 84
-    if plan["comparar"] and (m := re.search(r"(?:compar\w*|vs|versus|contra|respecto (?:a|al|del|de la))\s+(?:\w+\s+){0,4}?(?:el|la)\s+(mes|semana)\s+(?:pasad[oa]|anterior)", X.t)):
+    if plan["comparar"] and (m := re.search(r"(?:\bcon|\bvs|\bversus|\bcontra|respecto (?:a|al|del|de la))\s+(?:el|la)\s+(mes|semana)\s+(?:pasad[oa]|anterior)", X.t)) and X.hay(L.P_COMPARAR):
         if plan["periodo"] in ("mes_anterior", "semana_anterior"):          # "comparar ventas con el mes pasado" = este mes contra el pasado
             plan["periodo"] = "mes" if m.group(1) == "mes" else "semana"
     quitar = {"pct_integracion": "integrado", "pct_pendiente": "pendiente"}.get(plan["metrica"])
@@ -356,8 +368,10 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
     # accion
     sin_pedidos = not X.hay(r"\b(pedidos?|ordenes)\b")
     stock_cue = (X.hay(L.P_STOCK) or X.hay(L.P_STOCK_POCO) or X.hay(L.P_STOCK_COB)) and sin_pedidos
-    listar = (X.hay(L.P_LISTAR) or bool(grande)) and (X.hay(L.P_ENTIDAD_LISTA) or bool(grande)) and not X.hay(L.P_CONTAR) and not plan["agrupar"]
-    if X.hay(L.P_AYUDA) or (X.hay(L.P_SALUDO) and not expl):
+    listar = (X.hay(L.P_LISTAR) or bool(grande)) and (X.hay(L.P_ENTIDAD_LISTA) or bool(grande)) and not X.hay(L.P_CONTAR) and not plan["agrupar"] \
+        and (plan["metrica"] in (None, "pedidos") or bool(grande) or X.hay(r"\bproductos?\b|\bqty\b|\bcant\w*|\bdetalle\b|\blistado\b|\blista\b"))             # "dime el monto de pedidos pendientes" es una cifra, no una lista
+    saludo_solo = X.hay(L.P_SALUDO) and not expl and len(X.tok) <= 4 and not (X.hay(L.P_STOCK) or X.hay(L.P_STOCK_COB) or X.hay(L.P_ALERTAS) or X.hay(L.P_RESUMEN))
+    if X.hay(L.P_AYUDA) or saludo_solo:
         plan["accion"] = "ayuda"
     elif X.hay(L.P_INFO):
         plan["accion"] = "info"
@@ -372,7 +386,7 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
         plan["accion"] = "stock"
         plan["stock_modo"] = ("poco" if X.hay(L.P_STOCK_POCO) else "cobertura" if X.hay(L.P_STOCK_COB) else "todo" if X.hay(L.P_STOCK_TODO)
                               else "sin" if X.hay(L.P_STOCK_SIN) else None)
-    elif X.hay(L.P_ALERTAS) and not {"estado", "metrica", "agrupar", "producto"} & expl:
+    elif X.hay(L.P_ALERTAS) and not {"estado", "agrupar", "producto"} & expl:
         plan["accion"] = "alertas"
     elif X.hay(L.P_RESUMEN) and not {"agrupar", "metrica", "producto"} & expl and not plan["estado"]:
         plan["accion"] = "resumen"
@@ -381,6 +395,18 @@ def planificar(q: str, dim: pd.DataFrame, hoy: pd.Timestamp, previo: dict | None
         plan["accion"] = "listar"
     elif expl:
         plan["accion"] = "medir"
+    if plan["accion"] == "stock":
+        plan["stock_modo"] = plan["stock_modo"] or ("sin" if not (plan["producto"] or plan["sku"]) else None)
+        pats = (L.P_STOCK_POCO, L.P_STOCK_COB, L.P_STOCK_TODO, L.P_STOCK_SIN, L.P_STOCK)
+    elif plan["accion"] == "alertas":
+        pats = (L.P_ALERTAS,)
+    elif plan["accion"] == "resumen":
+        pats = (L.P_RESUMEN,)
+    else:
+        pats = ()
+    for pat in pats:                                                      # las palabras que activaron la accion no son "sobrantes"
+        for m in re.finditer(pat, X.t):
+            X.marcar(m.start(), m.end())
     if plan["accion"]:
         expl.add("accion")
     ban["entendio"] = bool(plan["accion"])

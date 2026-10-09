@@ -7,6 +7,7 @@ Las palabras de la pregunta que NO son del catalogo se ignoran (y se avisa); un 
 from __future__ import annotations
 
 import difflib
+import re
 
 import pandas as pd
 
@@ -29,6 +30,12 @@ class Catalogo:
         self.palabras = {s: set(tokens(b)) for s, b in busca.items()}
         self.vocab = sorted(set().union(*self.palabras.values())) if self.palabras else []
         self._vset = set(self.vocab)
+        cod = set()
+        for b in busca.values():                                # "MED 165B" -> med165b (letras + numero pegados), y los tokens que ya son un modelo
+            tk = tokens(b)
+            cod.update(t for t in tk if es_modelo(t))
+            cod.update(a + n for a, n in zip(tk, tk[1:]) if a.isalpha() and len(a) <= 4 and n[:1].isdigit())
+        self.codigos = sorted(cod)
 
     def _en(self, sku: str, tok: str) -> bool:
         return any(v in self.palabras[sku] or v in self.comp[sku] for v in variantes(tok))
@@ -45,6 +52,13 @@ class Catalogo:
                 if cerca:
                     prod.append(cerca[0])
                     corr[t] = cerca[0]
+                    continue
+            if es_modelo(t) and len(t) >= 5:                      # codigo de modelo con una letra de mas o de menos: med65b -> med165b
+                cand = [v for v in self.codigos if abs(len(v) - len(t)) <= 1]
+                ranking = sorted(((difflib.SequenceMatcher(None, t, v).ratio(), v) for v in cand), reverse=True)
+                if ranking and ranking[0][0] >= .85 and (len(ranking) == 1 or ranking[0][0] - ranking[1][0] >= .04):
+                    prod.append(ranking[0][1])
+                    corr[t] = ranking[0][1]
                     continue
             (desconocidos if es_modelo(t) else ign).append(t)
         return prod, corr, ign, desconocidos
