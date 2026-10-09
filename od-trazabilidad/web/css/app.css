@@ -770,3 +770,31 @@ input[type=datetime-local]{min-height:32px;background:var(--paper);border:1px so
 .horizonte{position:fixed;left:0;right:0;bottom:0;height:24vh;pointer-events:none;color:var(--ink);opacity:.07;overflow:hidden}
 .horizonte svg{display:block;width:100%;height:100%}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .horizonte{opacity:.1}}
+
+/* ---------- Juntar pedidos (multipedido) ---------- */
+.olist.juntando li.con-sel{display:grid;grid-template-columns:38px minmax(0,1fr);align-items:stretch}
+.jchk{display:flex;align-items:center;justify-content:center;cursor:pointer;border-right:1px solid var(--hair);background:var(--paper-2)}
+.jchk input{width:18px;height:18px;margin:0}
+.jchk:has(input:disabled){cursor:not-allowed;opacity:.55}
+.juntar-bar{position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;padding:10px 12px;border-top:2px solid var(--ink);background:var(--paper);animation:fl-in 160ms var(--ease-out)}
+.juntar-bar .small{flex:1 1 180px;min-width:0}
+.cj-pasos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--ink);border-radius:var(--r);overflow:hidden}
+.cj-paso{display:flex;align-items:center;gap:8px;padding:8px 10px;font-weight:600;font-size:var(--t-sm);color:var(--muted);background:var(--paper);border-right:1px solid var(--hair)}
+.cj-paso:last-child{border-right:0}
+.cj-paso i{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--edge);font-style:normal;font-size:11px;font-weight:700}
+.cj-paso.ok{background:var(--ink);color:var(--paper)}
+.cj-paso.ok i{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+.cj-paso.ok svg{width:12px;height:12px;stroke-width:2.5}
+@media (max-width:640px){.cj-pasos{grid-template-columns:minmax(0,1fr)}.cj-paso{border-right:0;border-bottom:1px solid var(--hair)}}
+
+/* ---------- Cabecera del pedido: un título con su contexto y una sola barra de acciones ---------- */
+.lab-sub{margin:4px 0 0;color:var(--ink-2);font-size:var(--t-sm);font-weight:550}
+.menu-acc{position:relative}
+.menu-acc > summary{list-style:none;cursor:pointer}
+.menu-acc > summary::-webkit-details-marker{display:none}
+.menu-acc[open] > summary{background:var(--paper-3);border-color:var(--ink)}
+.menu-acc-lista{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:230px;background:var(--paper);border:1px solid var(--ink);border-radius:var(--r);box-shadow:var(--shadow);padding:4px;display:flex;flex-direction:column;transform-origin:top right;animation:menu-in 140ms var(--ease-out)}
+.menu-acc-lista > *{all:unset;box-sizing:border-box;display:block;padding:8px 10px;border-radius:var(--r);cursor:pointer;font-weight:550;color:var(--ink)}
+.menu-acc-lista > *:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.menu-acc-lista > [disabled]{opacity:.45;cursor:not-allowed}
+@media (hover:hover) and (pointer:fine){.menu-acc-lista > *:not([disabled]):hover{background:var(--paper-2)}}

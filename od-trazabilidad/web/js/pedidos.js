@@ -38,9 +38,11 @@ function vistaPedidos(){
   if (UI.sel && !Store.get('pedidos', UI.sel)) UI.sel = null;
   if (!UI.sel && peds.length && window.innerWidth > 960) UI.sel = safeId(peds[0].pedido);
 
-  const lista = peds.length ? `<ul class="olist">${peds.map(p => {
+  const lista = peds.length ? `<ul class="olist ${UI.juntar ? 'juntando' : ''}">${peds.map(p => {
       const {tot} = resumen(p); const id = safeId(p.pedido); const nx = proximaAccion(p);
-      return `<li data-k="p-${esc(id)}"><button class="orow" data-sel="${esc(id)}" aria-current="${UI.sel === id}">
+      const casilla = UI.juntar ? `<label class="jchk" title="${esc(puedeJuntar(p) ? 'Cubicar junto con otros pedidos' : 'Solo se juntan pedidos ya analizados')}">
+        <input type="checkbox" data-jsel="${esc(id)}" ${UI.juntarSel.has(id) ? 'checked' : ''} ${puedeJuntar(p) ? '' : 'disabled'} aria-label="Juntar el pedido ${esc(p.pedido)}"></label>` : '';
+      return `<li data-k="p-${esc(id)}" class="${UI.juntar ? 'con-sel' : ''}">${casilla}<button class="orow" data-sel="${esc(id)}" aria-current="${UI.sel === id && !UI.verConjunto}">
         <span class="o-1"><span class="o-num">${esc(p.pedido)}</span><span class="o-cli">${esc(p.cliente || 'Sin cliente')}</span><span class="o-pct" data-flash>${pct(tot.agendado + tot.entregado, tot.pedida)}</span></span>
         <span class="o-2 block">OC <span class="code">${esc(p.oc || '—')}</span> · <span class="num">${fmt(tot.pedida)}</span> un.${tot.pendiente ? ` · <span class="num">${fmt(tot.pendiente)}</span> por suministrar` : ''}</span>
         ${barHTML(tot)}
@@ -55,12 +57,139 @@ function vistaPedidos(){
           <button class="btn sm" data-act="nuevoPedido">${ICON.plus} Cargar a mano</button></div>
         <div class="row">${filtroCliente()}
           <label class="chk"><input type="checkbox" data-abiertos ${UI.soloAbiertos ? 'checked' : ''}> Ocultar cerrados</label></div>
+        <div class="row tight" style="width:100%"><button class="btn sm" data-act="juntarModo" aria-pressed="${UI.juntar}" title="Marca varios pedidos analizados para cubicarlos juntos en los mismos camiones (los conchos de uno viajan con otro)">${ICON.cube} ${UI.juntar ? 'Terminar de juntar' : 'Juntar pedidos'}</button>
+          ${UI.conjunto && !UI.verConjunto ? `<button class="btn quiet sm" data-act="verConjunto">Volver al cubicaje conjunto</button>` : ''}</div>
       </div>
       ${lista}
+      ${UI.juntar ? barraJuntar(todos) : ''}
     </section>
-    <section aria-label="Detalle del pedido">${UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
+    <section aria-label="Detalle del pedido">${UI.verConjunto && UI.conjunto ? vistaConjunto() : UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
   </div>`;
 }
+
+/* ---- Juntar pedidos: cubicar varios en los mismos camiones (multipedido del Excel) ---- */
+const puedeJuntar = p => { const f = flujoDe(p); return f.enPlataforma && !f.desact; };
+function seleccionJuntar(todos){
+  const ps = [...UI.juntarSel].map(id => Store.get('pedidos', id)).filter(Boolean);
+  const clientes_ = [...new Set(ps.map(p => (p.cliente || '').trim().toUpperCase()))];
+  return {ps, mismoCliente: clientes_.length <= 1, clientes: clientes_};
+}
+function barraJuntar(todos){
+  const {ps, mismoCliente, clientes: cs} = seleccionJuntar(todos);
+  const listo = ps.length >= 2 && mismoCliente && !UI.conjuntoCargando;
+  const msg = !ps.length ? 'Marca los pedidos que viajarán juntos.'
+    : ps.length === 1 ? 'Marca al menos otro pedido más.'
+    : !mismoCliente ? `Son de clientes distintos (${cs.map(c => c || 'sin cliente').join(', ')}): para juntarlos deben ser del mismo cliente.`
+    : `${ps.length} pedidos · ${fmt(ps.reduce((a, p) => a + resumen(p).tot.pedida, 0))} un. solicitadas`;
+  return `<div class="juntar-bar" role="region" aria-label="Juntar pedidos">
+    <span class="small ${!mismoCliente ? 'warn-t' : ''}" aria-live="polite">${esc(msg)}</span>
+    <button class="btn primary sm" data-act="cubicarJuntos" ${listo ? '' : 'disabled'}>${UI.conjuntoCargando ? 'Cubicando…' : 'Cubicar juntos'}</button></div>`;
+}
+async function cubicarJuntos(){
+  const ids = UI.verConjunto && UI.conjunto ? [...UI.conjunto.conjunto.pedidos] : [...UI.juntarSel];
+  if (ids.length < 2) return;
+  UI.conjuntoCargando = true; render();
+  const opciones = {};
+  for (const [k, v] of Object.entries(UI.conjOpts || {})) if (v) opciones[k] = v;
+  try {
+    UI.conjunto = await api('POST', '/cubicaje-conjunto', {pedidos: ids, ...opciones});
+    UI.verConjunto = true;
+    ids.forEach(id => { delete UI.cubicaje[id]; UI.autoCub[id] = true; });
+    await Store.refresh();
+  } catch(e){ Avisos.agregar('error', 'No se pudieron cubicar juntos', e.message); }
+  UI.conjuntoCargando = false; render();
+}
+async function abrirConjuntoDe(cid){
+  try { UI.conjunto = await api('GET', '/cubicaje-conjunto/' + encodeURIComponent(cid)); UI.verConjunto = true; render(); }
+  catch(e){ toast(e.message); }
+}
+const entregasDelConjunto = cid => Store.list('entregas').filter(e => !e.anulada && (e.camion_ref || '').startsWith(cid + '-'));
+function vistaConjunto(){
+  const d = UI.conjunto, cid = d.conjunto.id, peds = d.conjunto.pedidos;
+  const ents = entregasDelConjunto(cid);
+  const camiones = d.camiones.map(c => {
+    const filas = d.filas.filter(f => f.camion === c.numero);
+    const porPed = {}; filas.forEach(f => { porPed[f.pedido] = (porPed[f.pedido] || 0) + f.unidades; });
+    const dePed = ents.filter(e => e.camion_ref === `${cid}-${c.numero}`);
+    const faltan = Object.keys(porPed).filter(n => !dePed.some(e => e.pedido === n));
+    const grupo = dePed.length && dePed.every(e => e.grupo) ? [...new Set(dePed.map(e => e.grupo))].join(', ') : '';
+    const ocup = filas.length ? filas[filas.length - 1].ocup_acum : 0;
+    return {c, filas, porPed, dePed, faltan, grupo, ocup};
+  });
+  const faltanEnt = camiones.reduce((a, x) => a + x.faltan.length, 0), totalEnt = camiones.reduce((a, x) => a + Object.keys(x.porPed).length, 0);
+  const sinGrupo = camiones.filter(x => !x.faltan.length && x.dePed.length && !x.grupo);
+  const modos = ['MDA', 'MDA PREDISTRIBUIDO', 'SDA STOCK', 'SDA PREDISTRIBUIDO'];
+  const o = UI.conjOpts = UI.conjOpts || {modo: d.modo, caja_master: d.caja_master || '', piso_pallet: d.piso_pallet || ''};
+  const sel3 = (attr, opciones, valor) => `<select ${attr}>${opciones.map(x => `<option value="${esc(x.v)}" ${x.v === valor ? 'selected' : ''}>${esc(x.t)}</option>`).join('')}</select>`;
+  const paso = (n, txt, hecho) => `<span class="cj-paso ${hecho ? 'ok' : ''}"><i>${hecho ? ICON.check : n}</i>${txt}</span>`;
+  return `<div class="label" data-k="conjunto">
+    <div class="label-top"><div style="min-width:0;flex:1">
+      <h2 class="lab-num"><span class="lab-pre">Cubicaje conjunto</span> ${peds.length} pedidos</h2>
+      <p class="small muted" style="margin:4px 0 0">${esc(d.cliente || '')} · ${esc(d.modo)} · ${d.camiones.length} camión(es) · ${fmt(d.unidades)} un.</p></div>
+      <div class="label-act"><button class="btn sm" data-act="salirConjunto">Volver a los pedidos</button></div></div>
+    <div class="cells">${peds.map(n => `<div class="cell"><span class="cap">Pedido</span><button class="enlace" data-sel="${esc(safeId(n))}" data-salir-conj style="font-size:var(--t-md);margin:0">${esc(n)}</button>
+      <span class="small muted num">${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span></div>`).join('')}</div>
+    <div class="label-flujo"><div class="cj-pasos" role="list" aria-label="Pasos del cubicaje conjunto">
+      ${paso(1, 'Cubicar juntos', true)}${paso(2, `Entregas ${totalEnt - faltanEnt} de ${totalEnt}`, totalEnt > 0 && !faltanEnt)}${paso(3, `Grupos ${camiones.length - sinGrupo.length - camiones.filter(x => x.faltan.length).length} de ${camiones.length}`, camiones.every(x => x.grupo))}</div></div>
+    <div class="label-foot">
+      ${faltanEnt ? `<button class="btn quiet sm" data-act="entregasConjunto" data-ensayo="1" title="Recorre VL01N sin guardar">Ensayo en SAP</button>
+        <button class="btn primary sm" data-act="entregasConjunto">Crear ${faltanEnt === totalEnt ? '' : 'las que faltan: '}${faltanEnt} entrega(s) en SAP</button>` : ''}
+      ${!faltanEnt && sinGrupo.length ? `<button class="btn primary sm" data-act="gruposConjunto">Crear ${sinGrupo.length} grupo(s) en SAP</button>` : ''}
+      <span class="spacer"></span><span class="small muted">Una entrega por camión y pedido; un grupo por camión.</span></div>
+    ${estadoJob()}
+  </div>
+  ${(d.avisos || []).map(a => `<p class="small" style="margin:10px 0 0"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
+  <div class="panel" style="margin-top:16px"><div class="panel-h"><h3>Camiones</h3><span class="spacer"></span><span class="small muted">Cada camión puede llevar carga de varios pedidos</span></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Camión</th><th>Vehículo</th><th>Pedidos que lleva</th><th class="n">Unidades</th><th class="n">Ocupación</th><th>Entregas</th><th>Grupo</th></tr></thead><tbody>
+    ${camiones.map(x => `<tr><td><b>${x.c.numero}</b></td><td>${esc(x.c.tipo)}</td>
+      <td>${Object.entries(x.porPed).map(([n, u]) => `<span class="tag ${Object.keys(x.porPed).length > 1 ? 'info' : ''}">${esc(n)} · ${fmt(u)}</span>`).join(' ')}</td>
+      <td class="n">${fmt(x.filas.reduce((a, f) => a + f.unidades, 0))}</td><td class="n">${pctCub(x.ocup)}</td>
+      <td>${x.faltan.length ? `<span class="tag warn">Faltan ${x.faltan.length}</span>` : x.dePed.length ? `<span class="tag ok">${x.dePed.map(e => esc(e.entrega)).join(' · ')}</span>` : ''}</td>
+      <td>${x.grupo ? `<span class="tag ok code">${esc(x.grupo)}</span>` : x.dePed.length && !x.faltan.length ? '<span class="tag warn">Por crear</span>' : '—'}</td></tr>`).join('')}
+    </tbody></table></div></div>
+  ${d.visor ? `<div class="visor-caja" style="margin-top:16px;min-height:480px"><iframe title="Visor 3D del cubicaje conjunto" src="${esc(d.visor)}"></iframe></div>` : ''}
+  <div class="row" style="gap:12px;align-items:flex-end;margin-top:16px">
+    <label class="f">Modo${sel3('data-conjmodo', modos.map(m => ({v: m, t: m})), o.modo)}</label>
+    <label class="f">Caja master${sel3('data-conjcm', [{v: '', t: ''}, {v: 'CON CAJA MASTER', t: 'CON CAJA MASTER'}, {v: 'SIN CAJA MASTER', t: 'SIN CAJA MASTER'}], o.caja_master)}</label>
+    <label class="f">Piso / pallet${sel3('data-conjpiso', [{v: '', t: 'Default del modo'}, {v: 'PISO', t: 'PISO'}, {v: 'PALLET', t: 'PALLET'}], o.piso_pallet)}</label>
+    <button class="btn" data-act="cubicarJuntos" ${ents.length ? 'disabled title="Ya hay entregas creadas: volver a cubicar cambiaría los camiones"' : ''}>Volver a cubicar juntos</button></div>`;
+}
+async function entregasConjunto(ensayo){
+  const d = UI.conjunto, cid = d.conjunto.id;
+  const ents = entregasDelConjunto(cid);
+  for (const n of d.conjunto.pedidos){
+    const camiones = [...new Set(d.filas.filter(f => f.pedido === n).map(f => f.camion))]
+      .filter(cam => ensayo || !ents.some(e => e.pedido === n && e.camion_ref === `${cid}-${cam}`));
+    if (!camiones.length) continue;
+    try { UI.job = await api('POST', '/sap/crear_entregas', {pedido: n, camiones, ensayo: !!ensayo}); render(); }
+    catch(e){ return Avisos.agregar('error', `No se pudo empezar con el pedido ${n}`, e.message); }
+    await seguirJob();
+    if (!UI.job || UI.job.estado !== 'ok'){
+      return Avisos.agregar('error', `Se detuvo en el pedido ${n}`, (UI.job && UI.job.error) || '', ['Las entregas ya creadas quedan guardadas: puedes seguir con las que faltan.']);
+    }
+    if (!ensayo) await Store.refresh();
+  }
+  Avisos.agregar('ok', ensayo ? 'Ensayo de las entregas terminado' : 'Entregas creadas en SAP',
+    ensayo ? 'Se recorrió VL01N sin guardar. Revisa la pantalla de SAP.' : `${d.conjunto.pedidos.length} pedidos. Ahora crea los grupos: uno por camión.`);
+  render();
+}
+async function gruposConjunto(){
+  const d = UI.conjunto, cid = d.conjunto.id;
+  const camiones = [...new Set(entregasDelConjunto(cid).map(e => e.camion_ref))].sort();
+  for (const ref of camiones){
+    const es = entregasDelConjunto(cid).filter(e => e.camion_ref === ref);
+    if (es.every(e => e.grupo)) continue;
+    await crearGrupoSap(es.map(e => e.entrega), false, ref.split('-').pop(), d.cliente);
+    if (!UI.job || UI.job.estado !== 'ok') return;            // ante el primer problema se detiene (el aviso ya salió)
+  }
+}
+document.addEventListener('change', ev => {
+  const el = ev.target; if (!el.matches) return;
+  if (el.matches('[data-jsel]')){ el.checked ? UI.juntarSel.add(el.dataset.jsel) : UI.juntarSel.delete(el.dataset.jsel); render(); }
+  else if (el.matches('[data-conjmodo]')){ (UI.conjOpts = UI.conjOpts || {}).modo = el.value; }
+  else if (el.matches('[data-conjcm]')){ (UI.conjOpts = UI.conjOpts || {}).caja_master = el.value; }
+  else if (el.matches('[data-conjpiso]')){ (UI.conjOpts = UI.conjOpts || {}).piso_pallet = el.value; }
+});
 
 const TABS_PEDIDO = [['analisis', 'Análisis'], ['cubicaje', 'Cubicador'], ['entregas', 'Entregas'], ['grupos', 'Grupos'], ['pendientes', 'Pendientes']];
 
@@ -116,18 +245,24 @@ function detallePedido(p){
   const cuenta = {entregas: activas.length, grupos: gs.length, pendientes: tot.pendiente ? fmt(tot.pendiente) + ' un.' : ''};
   const enCurso = UI.job && UI.job.estado === 'en_curso';
   const celda = (cap, val, extra = '') => `<div class="cell ${extra}"><span class="cap">${cap}</span><span class="val">${val}</span></div>`;
+  const sub = [p.cliente || 'Sin cliente', `OC ${p.oc || '—'}`, p.canal, p.fechaOC ? `recibido ${fmtFecha(p.fechaOC)}` : ''].filter(Boolean);
   return `<div class="label" data-k="label-${esc(safeId(p.pedido))}">
     <div class="label-top">
-      <h2 class="lab-num"><span class="lab-pre">Pedido</span> ${esc(p.pedido)}</h2>
-      <div class="label-act"><button class="btn sm" data-act="editarPedido">Editar pedido</button>
-        <a class="btn sm" href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel con la OC, los productos (pendiente, entrega, stock y próxima liberación) y el detalle de entregas">${ICON.file} Exportar análisis</a>
-        <button class="btn primary sm" data-act="nuevaEntrega">${ICON.plus} Nueva entrega</button></div>
+      <div style="min-width:0;flex:1">
+        <h2 class="lab-num"><span class="lab-pre">Pedido</span> ${esc(p.pedido)}</h2>
+        <p class="lab-sub">${sub.map((x, i) => i === 1 ? `<span class="code">${esc(x)}</span>` : esc(x)).join('<span aria-hidden="true"> · </span>')}</p></div>
+      <div class="label-act">
+        ${flujo.sig ? `<button class="btn primary sm" data-flujo="${flujo.sig.k}" title="Siguiente paso del pedido">${esc(FLUJO_ACCION[flujo.sig.k])}</button>` : ''}
+        <details class="menu-acc"><summary class="btn sm" aria-label="Más acciones del pedido">Acciones ${ICON.chevron}</summary>
+          <div class="menu-acc-lista" role="menu">
+            <button role="menuitem" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar en SAP' : 'Analizar en SAP'}</button>
+            <button role="menuitem" data-act="nuevaEntrega">Nueva entrega</button>
+            <button role="menuitem" data-act="editarPedido">Editar pedido</button>
+            <a role="menuitem" href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel con la OC, los productos (pendiente, entrega, stock y próxima liberación) y el detalle de entregas">Exportar análisis a Excel</a>
+          </div></details></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
     </div>
     <div class="cells">
-      ${celda('Cliente', esc(p.cliente || '—'))}${celda('OC', `<span class="code">${esc(p.oc || '—')}</span>`)}${celda('Canal', esc(p.canal || '—'))}${p.fechaOC ? celda('Recibido', fmtFecha(p.fechaOC)) : ''}
-    </div>
-    <div class="cells" style="border-top:1px solid var(--hair)">
       ${celda('Solicitado', fmt(tot.pedida))}${celda('En entrega', fmt(tot.enEntrega))}${celda('Pendiente', fmt(tot.pendiente))}
       ${celda('Agendado', pct(tot.agendado + tot.entregado, tot.pedida))}${celda('Entregado', fmt(tot.entregado))}
       ${tot.externa ? celda('Otras entregas SAP', fmt(tot.externa)) : ''}${tot.exceso ? celda('Exceso en entregas', fmt(tot.exceso), 'alert') : ''}
@@ -136,11 +271,6 @@ function detallePedido(p){
       <div class="legend" style="margin-top:8px"><span><span class="sw s-ent"></span>Entregado</span><span><span class="sw s-age"></span>Agendado</span><span><span class="sw s-sin"></span>Sin cita</span><span><span class="sw s-pen"></span>Pendiente</span></div></div>
     ${p.obs ? `<p class="label-obs small">${esc(p.obs)}</p>` : ''}
     <div class="label-flujo">${flujoHTML(flujo)}</div>
-    <div class="label-foot">
-      <button class="btn sm" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar' : 'Analizar pedido'}</button>
-      <span class="spacer"></span>
-      ${flujo.sig ? `<button class="btn primary sm" data-flujo="${flujo.sig.k}">${esc(FLUJO_ACCION[flujo.sig.k])}</button>` : ''}
-    </div>
     ${estadoJob()}
     <div class="label-files">${listaArchivos(p.pedido, '')}</div>
   </div>
@@ -360,7 +490,10 @@ function vistaCubicaje(p){
     ...(cb.no_encontrados || []).map(x => `<span class="tag err">Sin descripción: ${esc(x)}</span>`),
     ...Object.entries(cb.sin_ubicar || {}).map(([k, v]) => `<span class="tag err">No cupo: ${esc(k)} (${fmt(v)})</span>`),
   ].join(' ');
-  return `<div class="row" style="margin-bottom:10px">
+  const banner = cb.conjunto ? `<div class="aviso info"><div class="aviso-cuerpo"><b>Cubicado junto con ${cb.conjunto.pedidos.filter(x => x !== p.pedido).map(esc).join(', ')}.</b>
+      <span class="small">Los camiones se comparten: aquí ves solo la parte de este pedido. Las entregas y los grupos se crean desde el cubicaje conjunto.</span></div>
+      <button class="btn sm" data-act="verConjunto" data-cid="${esc(cb.conjunto.id)}">Abrir cubicaje conjunto</button></div>` : '';
+  return banner + `<div class="row" style="margin-bottom:10px">
       <div class="small muted">Cubicaje ${esc(cb.modo)} del ${fmtFecha(cb.generado)} · pallet del cliente ${cb.pallet.join(' × ')} cm</div>
       <span class="spacer"></span>
       ${cb.visor ? `<button class="btn sm" data-act="ensayoEntregas" title="Recorre VL01N sin guardar, para revisar antes de crear">Ensayo en SAP</button>
@@ -392,3 +525,8 @@ function vistaCubicaje(p){
 }
 
 function descDe(ped, sku){ const p = Store.get('pedidos', safeId(ped)); const l = p && (p.lineas || []).find(x => normSku(x.sku) === normSku(sku)); return l ? l.desc : ''; }
+
+/* El menú de acciones del pedido se cierra al elegir algo o al tocar fuera */
+document.addEventListener('click', ev => {
+  document.querySelectorAll('.menu-acc[open]').forEach(d => { if (!d.contains(ev.target) || ev.target.closest('.menu-acc-lista > *')) d.open = false; });
+});

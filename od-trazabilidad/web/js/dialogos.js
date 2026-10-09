@@ -269,11 +269,11 @@ async function crearEntregasSap(pedido, ensayo){
   } else if (UI.job) Avisos.agregar('error', 'No se pudieron crear las entregas', UI.job.error || '');
   render();
 }
-async function crearGrupoSap(entregas, ensayo, camion){
+async function crearGrupoSap(entregas, ensayo, camion, clienteDe){
   if (!entregas.length) return toast('No hay entregas para agrupar');
   const p = Store.get('pedidos', UI.sel) || {};
   try { UI.job = await api('POST', '/sap/crear_grupo',
-      {entregas, ensayo, camion: camion || '1', cliente: p.cliente || ''}); render(); }
+      {entregas, ensayo, camion: camion || '1', cliente: clienteDe || p.cliente || ''}); render(); }
   catch(e){ return toast(e.message); }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok'){
@@ -385,7 +385,7 @@ document.addEventListener('click', ev => {
     const campo = dlg.querySelector('[name="lsPedido"]'); if (campo) campo.value = t.dataset.ocPedido;
     mostrarPedidosSap(`<ul class="oc-lista">${t.closest('li').outerHTML}</ul>`); dErr(''); return;
   }
-  if (t.dataset.sel){ UI.sel = t.dataset.sel; const ps = Store.get('pedidos', t.dataset.sel); UI.sub = ps ? flujoDe(ps).tabSig : 'analisis'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
+  if (t.dataset.sel){ UI.verConjunto = false; UI.sel = t.dataset.sel; const ps = Store.get('pedidos', t.dataset.sel); UI.sub = ps ? flujoDe(ps).tabSig : 'analisis'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
   if (t.dataset.sub){ cambiarSub(t.dataset.sub); return; }
   if (t.closest && t.closest('[data-ajustes]')) UI.verAjustes = true;   // no se cierra al recalcular
   if (t.dataset.cerrarAviso){ Avisos.cerrar(t.dataset.cerrarAviso); return; }
@@ -440,6 +440,12 @@ document.addEventListener('click', ev => {
     case 'abrirAnalisis': abrirLecturaSap('analizar'); break;
     case 'cambiarUsuario': pedirSesion(true); break;
     case 'guardarCamiones': guardarCamiones(false); break;
+    case 'juntarModo': UI.juntar = !UI.juntar; if (!UI.juntar){ UI.juntarSel.clear(); } render(); break;
+    case 'cubicarJuntos': cubicarJuntos(); break;
+    case 'verConjunto': if (t.dataset.cid) abrirConjuntoDe(t.dataset.cid); else { UI.verConjunto = true; render(); } break;
+    case 'salirConjunto': UI.verConjunto = false; render(); break;
+    case 'entregasConjunto': entregasConjunto(!!t.dataset.ensayo); break;
+    case 'gruposConjunto': gruposConjunto(); break;
     case 'restablecerCamiones': guardarCamiones(true); break;
     case 'verVisorCub': UI.verVisorCub = !UI.verVisorCub; render(); break;
     case 'verPredist': UI.verPredist = !UI.verPredist; render(); break;

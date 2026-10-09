@@ -288,7 +288,8 @@ function calcularGrupos(){
   const m = new Map();
   for (const e of Store.list('entregas')){
     if (e.anulada) continue;
-    const key = e.grupo ? 'G' + e.grupo : 'E' + e.entrega;
+    // las entregas de un camión compartido entre pedidos (cubicaje conjunto) forman un solo grupo aunque aún no tengan número
+    const key = e.grupo ? 'G' + e.grupo : e.camion_ref ? 'C' + e.camion_ref : 'E' + e.entrega;
     const g = m.get(key) || {key, grupo:e.grupo || '', sinGrupo:!e.grupo, entregas:[]};
     g.entregas.push(e); m.set(key, g);
   }
@@ -334,7 +335,7 @@ async function marcarPaso(id, k, forzar){
 function addLog(e, txt){ e.log = [{at: nowISO(), txt}, ...(e.log || [])].slice(0, 40); }
 
 /* ============ Estado de UI ============ */
-const UI = { view:'pedidos', sel:null, sub:'entregas', q:'', soloAbiertos:true, cliente:'', open:new Set(),
+const UI = { juntar:false, juntarSel:new Set(), conjunto:null, verConjunto:false, conjuntoCargando:false, view:'pedidos', sel:null, sub:'entregas', q:'', soloAbiertos:true, cliente:'', open:new Set(),
   pDesde: new Date(Date.now() - 7*864e5).toISOString().slice(0,10), pHasta: '', pPorConf:true, imp:null };
 
 /* Entrada suave del contenido al cambiar de pestaña o de vista: solo opacidad y un desplazamiento mínimo (160 ms, ease-out).

@@ -539,6 +539,16 @@ def cubicar_conjunto(body: dict, s: Session = Depends(get_session)):
     return _cubicar(pedidos, {k: v for k, v in body.items() if k != "pedidos"}, s)
 
 
+@router.get("/cubicaje-conjunto/{cid}")
+def get_cubicaje_conjunto(cid: str, s: Session = Depends(get_session)):
+    import json as _json
+    from ..models import Config
+    c = s.get(Config, f"conjunto:{cid}")
+    if c is None:
+        raise HTTPException(404, "Ese cubicaje conjunto no existe: vuelve a cubicar los pedidos juntos.")
+    return _json.loads(c.valor)
+
+
 @router.get("/medidas/sugerir")
 def sugerir_medidas(q: str = "", s: Session = Depends(get_session)):
     """Autocompletar de SKU: devuelve el producto y, si existe, su caja master."""
