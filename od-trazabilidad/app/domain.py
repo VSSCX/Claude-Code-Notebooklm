@@ -75,6 +75,7 @@ def entrega_doc(e: Entrega) -> dict:
                  "hora": e.cita_hora},
         "vehiculo": e.vehiculo, "carga": e.carga, "un": e.un, "region": e.region,
         "factura": e.factura, "obs": e.obs, "anulada": e.anulada, "reprog": e.reprogramaciones,
+        "camion_ref": e.camion_ref,
         "lineas": [{"sku": l.sku, "qty": l.qty} for l in e.lineas],
         "pasos": {p.paso: {"ok": p.ok, "at": _iso(p.at)} for p in e.pasos},
         "log": [{"at": _iso(x.at), "txt": x.texto, "origen": x.origen} for x in e.eventos[:LOG_MAX]],
@@ -131,6 +132,7 @@ def estado(s: Session) -> dict:
                  "hora": r.cita_hora},
         "vehiculo": r.vehiculo, "carga": r.carga, "un": r.un, "region": r.region,
         "factura": r.factura, "obs": r.obs, "anulada": r.anulada, "reprog": r.reprogramaciones,
+        "camion_ref": r.camion_ref,
         "lineas": lineas_e.get(r.id, []), "pasos": pasos.get(r.id, {}), "log": log_e.get(r.id, []),
         "creado": _iso(r.creado), "actualizado": _iso(r.actualizado),
     } for r in s.execute(select(E))]
@@ -321,6 +323,8 @@ def guardar_entrega(s: Session, d: EntregaIn) -> Entrega:
     e.grupo, e.tipo, e.vehiculo, e.carga, e.un = d.grupo, d.tipo, d.vehiculo, d.carga, d.un
     e.region, e.factura, e.obs, e.anulada, e.reprogramaciones = d.region, d.factura, d.obs, d.anulada, d.reprog
     e.cita_numero, e.cita_fecha, e.cita_hora = d.cita.numero, d.cita.fecha, d.cita.hora
+    if d.camion_ref or nueva:                      # lo que no trae la web no borra el vínculo del camión compartido
+        e.camion_ref = d.camion_ref
     _sync_lineas_entrega(e, [(norm_sku(l.sku), l.qty) for l in d.lineas])
     for k, v in d.pasos.items():
         _set_paso(e, k, v.ok, _sin_tz(v.at))

@@ -72,6 +72,9 @@ class Entrega(Base):
     obs: Mapped[str] = mapped_column(Unicode(500), default="")
     anulada: Mapped[bool] = mapped_column(Boolean, default=False)
     reprogramaciones: Mapped[int] = mapped_column(Integer, default=0)
+    # Camión compartido entre pedidos: las entregas creadas desde un cubicaje conjunto para el mismo camión
+    # llevan la misma referencia (conjunto-camión) y se agrupan juntas en SAP.
+    camion_ref: Mapped[str] = mapped_column(Unicode(40), default="", index=True)
     creado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
 

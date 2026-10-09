@@ -73,6 +73,7 @@ class EntregaIn(_Base):
     obs: str = Field("", max_length=500)
     anulada: bool = False
     reprog: int = Field(0, ge=0)
+    camion_ref: str = Field("", max_length=40)
     lineas: list[LineaEntregaIn] = []
     pasos: dict[str, PasoIn] = {}
     log: list[LogIn] = []

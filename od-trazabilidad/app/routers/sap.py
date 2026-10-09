@@ -355,70 +355,83 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
 
 @router.post("/sap/crear_entregas", status_code=202)
 def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
-    """Crea en SAP una entrega por camión, con las cantidades del cubicaje del pedido."""
+    """Crea en SAP una entrega por camión (y por pedido), con las cantidades del cubicaje.
+    Con `pedidos` (varios, cubicados juntos) se crea una entrega por cada par (camión, pedido): los camiones se comparten
+    y cada entrega queda marcada con su camión para poder agruparlas después."""
     import json as _json
     from datetime import date as _date
     from ..integrations import sap_crear
     from ..models import Config
-    numero = str(body.get("pedido", "")).strip()
+    numeros = [str(x).strip() for x in (body.get("pedidos") or []) if str(x).strip()] or [str(body.get("pedido", "")).strip()]
     ensayo = bool(body.get("ensayo", True))
-    puesto = str(body.get("puesto", "")).strip().upper()
+    puesto_body = str(body.get("puesto", "")).strip().upper()
     camiones_pedidos = body.get("camiones") or []
-    c = s.get(Config, _clave_cubicaje(numero))
-    if c is None:
-        raise HTTPException(422, "Primero hay que cubicar el pedido.")
-    cub = _json.loads(c.valor)
-    if not puesto:
-        an = s.get(Config, _clave_analisis(numero))
-        puesto = (_json.loads(an.valor).get("puesto", "") if an else "").upper()
-    if not puesto:
-        raise HTTPException(422, "Falta el puesto de expedición (PN01, PN02…).")
-
-    # Un camión = una entrega: {camión: {sku: unidades}}
-    por_camion: dict[int, dict] = {}
-    for f in cub["filas"]:
-        if camiones_pedidos and f["camion"] not in camiones_pedidos:
-            continue
-        por_camion.setdefault(f["camion"], {})
-        por_camion[f["camion"]][f["sku"]] = por_camion[f["camion"]].get(f["sku"], 0) + f["unidades"]
-    if not por_camion:
-        raise HTTPException(422, "El cubicaje no tiene camiones para crear.")
+    tareas = []                                   # (pedido, puesto, {camión: {sku: unidades}}, id del conjunto)
+    for numero in dict.fromkeys(numeros):
+        c = s.get(Config, _clave_cubicaje(numero))
+        if c is None:
+            raise HTTPException(422, f"Primero hay que cubicar el pedido {numero}.")
+        cub = _json.loads(c.valor)
+        puesto = puesto_body
+        if not puesto:
+            an = s.get(Config, _clave_analisis(numero))
+            puesto = (_json.loads(an.valor).get("puesto", "") if an else "").upper()
+        if not puesto:
+            raise HTTPException(422, "Falta el puesto de expedición (PN01, PN02…).")
+        # Un camión = una entrega: {camión: {sku: unidades}}
+        por_camion: dict[int, dict] = {}
+        for f in cub["filas"]:
+            if camiones_pedidos and f["camion"] not in camiones_pedidos:
+                continue
+            por_camion.setdefault(f["camion"], {})
+            por_camion[f["camion"]][f["sku"]] = por_camion[f["camion"]].get(f["sku"], 0) + f["unidades"]
+        if not por_camion:
+            raise HTTPException(422, f"El cubicaje del pedido {numero} no tiene camiones para crear.")
+        tareas.append((numero, puesto, por_camion, ((cub.get("conjunto") or {}).get("id") or "")))
+    numero = tareas[0][0]
     fecha = str(body.get("fecha") or _date.today().strftime("%d.%m.%Y"))
+    total = sum(len(x[2]) for x in tareas)
 
     def correr(avance):
         salidas = []
-        for i, (cam, materiales) in enumerate(sorted(por_camion.items()), start=1):
-            avance(f"{'Ensayo' if ensayo else 'Creando'} camión {cam} ({i} de {len(por_camion)})")
-            r = sap_crear.crear_entrega(numero, puesto, fecha, materiales,
-                                        fecha_cita=str(body.get("fecha_cita") or ""),
-                                        hora_cita=str(body.get("hora_cita") or ""), ensayo=ensayo)
-            salidas.append({"camion": cam, "ok": r.ok, "entrega": r.entrega, "mensaje": r.mensaje,
-                            "pasos": r.pasos, "borradas": r.borradas, "ajustadas": r.ajustadas,
-                            "incidencias": r.incidencias})
-            if r.ok and r.entrega and not ensayo:
-                # La entrega ya existe en SAP y no se puede deshacer: si no se alcanza a registrar aquí,
-                # se avisa con su número para cargarla a mano y se sigue con los demás camiones.
-                try:
-                    from ..db import SessionLocal
-                    with SessionLocal() as ses:
-                        from ..schemas import EntregaIn
-                        domain.guardar_entrega(ses, EntregaIn(
-                            entrega=r.entrega, pedido=numero, grupo="",
-                            lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
-                        ses.commit()
-                except Exception as err:  # noqa: BLE001
-                    salidas[-1]["incidencias"] = list(r.incidencias or []) + [
-                        f"Creada en SAP, pero no se pudo registrar en la plataforma: {str(err)[:150]}"]
-            if not r.ok:
-                break                      # ante el primer problema se detiene
+        hecho = 0
+        for numero, puesto, por_camion, conj in tareas:
+            for cam, materiales in sorted(por_camion.items()):
+                hecho += 1
+                avance(f"{'Ensayo' if ensayo else 'Creando'} entrega {hecho} de {total}: pedido {numero}, camión {cam}")
+                r = sap_crear.crear_entrega(numero, puesto, fecha, materiales,
+                                            fecha_cita=str(body.get("fecha_cita") or ""),
+                                            hora_cita=str(body.get("hora_cita") or ""), ensayo=ensayo)
+                salidas.append({"pedido": numero, "camion": cam, "ok": r.ok, "entrega": r.entrega, "mensaje": r.mensaje,
+                                "pasos": r.pasos, "borradas": r.borradas, "ajustadas": r.ajustadas,
+                                "incidencias": r.incidencias})
+                if r.ok and r.entrega and not ensayo:
+                    # La entrega ya existe en SAP y no se puede deshacer: si no se alcanza a registrar aquí,
+                    # se avisa con su número para cargarla a mano y se sigue con los demás camiones.
+                    try:
+                        from ..db import SessionLocal
+                        with SessionLocal() as ses:
+                            from ..schemas import EntregaIn
+                            domain.guardar_entrega(ses, EntregaIn(
+                                entrega=r.entrega, pedido=numero, grupo="",
+                                camion_ref=f"{conj}-{cam}" if conj else "",
+                                lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
+                            ses.commit()
+                    except Exception as err:  # noqa: BLE001
+                        salidas[-1]["incidencias"] = list(r.incidencias or []) + [
+                            f"Creada en SAP, pero no se pudo registrar en la plataforma: {str(err)[:150]}"]
+                if not r.ok:
+                    break                      # ante el primer problema se detiene
+            if salidas and not salidas[-1]["ok"]:
+                break
         errores = [x for x in salidas if not x["ok"]]
         if errores:
             raise RuntimeError(errores[0]["mensaje"])
-        return {"pedido": numero, "ensayo": ensayo, "resultados": salidas}
+        return {"pedido": numero, "pedidos": [x[0] for x in tareas], "ensayo": ensayo, "resultados": salidas}
 
     try:
         return acciones.lanzar_python("crear_entregas",
-                                      f"{'Ensayo de entregas' if ensayo else 'Crear entregas'} {numero}",
+                                      f"{'Ensayo de entregas' if ensayo else 'Crear entregas'} {numero}" + (f" y otros {len(tareas) - 1}" if len(tareas) > 1 else ""),
                                       [numero], correr)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e

@@ -1272,3 +1272,45 @@ def test_plantilla_de_carga_trae_grupos_y_el_importador_los_lee(c, tmp_path):
     d = c.post("/api/cubicaje-libre/importar", files={"file": ("p.xlsx", buf.getvalue(), "application/vnd.ms-excel")},
                data={"reemplazar": "si"}).json()
     assert sorted({g["grupo"] for g in d["grupos"]}) == [1, 2] or {g["grupo"] for g in d["grupos"]} >= {1, 2}
+
+
+def test_cubicaje_conjunto_entregas_por_camion_y_pedido_y_camion_compartido(c, tmp_path, monkeypatch):
+    """Multipedido como el Excel: los pedidos se cubican juntos, cada camión lleva cargas de varios pedidos, se crea una
+    entrega por (camión, pedido) y las entregas de un mismo camión quedan vinculadas para agruparse."""
+    from app.integrations import sap_crear
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400")
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4401")
+
+    assert c.post("/api/cubicaje-conjunto", json={"pedidos": ["4400"]}).status_code == 422          # con uno solo no es conjunto
+    assert c.post("/api/cubicaje-conjunto", json={"pedidos": ["4400", "9999"]}).status_code == 422   # uno sin análisis
+    r = c.post("/api/cubicaje-conjunto", json={"pedidos": ["4400", "4401"]})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    cid = d["conjunto"]["id"]
+    assert d["conjunto"]["pedidos"] == ["4400", "4401"] and cid.startswith("J")
+    assert {f["pedido"] for f in d["filas"]} == {"4400", "4401"}
+    assert set(d["por_pedido"]) == {"4400", "4401"} and d["por_pedido"]["4400"]["unidades"] == 50
+    assert d["unidades"] == 100
+    cams_comunes = set(d["por_pedido"]["4400"]["camiones"]) & set(d["por_pedido"]["4401"]["camiones"])
+    assert cams_comunes                                          # al menos un camión lleva carga de los dos pedidos
+    llamadas = []
+
+    def falso(pedido, puesto, fecha, materiales, fecha_cita="", hora_cita="", ensayo=False, ses=None):
+        llamadas.append((pedido, dict(materiales)))
+        r = sap_crear.Resultado(ok=True, ensayo=ensayo)
+        r.entrega = "" if ensayo else f"87060{len(llamadas):05d}"
+        r.mensaje = "ok"
+        return r
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedidos": ["4400", "4401"], "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    assert {x["pedido"] for x in t["datos"]["resultados"]} == {"4400", "4401"}
+    hechas = [e for e in _estado(c)["entregas"] if e["entrega"].startswith("87060")]
+    assert {e["pedido"] for e in hechas} == {"4400", "4401"}
+    assert all(e["camion_ref"].startswith(cid + "-") for e in hechas)
+    for cam in cams_comunes:                                     # un camión compartido = entregas de los dos pedidos con la misma referencia
+        mismas = [e for e in hechas if e["camion_ref"] == f"{cid}-{cam}"]
+        assert {e["pedido"] for e in mismas} == {"4400", "4401"}
+    # cada pedido solo crea lo suyo: nada de mezclar cantidades de otro pedido
+    assert sum(sum(m.values()) for p, m in llamadas if p == "4400") == 50
+    assert sum(sum(m.values()) for p, m in llamadas if p == "4401") == 50
