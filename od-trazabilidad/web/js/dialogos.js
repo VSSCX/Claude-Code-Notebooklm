@@ -362,7 +362,7 @@ function render(){
       : `<div class="panel stack" style="padding:16px"><span class="skel" style="width:30%"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div>`);
     return;
   }
-  pintar(app, Avisos.html() + (UI.view === 'bandeja' ? vistaBandeja()
+  pintar(app, barraJob() + Avisos.html() + (UI.view === 'bandeja' ? vistaBandeja()
     : UI.view === 'cubicador' ? vistaCubicador()
     : UI.view === 'proyeccion' ? vistaProyeccion()
     : UI.view === 'importar' ? vistaImportar()

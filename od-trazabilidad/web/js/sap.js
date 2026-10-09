@@ -2,9 +2,28 @@
    Parte de la interfaz de Trazabilidad Order Desk. */
 
 /* ============ Acciones en SAP (todo nativo: la plataforma no abre Excel) ============ */
+/* Barra fija arriba de cualquier pantalla mientras SAP trabaja: qué paso va, desde cuándo y qué no hacer.
+   Antes el avance solo se veía dentro del pedido abierto; analizando un pedido nuevo no había dónde mirar. */
+const PASOS_ANALISIS = ['Revisión previa', 'Leer pedido en SAP', 'Qty en entrega', 'Cálculo de saldos', 'Stock'];
+function barraJob(){
+  const j = UI.job; if (!j || j.estado !== 'en_curso') return '';
+  const m = /^(\d)\/4\b\s*(.*)$/.exec(j.progreso || '');
+  const esAnalisis = ['analizar_pedido'].includes(j.accion) && m;
+  const actual = esAnalisis ? +m[1] : -1;
+  const pasos = esAnalisis ? `<ol class="job-pasos" aria-label="Pasos del análisis">${PASOS_ANALISIS.map((n, i) =>
+    `<li class="${i < actual ? 'hecho' : i === actual ? 'ahora' : ''}"${i === actual ? ' aria-current="step"' : ''}><i>${i < actual ? ICON.check : i + 1}</i>${n}</li>`).join('')}</ol>` : '';
+  const detalle = esAnalisis ? m[2] : (j.progreso || '');
+  const aviso = ['analizar_pedido', 'sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : '';
+  return `<section class="job-bar" role="status" aria-live="polite" data-k="job-bar">
+    <div class="job-top"><span class="job-spin" aria-hidden="true"></span><b>${esc(j.label)}</b>
+      <span class="small muted">desde ${esc(j.inicio.slice(11, 16))}</span>${j.reconectando ? ' <span class="tag err">Reconectando con la plataforma…</span>' : ''}</div>
+    ${pasos}
+    <div class="small">${detalle ? esc(detalle) + ' · ' : ''}${esc(aviso || (j.accion === 'analizar_pedido' ? '' : 'Si Excel muestra un mensaje, ciérralo para que termine.'))}</div>
+  </section>`;
+}
 function estadoJob(){
   const j = UI.job; if (!j) return '';
-  if (j.estado === 'en_curso') return `<p class="small"><span class="tag warn">En curso</span> ${esc(j.label)}${j.progreso ? ' · <b>' + esc(j.progreso) + '</b>' : ''} desde ${esc(j.inicio.slice(11, 16))}.${j.reconectando ? ' <span class="tag err">Reconectando con la plataforma…</span>' : ''} ${['analizar_pedido','sap_leer_pedido'].includes(j.accion) ? 'No uses el mouse ni el teclado sobre SAP hasta que termine.' : 'Si Excel muestra un mensaje, ciérralo para que termine.'}</p>`;
+  if (j.estado === 'en_curso') return '';            // el avance está en la barra fija de arriba (barraJob)
   if (j.estado === 'ok') return `<p class="small"><span class="tag ok">Listo</span> ${esc(j.label)}: ${esc(j.resultado || 'terminó')}</p>`;
   return `<p class="small"><span class="tag err">Error</span> ${esc(j.label)}: ${esc(j.error)}${j.paso ? ` <span class="muted">(se detuvo en: ${esc(j.paso)})</span>` : ''}</p>`;
 }
