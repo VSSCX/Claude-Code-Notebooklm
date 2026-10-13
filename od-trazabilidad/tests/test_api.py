@@ -1488,7 +1488,6 @@ def test_sda_va_con_caja_master_por_defecto_y_lo_que_no_completa_una_caja_va_sue
     _medidas_con_caja_master(c, tmp_path)
     plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
     object.__setattr__(settings, "plantilla_visor", str(plantilla))
-    por_sku = lambda d: {(f["tipo"], f["sku"]): f["cajas"] for f in d["filas04"] if f["pallet"] > 0}
     d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 3}], "modo": "SDA STOCK"}).json()
     assert d["caja_master"] == "CON CAJA MASTER"                                  # sin indicar nada: con caja master
     assert [(f["cajas"], f["unidades"]) for f in d["filas04"] if f["pallet"] > 0] == [(3, 3)]       # 3 unidades sueltas, ninguna caja
@@ -1568,7 +1567,6 @@ def test_suministros_lo_ya_suministrado_queda_registrado_y_lo_liberado_despues_e
     """50 % con stock hoy y el resto se libera después: el primer suministro conserva su análisis, su cubicaje y sus entregas,
     y lo liberado después se trata como un suministro nuevo."""
     import json
-    import time
     from app.db import SessionLocal
     from app.integrations import sap, sap_crear
     from app.models import Config
@@ -1614,7 +1612,6 @@ def test_suministros_lo_ya_suministrado_queda_registrado_y_lo_liberado_despues_e
     todas = [e for e in _estado(c)["entregas"] if e["pedido"] == "4950"]
     assert sorted({e["suministro"] for e in todas}) == [1, 2]
     assert {e["entrega"] for e in todas if e["suministro"] == 1} == {e["entrega"] for e in ents1}
-    ped = next(p for p in _estado(c)["pedidos"] if p["pedido"] == "4950")
     assert sum(sum(l["qty"] for l in e["lineas"]) for e in todas) == cub1["unidades"] + 12        # nada se mezcla ni se pierde
 
     # 3) volver a analizar sin nada liberado (carga 0) no abre otro suministro
