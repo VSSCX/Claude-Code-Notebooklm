@@ -142,16 +142,16 @@ def test_plan_sop(c, monkeypatch):
     from app.integrations import bases
     c.put("/api/pedidos/4001", json={"pedido": "4001", "cliente": "PARIS",
           "lineas": [{"sku": "0900081624", "qty": 50}, {"sku": "111", "qty": 5}]})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {
         "plan": 100.0, "vendido": 30.0, "pdte_mes": 20.0, "tipo": "CONSENSO"}} if g == "PARIS" else {})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {"900081624": {"cantidad": 40, "fecha": "2026-09-20"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {"900081624": {"cantidad": 40, "fecha": "2026-09-20"}})
     r = c.get("/api/plan/4001").json()
     assert r["ok"] and r["grupo"] == "PARIS" and r["tipo_plan"] == "CONSENSO"
     assert r["productos"]["900081624"]["plan"]["vendido"] == 30
     assert r["productos"]["900081624"]["disponible"]["cantidad"] == 40
     assert r["productos"]["111"] == {"plan": None, "disponible": None}
 
-    def falla(g):
+    def falla(g, fresco=False):
         raise RuntimeError("Login failed")
     monkeypatch.setattr(bases, "plan_sop", falla)
     r = c.get("/api/plan/4001").json()
@@ -257,9 +257,9 @@ def test_analisis_en_un_clic(c, monkeypatch):
         llamados["skus"] = skus
         return {s: {"cd30": 5, "reserva_cd30": 1, "ec01": 0, "tp01": 2} for s in skus}
     monkeypatch.setattr(sap, "mmbe", mmbe)
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900276671": {"plan": 126, "vendido": 78, "pdte_mes": 76, "saldo": 0, "tipo": "CONSENSO"},
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900276671": {"plan": 126, "vendido": 78, "pdte_mes": 76, "saldo": 0, "tipo": "CONSENSO"},
                                                       "111": {"plan": 50, "vendido": 0, "pdte_mes": 0, "saldo": 0, "tipo": "CONSENSO"}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(bases, "oc_de", lambda pedido: "7788990011")        # OC de Pedidos Ingresados
     monkeypatch.setattr(base_medidas, "medidas", lambda: {"900276671": {"desc": "900276671 COCINA FM5SSC", "max_camion": 270},
                                                           "111": {"desc": "111 LAVADORA X", "max_camion": 100}})
@@ -294,9 +294,9 @@ def test_cubicaje_desde_analisis(c, monkeypatch, tmp_path):
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 20, 20)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     medidas = {"900081624": {"desc": "900081624 MDWMT16W", "max_camion": 90},
                "900276671": {"desc": "900276671 COCINA FM5SSC", "max_camion": 80}}
     monkeypatch.setattr(base_medidas, "medidas", lambda: medidas)
@@ -346,8 +346,8 @@ def test_visor_no_se_acumula(c, monkeypatch, tmp_path):
         pedido=p, posiciones=[sap.Posicion("900081624", 10, 10)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 100, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 100, "vendido": 0}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     filas = [["900081624", "900081624 MDWMT16W", 1, 60, 65, 85, 38.5, "Y", "N", "N", 90, 4]]
     monkeypatch.setattr(base_medidas, "filas", lambda: filas)
     monkeypatch.setattr(base_medidas, "medidas", lambda: {"900081624": {"desc": "MDWMT16W", "max_camion": 90}})
@@ -438,9 +438,9 @@ def test_predistribuido_y_modo_por_sucursal(c, monkeypatch, tmp_path):
         sap.Posicion("900081624", 40, 40), sap.Posicion("900276671", 40, 40)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     filas = [["900081624", "900081624 MDWMT16W", 1, 60, 65, 85, 38.5, "Y", "N", "N", 90, 4],
              ["900276671", "900276671 COCINA FM5SSC", 1, 62, 66, 90, 40, "Y", "N", "N", 80, 3]]
     monkeypatch.setattr(base_medidas, "filas", lambda: filas)
@@ -676,8 +676,8 @@ def test_cubicaje_usa_el_pallet_del_cliente(c, monkeypatch, tmp_path):
         pedido=p, posiciones=[sap.Posicion("900081624", 20, 20)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 100, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 100, "vendido": 0}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     filas = [["900081624", "900081624 MDWMT16W", 1, 60, 65, 85, 38.5, "Y", "N", "N", 90, 4]]
     monkeypatch.setattr(base_medidas, "filas", lambda: filas)
     monkeypatch.setattr(base_medidas, "medidas", lambda: {"900081624": {"desc": "x", "max_camion": 90}})
@@ -801,9 +801,9 @@ def test_cubicador_desde_pedido_y_excel(c, tmp_path, monkeypatch):
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 12, 12)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(base_medidas, "medidas", lambda: {})
     tid = c.post("/api/analisis/4300", json={"puesto": "PN01", "cliente": "PARIS"}).json()["id"]
     for _ in range(100):
@@ -855,9 +855,9 @@ def _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4400", cliente="PARIS")
         sap.Posicion("900081624", 30, 30), sap.Posicion("900276671", 20, 20)]))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
     monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"900081624": {"plan": 500, "vendido": 0},
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"900081624": {"plan": 500, "vendido": 0},
                                                       "900276671": {"plan": 500, "vendido": 0}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(base_medidas, "medidas", lambda: {
         "900081624": {"desc": "900081624 MDWMT16W", "max_camion": 90},
         "900276671": {"desc": "900276671 COCINA FM5SSC", "max_camion": 80}})

@@ -441,10 +441,10 @@ def test_reanalizar_con_otro_cliente_trae_su_plan_su_codigo_y_rehace_el_cubicaje
         return [{"Nombre Codigo de Material": "PRODUCTO 9000", "Qty. En Entrega": 10}]
     monkeypatch.setattr(sap, "zsd001_03", zsd)
     monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda grupo: llamadas.setdefault("grupo", grupo) and
+    monkeypatch.setattr(bases, "plan_sop", lambda grupo, fresco=False: llamadas.setdefault("grupo", grupo) and
                         {"9000": {"plan": 300, "vendido": 100, "pdte_mes": 0, "tipo": "CONSENSO"},
                          "9001": {"plan": 500, "vendido": 0, "pdte_mes": 0, "tipo": "CONSENSO"}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(base_medidas, "medidas", lambda: {})
     r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "FALABELLA", "fecha": "2026-10-01"})
     assert r.status_code == 202, r.text
@@ -780,8 +780,8 @@ def _correr_analisis(c, monkeypatch, oc_sql, zsd_filas, numero="4005100000", cli
         posiciones=[SimpleNamespace(sku="9000", qty_entrega=10, qty_pendiente=10)], aviso=""))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: zsd_filas)
     monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {"9000": {"plan": 100, "vendido": 0, "pdte_mes": 0, "tipo": "CONSENSO"}})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 100, "vendido": 0, "pdte_mes": 0, "tipo": "CONSENSO"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(bases, "oc_de", lambda p: oc_sql)
     monkeypatch.setattr(base_medidas, "medidas", lambda: {"9000": {"desc": "9000 PRODUCTO A", "max_camion": 100}})
     r = c.post(f"/api/analisis/{numero}", json={"puesto": "PN01", "cliente": cliente, "fecha": "2026-10-01"})
@@ -1100,7 +1100,8 @@ def test_detalle_trae_piezas_de_la_caja_master_para_contar_bultos(datos):
     assert d["detalle_lineas"]["C9000"]["piezas"] == 2 and d["detalle_lineas"]["9000"]["caja"] == 2
 
 
-def test_exportar_el_analisis_para_los_kam(datos):
+def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
+    """Estatus para el KAM: pedido, en entrega (de este pedido), falta, y de lo que falta, stock y próxima liberación."""
     from io import BytesIO
     from fastapi.testclient import TestClient
     from openpyxl import load_workbook
@@ -1109,22 +1110,52 @@ def test_exportar_el_analisis_para_los_kam(datos):
     with SessionLocal() as s:
         doc = _analisis_de_prueba()
         doc["oc_sap"] = "OC-77"
+        doc["generado_hora"] = "2026-10-01T09:30"
         fila = next(f for f in doc["resultado"]["filas"] if f["sku"] == "9000")
+        fila["sku"] = "90000"                                  # el SKU que tiene el pedido de la prueba
         fila["stock"] = {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}
-        fila["disponibilidad"] = "300 - 15-10-2026"
+        fila["disponibilidad"] = "300 - 2026-10-15"           # lo que se sabía al analizar
         domain.guardar_config(s, "analisis:4005100000", doc)
         s.commit()
+    consultas = []
+
+    def fresca(fresco=False):
+        consultas.append(fresco)
+        return {"90000": {"cantidad": 450, "fecha": "2026-10-20"}}
+    monkeypatch.setattr(bases, "disponibilidad", fresca)
     r = c.get("/api/analisis/4005100000/excel")
-    assert r.status_code == 200 and "Analisis_4005100000" in r.headers["content-disposition"]
+    assert r.status_code == 200 and "Estatus_4005100000" in r.headers["content-disposition"]
+    assert consultas == [True]                                          # la liberación se pregunta de nuevo al exportar
     wb = load_workbook(BytesIO(r.content))
-    assert wb.sheetnames == ["Análisis", "Entregas"]
-    filas = list(wb["Análisis"].iter_rows(min_row=2, values_only=True))
-    assert [x[1] for x in filas] and all(x[0] for x in filas)                   # la OC va en cada fila
-    f9000 = next(x for x in filas if x[1] == "9000")
-    assert f9000[3] == 100 and f9000[4] == 100 and f9000[5:9] == (5, 1, 2, 0) and f9000[9:11] == ("15-10-2026", "300")
+    assert wb.sheetnames == ["Estatus", "Entregas", "Análisis SAP"]
+    ws = wb["Estatus"]
+    textos = [ws.cell(row=n, column=1).value for n in range(1, 4)]
+    assert "4005100000" in textos[0] and "OC0" in textos[0]
+    assert "Pedido:" in textos[1] and "Falta:" in textos[1]
+    assert "Generado el" in textos[2] and "01-10-2026 09:30" in textos[2] and "consultada ahora" in textos[2]
+    cab = next(n for n in range(1, 10) if ws.cell(row=n, column=1).value == "SKU")
+    assert [x.value for x in ws[cab]][:6] == ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado"]
+    filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
+    f9000 = filas["90000"]
+    # pedido 10, dos entregas de 3 = 6 en entrega, faltan 4: sale con el stock del análisis y la liberación fresca
+    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[6:10] == (5, 1, 2, 0) and f9000[10:12] == ("20-10-2026", 450)
+    # lo que ya está completo en entrega no lleva stock ni liberación
+    completo = next(x for x in filas.values() if x[4] == 0)
+    assert completo[5] == "En entrega" and completo[6:12] == (None,) * 6
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
-    assert wb["Entregas"][1][0].value == "N° entrega" and all(len(x) == 4 for x in ent)
+    assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 4 for x in ent)
+    assert wb["Análisis SAP"][1][3].value == "Qty pendiente"
     assert c.get("/api/analisis/9999999999/excel").status_code == 404
+
+    # sin conexión a SQL el Excel sale igual, con la liberación del análisis y avisándolo
+    def sin_sql(fresco=False):
+        raise RuntimeError("sin red")
+    monkeypatch.setattr(bases, "disponibilidad", sin_sql)
+    r = c.get("/api/analisis/4005100000/excel")
+    ws = load_workbook(BytesIO(r.content))["Estatus"]
+    assert "no hubo conexión" in ws.cell(row=3, column=1).value
+    fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
+    assert fila[10:12] == ("15-10-2026", 300)
 
 
 def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
@@ -1177,7 +1208,7 @@ def test_sin_sql_server_el_analisis_falla_antes_de_tocar_sap_con_un_motivo_claro
     monkeypatch.setattr(sap, "leer_pedido", lambda *a: llamadas.append("vl01n"))
     monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: llamadas.append("zsd"))
 
-    def sin_red(grupo):
+    def sin_red(grupo, fresco=False):
         raise RuntimeError("('08001', '[08001] Named Pipes Provider: Could not open a connection to SQL Server [53]')")
     monkeypatch.setattr(bases, "plan_sop", sin_red)
     r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
@@ -1199,8 +1230,8 @@ def test_el_error_de_un_paso_dice_en_cual_se_detuvo(monkeypatch, datos):
     def zsd(*a, **k):
         raise sap.ErrorSap("SAP no guardó el archivo de ZSD001_03 (SAP muestra una ventana: «Seguridad de SAP GUI»).")
     monkeypatch.setattr(sap, "zsd001_03", zsd)
-    monkeypatch.setattr(bases, "plan_sop", lambda g: {})
-    monkeypatch.setattr(bases, "disponibilidad", lambda: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
     monkeypatch.setattr(base_medidas, "medidas", lambda: {})
     r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
     t = _esperar(c, r.json()["id"])
@@ -1409,3 +1440,26 @@ def test_la_limpieza_no_toca_la_ultima_exportacion_ni_las_recientes(tmp_path):
     os.utime(fija, (antes, antes))
     sap._limpiar_exportaciones(tmp_path)
     assert not vieja.exists() and reciente.exists() and fija.exists()
+
+
+def test_las_consultas_a_sql_se_refrescan_cuando_se_piden_frescas(monkeypatch):
+    """Análisis y exportaciones no usan datos guardados: fresco=True vuelve a preguntar; sin él se reutiliza por poco tiempo."""
+    bases.limpiar_cache()
+    llamadas = []
+
+    def consulta():
+        llamadas.append(1)
+        return len(llamadas)
+    assert bases._cache("t", consulta) == 1 and bases._cache("t", consulta) == 1          # la segunda sale de la memoria
+    assert bases._cache("t", consulta, fresco=True) == 2                                  # fresco: pregunta otra vez
+    assert bases._cache("t", consulta) == 2                                               # y lo nuevo queda guardado
+    assert bases.CACHE_SEG <= 120                                                         # nunca más de dos minutos de antigüedad
+    # tras un fallo se espera un minuto, salvo que se pida fresco
+    def falla():
+        raise RuntimeError("sin red")
+    with pytest.raises(RuntimeError):
+        bases._cache("f", falla)
+    with pytest.raises(RuntimeError):
+        bases._cache("f", falla)
+    assert len(bases._FALLOS) == 1
+    bases.limpiar_cache()

@@ -112,8 +112,8 @@ def analizar(numero: str, body: dict):
         if not codigo:
             raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
         try:
-            plan = bases.plan_sop(grupo)
-            disp = bases.disponibilidad()
+            plan = bases.plan_sop(grupo, fresco=True)           # el análisis siempre pregunta de nuevo
+            disp = bases.disponibilidad(fresco=True)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError("No se pudo consultar SQL Server (plan SOP y disponibilidad), por eso no se empezó con SAP. "
                                "Revisa la VPN o la red y la conexión en Configuración. Detalle: " + _causa(e)) from e
@@ -172,9 +172,12 @@ def analizar(numero: str, body: dict):
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
                "stock": stock, "ajustes": {}, "resultado": res, "oc_sap": oc, "oc_origen": oc_origen,
-               "generado": _date.today().isoformat()}
+               "generado": _date.today().isoformat(),
+               "generado_hora": datetime.now().astimezone().isoformat(timespec="minutes")}
         with SessionLocal() as ses:
-            domain.cargar_lectura_sap(ses, numero, cliente, posiciones)
+            nombres = {sku: _re.sub(r"^\S+\s+", "", m["desc"]).strip() or m["desc"] for sku, m in med.items()
+                       if sku in {x["sku"] for x in posiciones}}
+            domain.cargar_lectura_sap(ses, numero, cliente, posiciones, nombres)
             p_ped = domain._get_pedido(ses, numero)
             if p_ped is not None and p_ped.cliente != cliente:
                 p_ped.cliente = cliente                  # el análisis manda: el pedido queda con el cliente analizado
@@ -221,9 +224,13 @@ def get_analisis(numero: str, s: Session = Depends(get_session)):
 
 @router.get("/analisis/{numero}/excel")
 def excel_analisis(numero: str, s: Session = Depends(get_session)):
-    """Excel simple para responder a los KAM: la OC con sus productos (hoja Análisis) y el detalle de entregas (hoja Entregas)."""
+    """Excel de estatus para responder a los KAM: qué pidió el cliente, cuánto de eso ya está en entrega, cuánto falta
+    y, de lo que falta, si hay stock y cuándo es la próxima liberación.
+
+    Hojas: Estatus (la que se comparte), Entregas (qué lleva cada entrega) y Análisis SAP (el detalle interno)."""
     import json as _json
     import re
+    from datetime import datetime as _dt
     from io import BytesIO
 
     from fastapi.responses import StreamingResponse
@@ -238,29 +245,82 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     c = s.get(Config, _clave_analisis(numero))
     doc = _json.loads(c.valor) if c else None
     oc = (ped.oc or (doc or {}).get("oc_sap") or "").strip()
-    descr = {l.sku: l.descripcion for l in ped.lineas}
     activas = [e for e in ped.entregas if not e.anulada]
+    filas_an = {f["sku"]: f for f in (doc["resultado"]["filas"] if doc else [])}
+    descr = {l.sku: (l.descripcion or (filas_an.get(l.sku) or {}).get("descripcion", "")) for l in ped.lineas}
+
+    # En entrega = lo de las entregas de ESTE pedido (activas) + lo que SAP ya tenía en entregas no registradas aquí
+    en_ent: dict[str, int] = {}
+    for e in activas:
+        for l in e.lineas:
+            en_ent[l.sku] = en_ent.get(l.sku, 0) + l.qty
+    filas = []
+    for l in ped.lineas:
+        entrega = en_ent.get(l.sku, 0) + l.externa
+        falta = max(0, l.qty - entrega)
+        filas.append({"sku": l.sku, "desc": descr.get(l.sku, ""), "pedido": l.qty, "en_entrega": entrega, "falta": falta})
+    for sku, q in en_ent.items():                       # entregas con productos que el pedido no trae: no se pierden
+        if sku not in {f["sku"] for f in filas}:
+            filas.append({"sku": sku, "desc": descr.get(sku, ""), "pedido": 0, "en_entrega": q, "falta": 0})
+
+    # Próxima liberación: se consulta de nuevo AHORA (lo del análisis puede tener horas); si no hay conexión, el del análisis
+    pendientes = {f["sku"] for f in filas if f["falta"] > 0}
+    disp, disp_fresca = {}, False
+    if pendientes:
+        try:
+            disp, disp_fresca = bases.disponibilidad(fresco=True), True
+        except Exception:  # noqa: BLE001 - el Excel sale igual, con lo último que se sabía
+            disp = {}
+
+    def liberacion(sku: str):
+        d = disp.get(sku) if disp_fresca else None
+        if d and d.get("cantidad"):
+            return d.get("fecha", ""), d["cantidad"]
+        cant, _, fecha = str((filas_an.get(sku) or {}).get("disponibilidad") or "").partition(" - ")
+        return fecha.strip(), (int(cant) if cant.strip().isdigit() else "")
+
+    def fecha_corta(iso: str) -> str:
+        try:
+            return _dt.fromisoformat(iso[:10]).strftime("%d-%m-%Y")
+        except ValueError:
+            return iso or ""
+
+    orden = {"Pendiente": 0, "Parcial": 1, "En entrega": 2}
+
+    def estado(f: dict) -> str:
+        return "En entrega" if f["falta"] == 0 else ("Parcial" if f["en_entrega"] > 0 else "Pendiente")
+    filas.sort(key=lambda f: (orden[estado(f)], f["sku"]))
+
+    tot_ped, tot_ent = sum(f["pedido"] for f in filas), sum(min(f["en_entrega"], f["pedido"]) for f in filas)
+    tot_falta = sum(f["falta"] for f in filas)
+    ahora = _dt.now()
+    hora_an = (doc or {}).get("generado_hora") or (doc or {}).get("generado") or ""
+    try:
+        hora_an_txt = _dt.fromisoformat(hora_an).strftime("%d-%m-%Y %H:%M") if "T" in hora_an else fecha_corta(hora_an)
+    except ValueError:
+        hora_an_txt = hora_an
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Análisis"
-    ws.append(["OC", "SKU", "Descripción", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
-               "Stock EC01", "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
-    if doc:
-        for f in doc["resultado"]["filas"]:
-            st = f.get("stock") or {}
-            cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
-            ws.append([oc, f["sku"], f["descripcion"], f["pendiente"], f["qty_entrega"],
-                       st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
-                       fecha.strip(), cant.strip()])
-    else:                                       # sin análisis: lo que la plataforma sabe del pedido
-        en_ent = {}
-        for e in activas:
-            for l in e.lineas:
-                en_ent[l.sku] = en_ent.get(l.sku, 0) + l.qty
-        for l in ped.lineas:
-            ws.append([oc, l.sku, l.descripcion, max(0, l.qty - en_ent.get(l.sku, 0) - l.externa), None,
-                       None, None, None, None, "", ""])
+    ws.title = "Estatus"
+    ws.append([f"Estatus del pedido {numero}" + (f" · OC {oc}" if oc else "") + (f" · {ped.cliente}" if ped.cliente else "")])
+    ws.append([f"Pedido: {tot_ped:,} un. · En entrega: {tot_ent:,} un. · Falta: {tot_falta:,} un.".replace(",", ".")
+               + (f" · {round(100 * tot_ent / tot_ped)} % cubierto" if tot_ped else "")])
+    ws.append([f"Generado el {ahora:%d-%m-%Y %H:%M}. Entregas de la plataforma al momento de exportar"
+               + ("; próxima liberación consultada ahora." if disp_fresca else
+                  ("." if not pendientes else "; próxima liberación del análisis (no hubo conexión para actualizarla)."))
+               + (f" Stock y cantidades de SAP: análisis del {hora_an_txt}." if doc else " Sin análisis de SAP: stock no disponible.")])
+    ws.append([])
+    CAB = ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Stock CD30", "Reserva CD30", "Stock EC01",
+           "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"]
+    ws.append(CAB)
+    fila_cab = ws.max_row
+    for f in filas:
+        st = (filas_an.get(f["sku"]) or {}).get("stock") or {}
+        fecha, cant = liberacion(f["sku"]) if f["falta"] > 0 else ("", "")
+        ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f)]
+                  + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01")] if f["falta"] > 0 else [None] * 4)
+                  + [fecha_corta(fecha) if fecha else "", cant])
 
     we = wb.create_sheet("Entregas")
     we.append(["N° entrega", "SKU", "Descripción", "Qty"])
@@ -268,20 +328,37 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
         for l in e.lineas:
             we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty])
 
+    wa = wb.create_sheet("Análisis SAP")
+    wa.append(["OC", "SKU", "Descripción", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
+               "Stock EC01", "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+    for f in (doc["resultado"]["filas"] if doc else []):
+        st = f.get("stock") or {}
+        cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
+        wa.append([oc, f["sku"], f["descripcion"], f["pendiente"], f["qty_entrega"],
+                   st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), fecha.strip(), cant.strip()])
+
     cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")
+    tonos = {"Pendiente": "FDE2E2", "Parcial": "FFF1CC", "En entrega": "E3F4E8"}
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A2"].font = Font(bold=True)
+    ws["A3"].font = Font(italic=True, color="555555")
     for hoja in wb.worksheets:
-        for celda in hoja[1]:
+        fc = fila_cab if hoja is ws else 1
+        for celda in hoja[fc]:
             celda.font, celda.fill = cab, fondo
             celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         for col in hoja.columns:
-            ancho = max(len(str(x.value if x.value is not None else "")) for x in col) + 2
+            ancho = max(len(str(x.value if x.value is not None else "")) for x in col[(fc - 1 if hoja is ws else 0):]) + 2
             hoja.column_dimensions[col[0].column_letter].width = min(max(ancho, 10), 46)
-        hoja.freeze_panes = "A2"
-        hoja.auto_filter.ref = hoja.dimensions
+        hoja.freeze_panes = f"A{fc + 1}"
+        hoja.auto_filter.ref = f"A{fc}:{hoja.cell(row=hoja.max_row, column=hoja.max_column).coordinate}"
+    for r in range(fila_cab + 1, ws.max_row + 1):                   # el estado se lee de un vistazo
+        ws.cell(row=r, column=6).fill = PatternFill("solid", fgColor=tonos[ws.cell(row=r, column=6).value])
+    ws.column_dimensions["A"].width = 16
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    nombre = re.sub(r"[^\w.-]", "_", f"Analisis_{numero}" + (f"_OC_{oc}" if oc else ""))
+    nombre = re.sub(r"[^\w.-]", "_", f"Estatus_{numero}" + (f"_OC_{oc}" if oc else ""))
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})

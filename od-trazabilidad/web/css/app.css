@@ -815,3 +815,28 @@ input[type=datetime-local]{min-height:32px;background:var(--paper);border:1px so
 .job-pasos li.ahora i{border-color:var(--accent);color:var(--accent)}
 @media (max-width:640px){.job-pasos{grid-template-columns:minmax(0,1fr)}.job-pasos li{border-right:0;border-bottom:1px solid var(--hair)}}
 @media (prefers-reduced-motion:reduce){.job-spin{animation:none}}
+
+/* ---------- Pestaña Entregas: la entrega y lo que lleva, nada más ---------- */
+.docket.ent .dk-h{align-items:center;flex-wrap:wrap;gap:6px 12px}
+.docket.ent .dk-h .spacer{flex:1}
+.ent-plegar{all:unset;box-sizing:border-box;display:grid;place-items:center;width:28px;height:28px;border-radius:var(--r);cursor:pointer;color:var(--ink-2)}
+.ent-plegar:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ent-plegar svg{transition:transform 160ms var(--ease-out)}
+.ent-plegar[aria-expanded="false"] svg{transform:rotate(-90deg)}
+@media (hover:hover) and (pointer:fine){.ent-plegar:hover{background:var(--paper-2);color:var(--ink)}}
+.ent-cam{gap:6px}
+.ent-cam[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ent-tbl{margin-top:10px}
+.ent-tbl td.code{white-space:nowrap}
+.menu-acc-lista > .peligro{color:var(--err)}
+.docket.ent .menu-acc > summary.icon{padding:5px 8px}
+.ent-cub{margin-top:14px;padding-top:12px;border-top:1px solid var(--hair)}
+.ent-cub-top{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px}
+.ent-cub-top .barra{display:block;flex:none;width:140px;height:6px;background:var(--track);overflow:hidden}
+.ent-cub-top .barra span{display:block;height:100%}
+.ent-cub-top .barra .ok{background:var(--ok-solid)}.ent-cub-top .barra .warn{background:var(--warn-solid)}.ent-cub-top .barra .err{background:var(--err)}
+.ent-cub-top .btn{margin-left:auto}
+@media (prefers-reduced-motion:reduce){.ent-plegar svg{transition:none}}
+table.tbl.ent-tbl{min-width:0;table-layout:auto}
+.ent-tbl td:nth-child(2){overflow-wrap:anywhere}
+@media (max-width:640px){.ent-tbl th,.ent-tbl td{padding:7px 6px}.ent-cub-top .btn{margin-left:0}}

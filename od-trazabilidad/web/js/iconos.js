@@ -15,6 +15,8 @@ const ICON = {
   pallet:     _svg('<path d="M5 3h14v8H5z"/><path d="M2 13h20v3H2z"/><path d="M6 16v4M18 16v4M12 16v4"/>'),
   ojo:        _svg('<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>'),
   ojoNo:      _svg('<path d="M3 3l18 18"/><path d="M10.6 6a9.8 9.8 0 0 1 1.4-.1c6.5 0 10 6.1 10 6.1a17 17 0 0 1-3.2 3.9M6.4 7.7A17 17 0 0 0 2 12s3.5 6.5 10 6.5a9.6 9.6 0 0 0 3.5-.7"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>'),
+  more:       _svg('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>'),
+  chevronAbajo: _svg('<path d="M6 9l6 6 6-6"/>'),
   chevron:    _svg('<path d="M8 10l4-4 4 4M8 14l4 4 4-4"/>'),
   historial:  _svg('<path d="M4 12a8 8 0 1 0 2.5-5.8L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4.5l3 2"/>'),
   llave:      _svg('<circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L20 3M16 7l3 3M13.5 9.5l2 2"/>'),

@@ -131,6 +131,34 @@ async function lanzarAnalisis(pedido, body){
   await seguirJob();
   cierreAnalisis();
 }
+/* Qué tan frescos son los datos de SAP de un análisis (stock, cantidades y Qty en entrega se leen en ese momento) */
+const HORAS_VIEJO = 2;
+function edadAnalisis(hora){
+  if (!hora || hora.indexOf('T') < 0) return null;
+  const d = new Date(hora); if (isNaN(d)) return null;
+  const h = Math.max(0, (Date.now() - d) / 36e5), hh = d.toTimeString().slice(0, 5);
+  const cuando = d.toDateString() === new Date().toDateString() ? `hoy ${hh}` : `${fmtFecha(hora.slice(0, 10))} ${hh}`;
+  const hace = h < 1 ? `hace ${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `hace ${Math.round(h)} h` : `hace ${Math.round(h / 24)} días`;
+  return {cuando, hace, horas: h, vieja: h > HORAS_VIEJO};
+}
+setInterval(() => { if (!document.hidden && UI.view === 'pedidos' && UI.sel && UI.sub === 'analisis') render(); }, 60000);   // el «hace X h» sigue corriendo
+const URL_KAM = pedido => `/api/analisis/${encodeURIComponent(pedido)}/excel`;
+function descargarKam(pedido){ const a = document.createElement('a'); a.href = URL_KAM(pedido); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+/* Antes de exportar para un KAM: si los datos de SAP tienen horas, se ofrece actualizarlos */
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-exp-kam]'); if (!b) return;
+  const p = UI.sel && Store.get('pedidos', UI.sel); const an = p && flujoDe(p).an;
+  const e = an && edadAnalisis(an.generado_hora);
+  if (!e || !e.vieja) return;                                  // datos de hace poco: baja el archivo directamente
+  ev.preventDefault();
+  abrirDlg('Los datos de SAP tienen horas', `<p class="prose">El análisis de este pedido es de <b>${esc(e.cuando)}</b> (${esc(e.hace)}). El <b>stock</b> y lo que está <b>en entrega en SAP</b> pueden haber cambiado desde entonces.
+      Las entregas de la plataforma y la próxima liberación se actualizan solas al exportar.</p>`,
+    `<button class="btn" data-act="exportarKam" data-ped="${esc(p.pedido)}">Exportar así</button>
+     <button class="btn primary" data-act="actualizarYExportar" data-ped="${esc(p.pedido)}">Actualizar desde SAP y exportar</button>`);
+});
+function actualizarYExportar(pedido){
+  dlg.close(); UI.exportarAlTerminar = pedido; abrirLecturaSap('analizar');
+}
 function cierreAnalisis(){
   const j = UI.job; if (!j) return;
   if (j.estado === 'ok' && j.datos){
@@ -139,9 +167,11 @@ function cierreAnalisis(){
     if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
     else if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
+    if (UI.exportarAlTerminar === d.pedido){ UI.exportarAlTerminar = null; setTimeout(() => descargarKam(d.pedido), 400); }
     UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos';
     render();
   } else if (j.estado === 'error'){
+    UI.exportarAlTerminar = null;
     // un aviso que no se va solo: el motivo y el paso en que se detuvo (el toast desaparecía en segundos)
     Avisos.agregar('error', 'El análisis no terminó', j.error || '', j.paso ? [`Se detuvo en: ${j.paso}`] : []);
   }
@@ -227,8 +257,9 @@ function vistaAnalisis(p){
   }).join('');
   const cuenta = k => r.filas.filter(f => f.alerta === k).length;
   return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">Análisis del ${fmtFecha(a.generado)} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="small muted">${(() => { const e = edadAnalisis(a.generado_hora); return e ? `Datos de SAP de ${e.cuando} (${e.hace})${e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}` : `Análisis del ${fmtFecha(a.generado)}`; })()} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
+        <a class="btn" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo que falta, el stock y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
       <div>Ocupación total<b>${pct(r.ocupacion_total)}</b></div>

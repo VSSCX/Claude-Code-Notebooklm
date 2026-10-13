@@ -157,8 +157,8 @@ PESADAS = ("analisis:%", "cubicaje:%")
 
 def resumen_analisis(doc: dict) -> dict:
     filas = (doc.get("resultado") or {}).get("filas", [])
-    return {"generado": doc.get("generado", ""), "cliente": doc.get("cliente", ""),
-            "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
+    return {"generado": doc.get("generado", ""), "generado_hora": doc.get("generado_hora", ""),
+            "cliente": doc.get("cliente", ""), "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
             "limitadas": sum(1 for f in filas if f["carga_calculada"] < f["qty_entrega"]),
             "excedidas": sum(1 for f in filas if f.get("ajustada") and f["carga"] > f["carga_calculada"]),
             "pedida": sum(f["qty_entrega"] for f in filas), "carga": sum(f["carga"] for f in filas)}
@@ -361,7 +361,8 @@ def registrar_archivo(s: Session, pedido: str, grupo: str, tipo: str, nombre: st
     return a
 
 
-def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[dict]) -> dict:
+def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[dict],
+                       descripciones: dict | None = None) -> dict:
     """Registra las posiciones leídas de VL01N. La cantidad del pedido nunca baja:
     si ya había un valor mayor (por ejemplo, desde el Excel), se conserva."""
     cliente = (cliente or "").upper()
@@ -379,12 +380,15 @@ def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[d
         sku = norm_sku(pos["sku"])
         qty = int(round(max(float(pos.get("qty_pendiente") or 0), 0)))
         fila = actuales.get(sku)
+        nombre = str((descripciones or {}).get(sku) or "")[:120]
         if fila is None:
-            p.lineas.append(LineaPedido(sku=sku, descripcion="", qty=qty, externa=0))
+            p.lineas.append(LineaPedido(sku=sku, descripcion=nombre, qty=qty, externa=0))
             agregadas += 1
         elif qty > fila.qty:
             fila.qty = qty
             actualizadas += 1
+        if fila is not None and not fila.descripcion and nombre:
+            fila.descripcion = nombre                  # una descripción puesta a mano no se pisa
     p.actualizado = ahora()
     return {"pedido": pedido, "nuevo": nuevo, "agregadas": agregadas, "actualizadas": actualizadas,
             "posiciones": len(posiciones)}

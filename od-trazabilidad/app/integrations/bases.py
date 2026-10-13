@@ -91,17 +91,20 @@ def motor_bases() -> Engine:
 # ---------------------------------------------------------------------------
 
 _CACHE: dict[str, tuple[float, object]] = {}
-CACHE_SEG = 600   # 10 minutos
+CACHE_SEG = 120   # 2 minutos: lo justo para que varias consultas seguidas no repitan la misma pregunta al servidor
 
 
 _FALLOS: dict[str, tuple[float, Exception]] = {}
 PAUSA_TRAS_FALLO = 60     # segundos sin volver a preguntar a un servidor que no respondió
 
 
-def _cache(clave: str, fn):
+def _cache(clave: str, fn, fresco: bool = False):
+    """fresco=True ignora lo guardado y vuelve a preguntar (análisis y exportaciones nunca usan datos de hace minutos)."""
     ahora = time.time()
-    if clave in _CACHE and ahora - _CACHE[clave][0] < CACHE_SEG:
+    if not fresco and clave in _CACHE and ahora - _CACHE[clave][0] < CACHE_SEG:
         return _CACHE[clave][1]
+    if fresco:
+        _FALLOS.pop(clave, None)
     if clave in _FALLOS and ahora - _FALLOS[clave][0] < PAUSA_TRAS_FALLO:
         raise _FALLOS[clave][1]                  # cada intento fallido costaba la espera completa de la conexión
     try:
@@ -211,7 +214,7 @@ def _filas(sql: str, params: tuple = ()) -> list[tuple]:
         cx.close()
 
 
-def plan_sop(grupo: str) -> dict:
+def plan_sop(grupo: str, fresco: bool = False) -> dict:
     """{sku: {plan, vendido, pdte_mes, tipo}} del mes actual para un grupo SOP."""
     def cargar():
         out = {}
@@ -222,15 +225,15 @@ def plan_sop(grupo: str) -> dict:
             # y la "en entrega" viene de ZSD001_03 (ver app/analisis.py).
             out[_sku(sku)] = {"plan": plan, "vendido": vendido, "pdte_mes": pdte, "tipo": tipo}
         return out
-    return _cache(f"plan:{grupo}", cargar)
+    return _cache(f"plan:{grupo}", cargar, fresco)
 
 
-def disponibilidad() -> dict:
+def disponibilidad(fresco: bool = False) -> dict:
     """{sku: {cantidad, fecha}}: primera disponibilidad por producto (igual que el Excel)."""
     def cargar():
         return {_sku(c): {"cantidad": int(q or 0), "fecha": f.isoformat() if f else ""}
                 for c, q, f in _filas(SQL_DISPONIBILIDAD)}
-    return _cache("disp", cargar)
+    return _cache("disp", cargar, fresco)
 
 
 SQL_CALEFONES = """

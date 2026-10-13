@@ -237,6 +237,7 @@ function detallePedido(p){
     cuerpo = gs.length ? gs.map(grupoHTML).join('') :
       `<div class="empty"><h3>Todavía no hay grupos</h3><p>Cada entrega se agrupa por camión. Primero se crean las entregas desde el cubicaje.</p></div>`;
   } else if (UI.sub === 'entregas'){
+    if (UI.cubicaje[p.pedido] === undefined) setTimeout(() => cargarCubicaje(p.pedido), 0);    // para saber qué camión es cada entrega
     cuerpo = ents.length ? ents.map(entregaHTML).join('') :
       `<div class="empty"><h3>Este pedido no tiene entregas</h3><p>Crea la primera con las cantidades que suministraste en VL01N.</p><button class="btn primary" data-act="nuevaEntrega">Nueva entrega</button></div>`;
   } else if (UI.sub === 'pendientes'){
@@ -262,7 +263,7 @@ function detallePedido(p){
             <button role="menuitem" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar en SAP' : 'Analizar en SAP'}</button>
             <button role="menuitem" data-act="nuevaEntrega">Nueva entrega</button>
             <button role="menuitem" data-act="editarPedido">Editar pedido</button>
-            <a role="menuitem" href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel con la OC, los productos (pendiente, entrega, stock y próxima liberación) y el detalle de entregas">Exportar análisis a Excel</a>
+            <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel para el KAM: lo pedido, lo que está en entrega, lo que falta, el stock y la próxima liberación">Exportar estatus para el KAM (Excel)</a>
           </div></details></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
     </div>
@@ -283,35 +284,71 @@ function detallePedido(p){
   <div class="tab-body">${cuerpo}</div>`;
 }
 
+/* ---- Pestaña Entregas: cada entrega con lo que lleva, y su camión a un clic ---- */
+UI.plegadas = new Set();         // entregas con los productos ocultos (por defecto se ven todos)
+UI.entCub = null;                // entrega cuyo cubicaje está abierto (solo una a la vez: cada visor 3D usa WebGL)
+UI.entLog = new Set();
+/* Qué camión del cubicaje es esta entrega: la crearon desde ese camión, así que lleva exactamente sus productos y
+   cantidades. Las entregas armadas a mano no coinciden con ninguno y quedan sin camión. */
+function camionDeEntrega(p, e){
+  const cb = UI.cubicaje[p.pedido];
+  if (!cb || !cb.camiones || !cb.filas) return null;
+  const clave = lineas => Object.entries(lineas).filter(([, q]) => q > 0).map(([s, q]) => `${s}:${q}`).sort().join('|');
+  const suyo = {}; (e.lineas || []).forEach(l => { suyo[l.sku] = (suyo[l.sku] || 0) + (+l.qty || 0); });
+  const buscada = clave(suyo);
+  const idx = cb.camiones.findIndex(c => {
+    const porSku = {};
+    cb.filas.filter(f => f.camion === c.numero && (!f.pedido || String(f.pedido) === String(p.pedido)))
+      .forEach(f => { porSku[f.sku] = (porSku[f.sku] || 0) + (+f.unidades || 0); });
+    return clave(porSku) === buscada;
+  });
+  if (idx >= 0) return idx;
+  const ref = /-(\d+)$/.exec(e.camion_ref || '');                 // camión compartido: la referencia trae su número
+  const porRef = ref ? cb.camiones.findIndex(c => c.numero === +ref[1]) : -1;
+  return porRef >= 0 ? porRef : null;
+}
+function cubicajeDeEntrega(p, e, idx){
+  const cb = UI.cubicaje[p.pedido], c = cb.camiones[idx];
+  const filas = cb.filas.filter(f => f.camion === c.numero);
+  const o = filas.length ? filas[filas.length - 1].ocup_acum : 0, tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
+  return `<div class="ent-cub">
+    <div class="ent-cub-top"><b>${esc(c.tipo)} · camión n.º ${c.numero}</b>
+      <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
+      <span class="num">${pctCub(o)} ocupado · ${m3(c.vol_m3)} m³</span>
+      <button class="btn quiet sm" data-act="irCubicaje" data-cam="${idx}">Abrir en Cubicador</button></div>
+    ${cb.visor ? visorPedido(p, cb, 420) : '<p class="small muted">Este cubicaje no tiene visor 3D.</p>'}
+  </div>`;
+}
 function entregaHTML(e){
-  const id = safeId(e.entrega), open = UI.open.has(id), c = e.cita || {};
-  const g = grupos().find(x => x.entregas.some(y => y.entrega === e.entrega));
-  const estado = e.anulada ? '<span class="tag void">Anulada</span>'
-    : pasoOk(e, 'entregado') ? '<span class="tag ok">Entregada</span>'
-    : g && g.next ? `<span class="tag warn">Falta ${esc(g.next.t)}</span>` : '';
-  const m = (cap, v) => `<div class="m"><span class="cap">${cap}</span><span class="v">${v}</span></div>`;
-  return `<article class="docket ${e.anulada ? 'void' : ''}" data-k="e-${esc(id)}">
+  const id = safeId(e.entrega), plegada = UI.plegadas.has(id);
+  const p = Store.get('pedidos', UI.sel) || {pedido: e.pedido};
+  const idx = e.anulada ? null : camionDeEntrega(p, e);
+  const abierta = UI.entCub === id && idx !== null;
+  const lineas = e.lineas || [];
+  const verCam = e.anulada ? ''
+    : idx !== null ? `<button class="btn sm ent-cam" data-act="verCubEntrega" data-ent="${esc(id)}" aria-pressed="${abierta}" title="Ver cómo viaja esta entrega: camión n.º ${UI.cubicaje[p.pedido].camiones[idx].numero}">${ICON.truck}<span>Cubicaje</span></button>`
+    : `<button class="btn sm ent-cam" disabled title="${UI.cubicaje[p.pedido] && UI.cubicaje[p.pedido].camiones ? 'Esta entrega no salió del cubicaje del pedido, por eso no tiene camión asociado' : 'El pedido todavía no está cubicado'}">${ICON.truck}<span>Cubicaje</span></button>`;
+  return `<article class="docket ent ${e.anulada ? 'void' : ''}" data-k="e-${esc(id)}">
     <div class="dk-h">
-      <div class="dk-id">Entrega <span class="code">${esc(e.entrega)}</span> ${estado}</div>
-      <div class="dk-qty">${fmt(unidades(e))} <small>un. · ${(e.lineas || []).length} SKU</small></div>
-    </div>
-    <div class="meta">
-      ${m('Grupo', `<span class="code">${esc(e.grupo || 'sin grupo')}</span>`)}${m('Tipo', `${esc(e.tipo || '—')} · ${esc(e.un || '')}`)}${m('Cita', `<span class="code">${esc(c.numero || '—')}</span>`)}
-      ${m('Fecha', `${c.fecha ? fmtFecha(c.fecha) : '—'}${c.hora ? ' ' + esc(c.hora) : ''}`)}${m('Factura', `<span class="code">${esc(e.factura || '—')}</span>`)}
-    </div>
-    ${g && !e.anulada ? rutaHTML(g, {entrega: e}) : ''}
-    ${e.obs ? `<p class="dk-obs">${esc(e.obs)}</p>` : ''}
-    <div class="dk-act">
-      <button class="btn sm" data-act="editarEntrega" data-ent="${esc(id)}">Editar</button>
-      ${e.anulada ? `<button class="btn sm" data-act="reactivar" data-ent="${esc(id)}">Reactivar</button>` :
-        `<button class="btn danger sm" data-act="anular" data-ent="${esc(id)}">Anular</button>
-         <button class="btn danger sm" data-act="borrarEntregaSap" data-ent="${esc(e.entrega)}" title="Borra la entrega en VL06 y la quita de la plataforma">Borrar en SAP</button>`}
+      <button class="ent-plegar" data-act="plegarEntrega" data-ent="${esc(id)}" aria-expanded="${!plegada}" aria-label="${plegada ? 'Mostrar' : 'Ocultar'} los productos de la entrega ${esc(e.entrega)}">${ICON.chevronAbajo}</button>
+      <div class="dk-id">Entrega <span class="code">${esc(e.entrega)}</span>${e.anulada ? ' <span class="tag void">Anulada</span>' : ''}</div>
+      <div class="dk-qty">${fmt(unidades(e))} <small>un. · ${lineas.length} SKU</small></div>
       <span class="spacer"></span>
-      <button class="btn quiet sm" data-act="toggle" data-ent="${esc(id)}" aria-expanded="${open}">${open ? 'Ocultar productos' : `Ver productos (${(e.lineas || []).length})`}</button>
+      ${verCam}
+      <details class="menu-acc"><summary class="btn quiet sm icon" aria-label="Más acciones de la entrega ${esc(e.entrega)}">${ICON.more}</summary>
+        <div class="menu-acc-lista" role="menu">
+          <button role="menuitem" data-act="editarEntrega" data-ent="${esc(id)}">Editar entrega</button>
+          ${(e.log || []).length ? `<button role="menuitem" data-act="logEntrega" data-ent="${esc(id)}">${UI.entLog.has(id) ? 'Ocultar' : 'Ver'} historial</button>` : ''}
+          ${e.anulada ? `<button role="menuitem" data-act="reactivar" data-ent="${esc(id)}">Reactivar</button>` :
+            `<button role="menuitem" class="peligro" data-act="anular" data-ent="${esc(id)}">Anular entrega</button>
+             <button role="menuitem" class="peligro" data-act="borrarEntregaSap" data-ent="${esc(e.entrega)}" title="Borra la entrega en VL06 y la quita de la plataforma">Borrar en SAP</button>`}
+        </div></details>
     </div>
-    ${open ? `<div class="scroll" style="margin-top:10px"><table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Cantidad</th></tr></thead><tbody>
-      ${(e.lineas || []).map(l => `<tr><td class="code">${esc(l.sku)}</td><td>${esc(l.desc || descDe(e.pedido, l.sku))}</td><td class="n">${fmt(l.qty)}</td></tr>`).join('')}</tbody></table></div>
-      ${(e.log || []).length ? `<details><summary>Historial</summary><ul class="log">${e.log.map(x => `<li>${new Date(x.at).toLocaleString('es-CL')} — ${esc(x.txt)}</li>`).join('')}</ul></details>` : ''}` : ''}
+    ${plegada ? '' : `<table class="tbl ent-tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Cantidad</th></tr></thead><tbody>
+      ${lineas.map(l => `<tr><td class="code">${esc(l.sku)}</td><td>${esc(l.desc || descDe(e.pedido, l.sku))}</td><td class="n">${fmt(l.qty)}</td></tr>`).join('')}</tbody></table>`}
+    ${e.obs ? `<p class="dk-obs">${esc(e.obs)}</p>` : ''}
+    ${UI.entLog.has(id) && (e.log || []).length ? `<ul class="log">${e.log.map(x => `<li>${new Date(x.at).toLocaleString('es-CL')} — ${esc(x.txt)}</li>`).join('')}</ul>` : ''}
+    ${abierta ? cubicajeDeEntrega(p, e, idx) : ''}
   </article>`;
 }
 
