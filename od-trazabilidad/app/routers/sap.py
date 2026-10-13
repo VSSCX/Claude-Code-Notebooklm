@@ -435,7 +435,6 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
     Con `pedidos` (varios, cubicados juntos) se crea una entrega por cada par (camión, pedido): los camiones se comparten
     y cada entrega queda marcada con su camión para poder agruparlas después."""
     import json as _json
-    from datetime import date as _date
     from ..integrations import sap_crear
     from ..models import Config
     numeros = [str(x).strip() for x in (body.get("pedidos") or []) if str(x).strip()] or [str(body.get("pedido", "")).strip()]
