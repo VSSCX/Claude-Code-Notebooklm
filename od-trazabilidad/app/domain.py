@@ -75,7 +75,7 @@ def entrega_doc(e: Entrega) -> dict:
                  "hora": e.cita_hora},
         "vehiculo": e.vehiculo, "carga": e.carga, "un": e.un, "region": e.region,
         "factura": e.factura, "obs": e.obs, "anulada": e.anulada, "reprog": e.reprogramaciones,
-        "camion_ref": e.camion_ref,
+        "camion_ref": e.camion_ref, "suministro": e.suministro or 1,
         "lineas": [{"sku": l.sku, "qty": l.qty} for l in e.lineas],
         "pasos": {p.paso: {"ok": p.ok, "at": _iso(p.at)} for p in e.pasos},
         "log": [{"at": _iso(x.at), "txt": x.texto, "origen": x.origen} for x in e.eventos[:LOG_MAX]],
@@ -132,7 +132,7 @@ def estado(s: Session) -> dict:
                  "hora": r.cita_hora},
         "vehiculo": r.vehiculo, "carga": r.carga, "un": r.un, "region": r.region,
         "factura": r.factura, "obs": r.obs, "anulada": r.anulada, "reprog": r.reprogramaciones,
-        "camion_ref": r.camion_ref,
+        "camion_ref": r.camion_ref, "suministro": r.suministro or 1,
         "lineas": lineas_e.get(r.id, []), "pasos": pasos.get(r.id, {}), "log": log_e.get(r.id, []),
         "creado": _iso(r.creado), "actualizado": _iso(r.actualizado),
     } for r in s.execute(select(E))]
@@ -158,7 +158,7 @@ PESADAS = ("analisis:%", "cubicaje:%")
 def resumen_analisis(doc: dict) -> dict:
     filas = (doc.get("resultado") or {}).get("filas", [])
     return {"generado": doc.get("generado", ""), "generado_hora": doc.get("generado_hora", ""),
-            "cliente": doc.get("cliente", ""), "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
+            "suministro": doc.get("suministro", 1), "cliente": doc.get("cliente", ""), "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
             "limitadas": sum(1 for f in filas if f["carga_calculada"] < f["qty_entrega"]),
             "excedidas": sum(1 for f in filas if f.get("ajustada") and f["carga"] > f["carga_calculada"]),
             "pedida": sum(f["qty_entrega"] for f in filas), "carga": sum(f["carga"] for f in filas)}
@@ -303,6 +303,40 @@ def _log(e: Entrega, texto: str, origen: str, at: datetime | None = None):
     e.eventos.append(Evento(texto=txt[:300], origen=origen, at=at or ahora()))
 
 
+def suministro_actual(s: Session, pedido: str) -> int:
+    """Número del suministro en curso de un pedido: el del último análisis (1 si aún no se analizó)."""
+    c = s.get(Config, f"analisis:{pedido}")
+    try:
+        return max(1, int(json.loads(c.valor).get("suministro") or 1)) if c else 1
+    except (ValueError, TypeError):
+        return 1
+
+
+def abrir_suministro(s: Session, pedido: str, carga_nueva: float) -> tuple[int, bool]:
+    """Un pedido se suministra por tandas: lo que había stock para entregar primero y lo que se libera después.
+    Devuelve (suministro, se_abrió_uno_nuevo). Se abre el siguiente cuando el actual ya tiene sus entregas creadas
+    (una por camión del cubicaje) y el nuevo análisis trae unidades que cargar. Entonces el análisis y el cubicaje del
+    suministro anterior se guardan tal cual, para poder verlos y ligar a cada entrega con su camión."""
+    actual = suministro_actual(s, pedido)
+    if s.get(Config, f"analisis:{pedido}") is None or carga_nueva <= 0:
+        return actual, False
+    p = _get_pedido(s, pedido)
+    activas = [e for e in (p.entregas if p else []) if not e.anulada and (e.suministro or 1) == actual]
+    cub = s.get(Config, f"cubicaje:{pedido}")
+    camiones = len((json.loads(cub.valor).get("camiones") or [])) if cub else 0
+    if not activas or (camiones and len(activas) < camiones):
+        return actual, False                       # el suministro en curso no terminó de crear sus entregas
+    for tipo in ("analisis", "cubicaje"):
+        c = s.get(Config, f"{tipo}:{pedido}")
+        if c is not None:
+            guardar_config(s, f"{tipo}:{pedido}:s{actual}", json.loads(c.valor))
+    c = s.get(Config, f"cubicaje:{pedido}")
+    if c is not None:
+        s.delete(c)                                # el cubicaje en curso es del suministro nuevo
+    anotar_flujo(s, pedido, cubicaje=None)
+    return actual + 1, True
+
+
 def guardar_entrega(s: Session, d: EntregaIn) -> Entrega:
     p = _get_pedido(s, d.pedido)
     if p is None:
@@ -325,6 +359,10 @@ def guardar_entrega(s: Session, d: EntregaIn) -> Entrega:
     e.cita_numero, e.cita_fecha, e.cita_hora = d.cita.numero, d.cita.fecha, d.cita.hora
     if d.camion_ref or nueva:                      # lo que no trae la web no borra el vínculo del camión compartido
         e.camion_ref = d.camion_ref
+    if d.suministro:                               # la web lo manda al editar; una entrega nueva sin indicar toma el suministro en curso
+        e.suministro = d.suministro
+    elif nueva:
+        e.suministro = suministro_actual(s, d.pedido)
     _sync_lineas_entrega(e, [(norm_sku(l.sku), l.qty) for l in d.lineas])
     for k, v in d.pasos.items():
         _set_paso(e, k, v.ok, _sin_tz(v.at))

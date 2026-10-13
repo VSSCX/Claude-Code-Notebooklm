@@ -164,6 +164,8 @@ function cierreAnalisis(){
   if (j.estado === 'ok' && j.datos){
     const d = j.datos;
     j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
+    if (d.suministro_nuevo) Avisos.agregar('info', `Se abrió el suministro ${d.suministro} de este pedido`,
+      'Lo que ya se suministró queda registrado en el suministro anterior, con sus entregas y su cubicaje. Este análisis trabaja solo lo que se liberó ahora.', []);
     if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
     else if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
@@ -201,6 +203,8 @@ const ICONO_ALERTA = Object.fromEntries(Object.entries(PIP_ALERTA).map(([k, t]) 
 /* Lo primero que se ve al analizar: qué productos limitó el plan SOP y si se puede exceder */
 function avisosAnalisis(p, a, r){
   const out = [];
+  const previo = resumen(p).sums.filter(s => s.n < (a.suministro || 1)).reduce((x, s) => x + s.unidades, 0);
+  if ((a.suministro || 1) > 1) out.push(`<div class="aviso info aviso-sum"><div class="aviso-cuerpo"><b>Suministro ${a.suministro}.</b> Del pedido ya se suministraron <b>${fmt(previo)} un.</b> en los suministros anteriores (con sus entregas y cubicaje guardados). Aquí se trabaja solo lo que se liberó ahora.</div></div>`);
   if ((a.cliente || '').toUpperCase() !== (p.cliente || '').toUpperCase())
     out.push(`<div class="aviso warn"><div><b>Este análisis es de ${esc(a.cliente)}, pero el pedido ahora es de ${esc(p.cliente || 'sin cliente')}.</b>
       El plan SOP, lo facturado y la Qty en entrega siguen siendo los del cliente anterior.</div>

@@ -75,6 +75,7 @@ class Entrega(Base):
     # Camión compartido entre pedidos: las entregas creadas desde un cubicaje conjunto para el mismo camión
     # llevan la misma referencia (conjunto-camión) y se agrupan juntas en SAP.
     camion_ref: Mapped[str] = mapped_column(Unicode(40), default="", index=True)
+    suministro: Mapped[int] = mapped_column(Integer, default=1)       # 1.ª, 2.ª… tanda del pedido (lo liberado en distintos momentos)
     creado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
 

@@ -1474,3 +1474,159 @@ def test_las_entregas_se_crean_con_la_fecha_del_analisis_y_no_con_la_de_hoy(c, t
     _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True}).json()["id"])
     assert set(usadas) == {date.today().strftime("%d.%m.%Y")}
     assert c.post("/api/sap/crear_entregas", json={"pedido": "4700", "ensayo": True, "fecha": "mañana"}).status_code == 422
+
+
+def _medidas_con_caja_master(c, tmp_path):
+    with open(_archivo_medidas(tmp_path, [["1001", "1001 CAJA CHICA", 1, 30, 30, 30, 5, "Y", "N", "N", 500, 40],
+                                          ["C1001", "CAJA MASTER 1001", 4, 60, 60, 30, 20, "Y", "N", "N", 100, 10]]), "rb") as fh:
+        c.post("/api/medidas/importar", files={"file": ("Base de Medidas.xlsm", fh.read())})
+
+
+def test_sda_va_con_caja_master_por_defecto_y_lo_que_no_completa_una_caja_va_suelto(c, tmp_path):
+    """3 unidades con caja master de 4: se envían sueltas; 10 unidades = 2 cajas + 2 sueltas. Por defecto en SDA va con caja master."""
+    from app.config import settings
+    _medidas_con_caja_master(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    por_sku = lambda d: {(f["tipo"], f["sku"]): f["cajas"] for f in d["filas04"] if f["pallet"] > 0}
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 3}], "modo": "SDA STOCK"}).json()
+    assert d["caja_master"] == "CON CAJA MASTER"                                  # sin indicar nada: con caja master
+    assert [(f["cajas"], f["unidades"]) for f in d["filas04"] if f["pallet"] > 0] == [(3, 3)]       # 3 unidades sueltas, ninguna caja
+    assert any("no completan una caja master" in a for a in d["avisos"])
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "SDA STOCK"}).json()
+    assert sorted((f["cajas"], f["unidades"]) for f in d["filas04"] if f["pallet"] > 0) == [(2, 2), (2, 8)]   # 2 cajas (8 un.) + 2 sueltas
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "SDA STOCK",
+                                            "caja_master": "SIN CAJA MASTER"}).json()
+    assert d["caja_master"] == "SIN CAJA MASTER" and [(f["cajas"], f["unidades"]) for f in d["filas04"] if f["pallet"] > 0] == [(10, 10)]
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "MDA"}).json()
+    assert d["caja_master"] == ""                                                 # a piso no aplica la caja master
+
+
+def test_predistribuido_por_sucursal_cuando_la_caja_master_no_cuadra_va_unitario(c, tmp_path):
+    from app.config import settings
+    _medidas_con_caja_master(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    texto = "SUC A\t1001\t10\nSUC B\t1001\t3\nSUC C\t1001\t4\n"
+    r = c.post("/api/cubicaje-libre/reparto", json={"texto": texto, "modo": "SDA PREDISTRIBUIDO"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["modo_usado"] == "SDA PREDISTRIBUIDO" and d["caja_master"] == "CON CAJA MASTER"
+    assert [(p["sucursal"], p["sku"], p["qty"]) for p in d["predistribuido"]] == [
+        ("SUC A", "1001", 10), ("SUC B", "1001", 3), ("SUC C", "1001", 4)]
+    assert d["lineas"] == [{"sku": "1001", "qty": 17}] or {l["sku"]: l["qty"] for l in d["lineas"]} == {"1001": 17}
+    por_suc = {}
+    for f in d["filas04"]:
+        if f["pallet"] > 0:
+            por_suc.setdefault(f["sucursal"], []).append((f["cajas"], f["unidades"]))
+    assert sorted(por_suc["SUC A"]) == [(2, 2), (2, 8)]          # 10 = 2 cajas de 4 + 2 sueltas
+    assert por_suc["SUC B"] == [(3, 3)]                           # 3 < 4: todo suelto
+    assert por_suc["SUC C"] == [(1, 4)]                           # 4 = una caja
+    assert any("SUC B" in a and "no completan una caja master" in a for a in d["avisos"])
+    assert d["unidades"] == 17
+
+    # el texto pegado acepta encabezado, ; y errores se informan sin perder las filas buenas
+    r = c.post("/api/cubicaje-libre/reparto", json={"texto": "Sucursal;SKU;Unidades\nSUC A;1001;8\nSUC B;1001;abc\nSUC C;1001\n", "modo": "MDA PREDISTRIBUIDO"})
+    assert r.status_code == 200 and [(p["sucursal"], p["qty"]) for p in r.json()["predistribuido"]] == [("SUC A", 8)]
+    assert len(r.json()["errores_archivo"]) == 2
+    assert c.post("/api/cubicaje-libre/reparto", json={"texto": "solo basura"}).status_code == 422
+
+
+def test_predistribuido_de_un_pedido_analizado_reparte_por_sucursal_y_topea_con_la_carga(c, tmp_path, monkeypatch):
+    """Pedido analizado + reparto pegado en la pestaña (sucursal, SKU, unidades): SDA predistribuido por sucursal."""
+    import time
+    from app.config import settings
+    from app.integrations import base_medidas, bases, sap
+    _medidas_con_caja_master(c, tmp_path)
+    monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[sap.Posicion("1001", 17, 17)]))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **kw: [])
+    monkeypatch.setattr(sap, "mmbe", lambda skus, avance=None: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"1001": {"plan": 500, "vendido": 0}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {"1001": {"desc": "1001 CAJA CHICA", "max_camion": 500}})
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    tid = c.post("/api/analisis/4900", json={"puesto": "PN01", "cliente": "PARIS"}).json()["id"]
+    for _ in range(100):
+        if c.get(f"/api/acciones/trabajos/{tid}").json()["estado"] != "en_curso":
+            break
+        time.sleep(0.05)
+    # el reparto supera la carga (17): se topea en el orden del archivo
+    r = c.put("/api/predistribuido/4900", json={"texto": "SUC A\t1001\t10\nSUC B\t1001\t3\nSUC C\t1001\t9\n"})
+    assert r.status_code == 200 and r.json()["sucursales"] == ["SUC A", "SUC B", "SUC C"] and r.json()["unidades"] == 22
+    d = c.post("/api/cubicaje/4900", json={"modo": "SDA PREDISTRIBUIDO"}).json()
+    assert d["modo"] == "SDA PREDISTRIBUIDO" and d["caja_master"] == "CON CAJA MASTER"
+    por_suc = {}
+    for f in d["filas04"]:
+        if f["pallet"] > 0:
+            por_suc[f["sucursal"]] = por_suc.get(f["sucursal"], 0) + f["unidades"]
+    assert por_suc == {"SUC A": 10, "SUC B": 3, "SUC C": 4}                       # la última sucursal queda corta: 17 de carga
+    assert any("SUC B" in a and "no completan una caja master" in a for a in d["avisos"])
+
+
+def test_suministros_lo_ya_suministrado_queda_registrado_y_lo_liberado_despues_es_otro_suministro(c, tmp_path, monkeypatch):
+    """50 % con stock hoy y el resto se libera después: el primer suministro conserva su análisis, su cubicaje y sus entregas,
+    y lo liberado después se trata como un suministro nuevo."""
+    import json
+    import time
+    from app.db import SessionLocal
+    from app.integrations import sap, sap_crear
+    from app.models import Config
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4950")
+    cub1 = c.get("/api/cubicaje/4950").json()
+    assert cub1["suministro"] == 1 and c.get("/api/analisis/4950").json()["suministro"] == 1
+    n_cam1 = len(cub1["camiones"])
+    contador = {"n": 0}
+
+    def falso(pedido, puesto, fecha, materiales, fecha_cita="", hora_cita="", ensayo=False, ses=None):
+        contador["n"] += 1
+        r = sap_crear.Resultado(ok=True, ensayo=ensayo)
+        r.entrega = "" if ensayo else f"88{contador['n']:06d}"
+        r.mensaje = "ok"
+        return r
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4950", "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    ents1 = [e for e in _estado(c)["entregas"] if e["pedido"] == "4950"]
+    assert len(ents1) == n_cam1 and {e["suministro"] for e in ents1} == {1}
+
+    def analizar(unidades):
+        monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
+            sap.Posicion("900081624", unidades, unidades)]))
+        tid = c.post("/api/analisis/4950", json={"puesto": "PN01", "cliente": "PARIS"}).json()["id"]
+        return _esperar_job(c, tid)
+
+    # 1) se libera el resto: el pedido pasa al suministro 2 y el primero queda guardado tal cual
+    t = analizar(12)
+    assert t["estado"] == "ok" and t["datos"]["suministro"] == 2 and t["datos"]["suministro_nuevo"] is True
+    assert c.get("/api/analisis/4950").json()["suministro"] == 2
+    cub2 = c.get("/api/cubicaje/4950").json()
+    assert cub2["suministro"] == 2 and cub2["unidades"] == 12                    # el cubicaje en curso es solo lo liberado ahora
+    viejo = c.get("/api/cubicaje/4950?suministro=1").json()
+    assert viejo["suministro"] == 1 and len(viejo["camiones"]) == n_cam1 and viejo["unidades"] == cub1["unidades"]
+    with SessionLocal() as s:
+        assert json.loads(s.get(Config, "analisis:4950:s1").valor)["suministro"] == 1
+    assert c.get("/api/cubicaje/4950?suministro=7").status_code == 404
+
+    # 2) las entregas del primero siguen siendo del suministro 1; las nuevas nacen en el 2
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4950", "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    todas = [e for e in _estado(c)["entregas"] if e["pedido"] == "4950"]
+    assert sorted({e["suministro"] for e in todas}) == [1, 2]
+    assert {e["entrega"] for e in todas if e["suministro"] == 1} == {e["entrega"] for e in ents1}
+    ped = next(p for p in _estado(c)["pedidos"] if p["pedido"] == "4950")
+    assert sum(sum(l["qty"] for l in e["lineas"]) for e in todas) == cub1["unidades"] + 12        # nada se mezcla ni se pierde
+
+    # 3) volver a analizar sin nada liberado (carga 0) no abre otro suministro
+    t = analizar(0)
+    assert t["estado"] == "ok" and t["datos"]["suministro"] == 2 and t["datos"]["suministro_nuevo"] is False
+    # 4) analizar de nuevo con carga mientras el 2 ya tiene sus entregas abre el 3
+    t = analizar(5)
+    assert t["datos"]["suministro"] == 3 and t["datos"]["suministro_nuevo"] is True
+    # 5) pero si el suministro en curso aún no tiene entregas, solo se actualiza
+    t = analizar(6)
+    assert t["datos"]["suministro"] == 3 and t["datos"]["suministro_nuevo"] is False
+    # una entrega creada a mano toma el suministro en curso
+    r = c.put("/api/entregas/8999999", json={"entrega": "8999999", "pedido": "4950", "lineas": [{"sku": "900081624", "qty": 1}]})
+    assert r.status_code in (200, 201)
+    assert next(e for e in _estado(c)["entregas"] if e["entrega"] == "8999999")["suministro"] == 3

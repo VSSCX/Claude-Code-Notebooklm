@@ -183,15 +183,18 @@ def analizar(numero: str, body: dict):
                 p_ped.cliente = cliente                  # el análisis manda: el pedido queda con el cliente analizado
             if p_ped is not None:
                 domain.completar_oc(p_ped, oc)           # solo si no tiene: no pisa una OC escrita a mano
+            # ¿el pedido ya tuvo un suministro con sus entregas y esto es lo que se liberó después?
+            previo = ses.get(Config, _clave_cubicaje(numero))
+            previo_valor = previo.valor if previo is not None else None
+            doc["suministro"], suministro_nuevo = domain.abrir_suministro(ses, numero, sum(f["carga"] for f in res["filas"]))
             domain.guardar_config(ses, _clave_analisis(numero), doc)
             domain.anotar_flujo(ses, numero, analisis=domain.resumen_analisis(doc))
             ses.commit()
             # si el pedido ya estaba cubicado, el cubicaje se rehace con la carga nueva (y el cliente nuevo)
             recubicado = None
-            previo = ses.get(Config, _clave_cubicaje(numero))
-            if previo is not None:
+            if previo_valor is not None:
                 from .cubicaje import _cubicar
-                anterior = _json.loads(previo.valor)
+                anterior = _json.loads(previo_valor)
                 try:
                     _cubicar(numero, {"modo": anterior.get("modo"), "caja_master": anterior.get("caja_master", ""),
                                       "piso_pallet": anterior.get("piso_pallet", "")}, ses)
@@ -203,6 +206,7 @@ def analizar(numero: str, body: dict):
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
                 "recubicado": recubicado, "sesion_sap": sap.ultima_sesion,
+                "suministro": doc["suministro"], "suministro_nuevo": suministro_nuevo,
                 "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
                 "export_aviso": aviso_pub or ((publicado.get("copia") or {}).get("motivo", ""))}
 
@@ -251,9 +255,13 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
 
     # En entrega = lo de las entregas de ESTE pedido (activas) + lo que SAP ya tenía en entregas no registradas aquí
     en_ent: dict[str, int] = {}
+    por_sum: dict[int, dict[str, int]] = {}           # suministro -> SKU -> unidades (lo liberado en distintos momentos)
     for e in activas:
         for l in e.lineas:
             en_ent[l.sku] = en_ent.get(l.sku, 0) + l.qty
+            d_sum = por_sum.setdefault(e.suministro or 1, {})
+            d_sum[l.sku] = d_sum.get(l.sku, 0) + l.qty
+    sums = sorted(por_sum) if len(por_sum) > 1 else []
     filas = []
     for l in ped.lineas:
         entrega = en_ent.get(l.sku, 0) + l.externa
@@ -311,22 +319,24 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
                   ("." if not pendientes else "; próxima liberación del análisis (no hubo conexión para actualizarla)."))
                + (f" Stock y cantidades de SAP: análisis del {hora_an_txt}." if doc else " Sin análisis de SAP: stock no disponible.")])
     ws.append([])
-    CAB = ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Stock CD30", "Reserva CD30", "Stock EC01",
-           "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"]
+    CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado"] + [f"Suministro {k}" for k in sums]
+           + ["Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Próx. liberación (fecha)",
+              "Próx. liberación (cant.)"])
     ws.append(CAB)
     fila_cab = ws.max_row
     for f in filas:
         st = (filas_an.get(f["sku"]) or {}).get("stock") or {}
         fecha, cant = liberacion(f["sku"]) if f["falta"] > 0 else ("", "")
         ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f)]
+                  + [por_sum[k].get(f["sku"], 0) for k in sums]
                   + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01")] if f["falta"] > 0 else [None] * 4)
                   + [fecha_corta(fecha) if fecha else "", cant])
 
     we = wb.create_sheet("Entregas")
-    we.append(["N° entrega", "SKU", "Descripción", "Qty"])
-    for e in sorted(activas, key=lambda x: x.entrega):
+    we.append(["N° entrega", "SKU", "Descripción", "Qty", "Suministro"])
+    for e in sorted(activas, key=lambda x: (x.suministro or 1, x.entrega)):
         for l in e.lineas:
-            we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty])
+            we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
 
     wa = wb.create_sheet("Análisis SAP")
     wa.append(["OC", "SKU", "Descripción", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",

@@ -61,6 +61,8 @@ def cubicaje_sda_a_piso(posiciones: list[Posicion], cache: dict[str, Dims], boxe
     if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables.")
         return res
+    from .sda import avisos_sueltas
+    res.avisos += avisos_sueltas(bloques, cache)
     res.avisos.append("Carga a piso (sin pallets): " + ("por sucursal." if por_suc else "las cajas van directo al camión."))
 
     items, mult = _items(bloques, por_suc)

@@ -126,6 +126,23 @@ def construir_bloques(posiciones: list[Posicion], cache: dict[str, Dims], usa_ca
     return bloques, sin_medidas, sin_caja
 
 
+def avisos_sueltas(bloques: list[Bloque], cache: dict[str, Dims]) -> list[str]:
+    """Con caja master activa, lo que no completa una caja (por ejemplo 3 unidades de una caja de 4) viaja suelto:
+    se informa para que no parezca un error. Por sucursal, el aviso dice de cuál."""
+    por: dict[tuple[str, str], list[int]] = {}
+    for b in bloques:
+        if b.tipo != "Suelta":
+            continue
+        dc = get_dims_for(cache, "C" + b.cod)
+        f = por.setdefault((b.sucursal, b.cod), [0, dc.piezas if dc is not None else 0])
+        f[0] += b.n
+    if not por:
+        return []
+    items = [(f"{suc}: " if suc else "") + f"{cod} ×{n} (caja de {pz})" for (suc, cod), (n, pz) in por.items()]
+    txt = ", ".join(items[:8]) + (f" y {len(items) - 8} más" if len(items) > 8 else "")
+    return ["Las unidades que no completan una caja master viajan sueltas: " + txt + "."]
+
+
 def orientar_pallet(pal_L: float, pal_W: float, modo: str, bloques: list = None,
                     restric: Restric = None, pal_H: float = 0) -> tuple[float, float]:
     """Cómo se acomoda el pallet respecto del eje largo del empaque.
@@ -622,6 +639,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
     res.no_encontrados = [p.sku for p in posiciones if str(p.desc).strip() == NO_ENCONTRADO]
     if sin_caja:
         res.avisos.append("Sin caja master, cubicados individuales: " + ", ".join(sin_caja))
+    res.avisos += avisos_sueltas(bloques, cache)
     if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables en SDA Stock.")
         return res

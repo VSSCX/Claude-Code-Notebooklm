@@ -13,6 +13,7 @@ from ...integrations import medidas as med_mod
 from ..comun import _aplicar_ajustes, _calefones_de, _clave_analisis, camiones_vista
 from ._comun import (
     _commit,
+    caja_master_defecto,
     _datos_visor,
     _faltantes_de,
     _lineas_sin_kits,
@@ -187,9 +188,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         body = {**body, "piso_pallet": ""}          # ver un pallet exige pallets: "a piso" no aplica
         if "SDA" not in modo:
             modo = "SDA PREDISTRIBUIDO" if "PREDISTRIBUIDO" in modo else "SDA STOCK"
-            # los modos SDA exigen indicar caja master: si no viene, se asume sin caja
+            # los modos SDA exigen indicar caja master: si no viene, va con caja master (lo habitual en SDA)
             if not str(body.get("caja_master") or "").strip():
-                body = {**body, "caja_master": "SIN CAJA MASTER"}
+                body = {**body, "caja_master": "CON CAJA MASTER"}
         camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
     elif vista == "camion50":
         camiones = leer_camiones([list(camiones_vista(s)["camion50"])])
@@ -232,14 +233,14 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         if "PREDISTRIBUIDO" not in modo:
             modo = "SDA PREDISTRIBUIDO" if "SDA" in modo else "MDA PREDISTRIBUIDO"
 
+    caja_efectiva = caja_master_defecto(body, regla, modo)
     partes = []
     if posiciones:
         entrada = Entrada(cliente=cliente or "SIN CLIENTE", modo=modo, posiciones=posiciones,
                           pedidos=[str(body.get("pedido") or "LIBRE")], medidas=cache,
                           camiones=camiones,
-                          # los modos que no son MDA exigen indicarla: sin dato se parte en "sin caja master"
-                          caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")
-                                          or ("SIN CAJA MASTER" if modo != "MDA" else "")),
+                          # SDA va con caja master salvo que se indique lo contrario
+                          caja_master=caja_efectiva,
                           piso_pallet=str(body.get("piso_pallet") or ""),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
@@ -288,7 +289,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "letra": letra, "color": color}
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
-           "caja_master": str(body.get("caja_master") or ""), "piso_pallet": piso_elegido,
+           "caja_master": caja_efectiva, "piso_pallet": piso_elegido,
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,

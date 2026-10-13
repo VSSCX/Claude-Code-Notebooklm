@@ -20,6 +20,7 @@ from ..comun import (
 )
 from ._comun import (
     _commit,
+    caja_master_defecto,
     _datos_visor,
     _faltantes_de,
     _lineas_sin_kits,
@@ -31,17 +32,26 @@ from .predistribuido import _clave_predist
 router = APIRouter()
 
 
+def _nombre_visor_pedido(numero: str, suministro: int) -> str:
+    """El visor de cada suministro tiene su propio nombre: abrir el siguiente no borra el del anterior."""
+    return f"pedido_{numero}" if suministro <= 1 else f"pedido_{numero}-s{suministro}"
+
+
 @router.get("/cubicaje/{numero}")
-def get_cubicaje(numero: str, s: Session = Depends(get_session)):
+def get_cubicaje(numero: str, suministro: int = 0, s: Session = Depends(get_session)):
+    """Cubicaje del pedido. Con `suministro` se pide el de una tanda anterior (se guarda al abrirse la siguiente)."""
     import json as _json
 
     from ...models import Config
-    c = s.get(Config, _clave_cubicaje(numero))
+    actual = domain.suministro_actual(s, numero)
+    anterior = bool(suministro) and suministro != actual
+    c = s.get(Config, f"{_clave_cubicaje(numero)}:s{suministro}" if anterior else _clave_cubicaje(numero))
     if c is None:
-        raise HTTPException(404, "Este pedido todavía no está cubicado.")
+        raise HTTPException(404, "Este pedido todavía no está cubicado." if not anterior
+                            else f"No quedó guardado el cubicaje del suministro {suministro}.")
     doc = _json.loads(c.valor)
     if doc.get("visor_vivo"):
-        doc["visor_json"] = _datos_visor(f"pedido_{numero}_datos")
+        doc["visor_json"] = _datos_visor(f"{_nombre_visor_pedido(numero, suministro if anterior else actual)}_datos")
     return doc
 
 
@@ -101,6 +111,7 @@ def _cubicar(numero, body: dict, s: Session):
         analisis[n] = _json.loads(ca.valor)
     numero = numeros[0]
     an = analisis[numero]
+    suministro = int(an.get("suministro") or 1)
     filas = [f for n in numeros for f in analisis[n]["resultado"]["filas"]]
     if not filas:
         raise HTTPException(422, "El análisis no tiene productos.")
@@ -135,7 +146,7 @@ def _cubicar(numero, body: dict, s: Session):
                     for i, (n, f) in enumerate((n, f) for n in numeros for f in analisis[n]["resultado"]["filas"])],
         pedidos=numeros, medidas=cargar_cache_dims(med_filas),
         camiones=leer_camiones(camiones_cfg),
-        caja_master=str(body.get("caja_master") or (regla.caja_master if regla else "")),
+        caja_master=caja_master_defecto(body, regla, modo),
         pallet=tuple(cli_mod.doc(regla)["pallet"]) if regla else None,
         hibrido=regla.hibrido if regla else None,
         pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
@@ -156,6 +167,7 @@ def _cubicar(numero, body: dict, s: Session):
 
     avisos_cli = _avisos_clientes(s, distintos, cliente) if multi else []
     doc = {"pedido": numero if not multi else " + ".join(numeros), "cliente": cliente, "modo": r.modo,
+           "suministro": suministro,
            "generado": _date.today().isoformat(),
            "conjunto": {"id": cid, "pedidos": numeros, "clientes": clientes_pedidos,
                         "distintos": distintos, "reglas_de": cliente} if multi else None,
@@ -172,7 +184,7 @@ def _cubicar(numero, body: dict, s: Session):
            "kits": _resumen_kits(kits, [(f["sku"], f["carga"]) for f in filas if f["carga"] > 0]),
            "faltantes": _faltantes_de(_lineas_sin_kits([(f["sku"], f["carga"]) for f in filas if f["carga"] > 0], kits),
                                       lambda sku, _c=entrada.medidas: _c.get(sku.lower()) is not None)}
-    nombre_visor = f"conjunto_{cid}" if multi else f"pedido_{numero}"
+    nombre_visor = f"conjunto_{cid}" if multi else _nombre_visor_pedido(numero, suministro)
     if not multi:
         domain.guardar_config(s, _clave_cubicaje(numero), doc)
 

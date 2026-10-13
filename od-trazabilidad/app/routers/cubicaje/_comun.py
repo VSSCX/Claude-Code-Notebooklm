@@ -107,3 +107,17 @@ def _visor_vivo() -> str:
         return asegurar_visor_vivo(carpeta, _Path(_st.plantilla_visor).read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - sin visor la carga igual se calcula
         return ""
+
+
+def caja_master_defecto(body: dict, regla, modo: str, piso: str = "") -> str:
+    """Caja master del cubicaje: lo que se pidió, si no la regla del cliente y, si no hay ninguna, CON CAJA MASTER cuando
+    la carga va en pallets (SDA, o forzada a PALLET). A piso (MDA) no aplica. Las unidades que no completan una caja se
+    envían sueltas aunque la caja master esté activa; eso lo resuelve el motor."""
+    c = str(body.get("caja_master") or "").strip().upper() or (regla.caja_master if regla else "")
+    if c:
+        return c
+    en_pallets = "SDA" in str(modo).upper() or str(piso or body.get("piso_pallet") or "").strip().upper().startswith("PALLET")
+    if en_pallets:
+        return "CON CAJA MASTER"
+    return "SIN CAJA MASTER" if str(modo).upper() != "MDA" else ""      # a piso no aplica; el motor pide un valor fuera de MDA
+

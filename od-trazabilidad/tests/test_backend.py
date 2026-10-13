@@ -1143,7 +1143,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     completo = next(x for x in filas.values() if x[4] == 0)
     assert completo[5] == "En entrega" and completo[6:12] == (None,) * 6
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
-    assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 4 for x in ent)
+    assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 5 for x in ent)
     assert wb["Análisis SAP"][1][3].value == "Qty pendiente"
     assert c.get("/api/analisis/9999999999/excel").status_code == 404
 

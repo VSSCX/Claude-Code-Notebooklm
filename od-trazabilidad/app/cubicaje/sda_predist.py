@@ -238,6 +238,8 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     res.sin_medidas = sin_medidas
     if fuera:
         res.avisos.append("SKU del reparto que no están en el pedido: " + ", ".join(fuera))
+    from .sda import avisos_sueltas
+    res.avisos += avisos_sueltas(bloques, cache)
     if not bloques and not lineas_kit:
         res.avisos.append("Sin SKUs cubicables en SDA Predistribuido.")
         return res

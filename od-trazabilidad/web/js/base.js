@@ -256,6 +256,7 @@ function calcularResumen(p){
       const k = normSku(l.sku), q = +l.qty || 0;
       const r = m.get(k) || {sku:k, desc:l.desc || '', pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, externa:0, fuera:true};
       r.enEntrega += q; if (fac) r.facturado += q;
+      const sm = e.suministro || 1; (r.sum = r.sum || {})[sm] = ((r.sum || {})[sm] || 0) + q;       // lo suministrado, por tanda
       if (ent) r.entregado += q; else if (conf) r.agendado += q; else r.sinCita += q;
       m.set(k, r);
     }
@@ -263,7 +264,14 @@ function calcularResumen(p){
   const filas = [...m.values()].map(r => ({...r, pendiente: Math.max(0, r.pedida - r.enEntrega - r.externa), exceso: Math.max(0, r.enEntrega + r.externa - r.pedida)}));
   const tot = filas.reduce((a, r) => { for (const k of ['pedida','enEntrega','entregado','agendado','sinCita','facturado','pendiente','exceso','externa']) a[k] += r[k]; return a; },
     {pedida:0, enEntrega:0, entregado:0, agendado:0, sinCita:0, facturado:0, pendiente:0, exceso:0, externa:0});
-  return {filas, tot};
+  // Suministros: lo que se entregó en cada tanda (lo que había stock primero, lo que se liberó después)
+  const sums = {};
+  for (const e of entregasDe(p.pedido)){
+    if (e.anulada) continue;
+    const k = e.suministro || 1, s = sums[k] = sums[k] || {n: k, entregas: 0, unidades: 0, entregadas: 0};
+    s.entregas++; const u = (e.lineas || []).reduce((a, l) => a + (+l.qty || 0), 0); s.unidades += u; if (pasoOk(e, 'entregado')) s.entregadas += u;
+  }
+  return {filas, tot, sums: Object.values(sums).sort((a, b) => a.n - b.n)};
 }
 const cerrado = p => { const {tot} = resumen(p); return tot.pedida > 0 && tot.pendiente === 0 && tot.entregado >= tot.pedida; };
 
@@ -425,7 +433,8 @@ const FLUJO_ACCION = {analisis: 'Analizar pedido', ajuste: 'Revisar la carga', c
 function flujoDe(p){
   const fl = Store.get('config', 'flujo:' + p.pedido) || {};
   const an = fl.analisis || null, cb = fl.cubicaje || null;
-  const ents = entregasDe(p.pedido).filter(e => !e.anulada);
+  const suministro = an ? (an.suministro || 1) : 1;           // el flujo sigue al suministro en curso; los anteriores ya se cumplieron
+  const ents = entregasDe(p.pedido).filter(e => !e.anulada && (e.suministro || 1) === suministro);
   const camiones = cb ? cb.camiones : 0, conGrupo = ents.filter(e => e.grupo).length;
   const desact = !!an && (an.cliente || '').toUpperCase() !== (p.cliente || '').toUpperCase();   // se cambió el cliente después de analizar
   const lim = an ? an.limitadas : 0;
@@ -451,7 +460,7 @@ function flujoDe(p){
   const sig = pasos.find(x => !x.hecho && !x.omit) || null;
   if (sig) sig.sig = true;
   const tab = {analisis: 'analisis', ajuste: 'analisis', cubicaje: 'cubicaje', entregas: ents.length ? 'entregas' : 'cubicaje', grupos: 'grupos'};
-  return {pasos, sig, an, cb, ents, enPlataforma: !!an, desact, tabSig: sig ? tab[sig.k] : (ents.length ? 'entregas' : 'analisis'), tab};
+  return {pasos, sig, an, cb, ents, suministro, enPlataforma: !!an, desact, tabSig: sig ? tab[sig.k] : (ents.length ? 'entregas' : 'analisis'), tab};
 }
 
 /* Qué falta hacer en un pedido: el siguiente paso del flujo o, si ya está encaminado, el del camión con la cita más próxima */

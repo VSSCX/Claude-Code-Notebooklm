@@ -74,6 +74,7 @@ class EntregaIn(_Base):
     anulada: bool = False
     reprog: int = Field(0, ge=0)
     camion_ref: str = Field("", max_length=40)
+    suministro: int = Field(0, ge=0)          # 0 = el suministro en curso del pedido
     lineas: list[LineaEntregaIn] = []
     pasos: dict[str, PasoIn] = {}
     log: list[LogIn] = []

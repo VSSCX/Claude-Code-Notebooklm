@@ -224,8 +224,8 @@ function cambiarOpcionCub(campo, valor){
   else if (campo === 'pallet_modo') c.pallet_camion = valor === 'camion';
   if (campo === 'pallet_modo'){ UI.cubCam = 0; pedirCalculo(); return; }
   if (campo === 'modo' || campo === 'carga' || campo === 'destino'){
-    // fuera de MDA el motor exige indicar caja master: se parte en "sin" en vez de fallar
-    if (efectivoCub(c).pideCaja && !c.caja_master) c.caja_master = 'SIN CAJA MASTER';
+    // en pallets va con caja master salvo que se indique lo contrario (lo que no completa una caja viaja suelto)
+    if (efectivoCub(c).pideCaja && !c.caja_master) c.caja_master = 'CON CAJA MASTER';
     // la vista de un solo pallet solo existe con pallets
     if (!efectivoCub(c).pallets && c.vista === 'pallet') c.vista = UI.vistaCamion || 'rampla';
   }
@@ -241,6 +241,31 @@ function vaciarCub(){
   Object.assign(UI.cubIn, {lineas: [], pedido: '', predistribuido: [], grupos: []});
   UI.cubCam = 0; pedirCalculo();
   if (previo.lineas.length) toast('Carga vaciada', {texto: 'Deshacer', fn: () => { Object.assign(UI.cubIn, previo); pedirCalculo(); render(); }});
+}
+
+/* ---- Reparto por sucursal escrito o pegado, como la hoja Predistribuido del Excel ---- */
+UI.cubRepAbierto = false;
+function editorReparto(inp){
+  const texto = (inp.predistribuido || []).map(x => `${x.sucursal}\t${x.sku}\t${x.qty}`).join('\n');
+  return `<div class="reparto editor" data-k="cub-reparto"><label class="f"><b>Reparto por sucursal</b>
+      <span class="small muted">Una línea por sucursal y producto: sucursal, SKU y unidades. Pega desde Excel o escribe; sirve el mismo producto en varias sucursales.</span>
+      <textarea data-cub-reparto-texto rows="8" spellcheck="false" placeholder="SUC-01\t900081624\t20&#10;SUC-02\t900081624\t10">${esc(texto)}</textarea></label>
+    <div class="row tight" style="margin-top:8px"><button class="btn primary sm" data-cub="reparto-aplicar">Aplicar reparto</button>
+      <button class="btn quiet sm" data-cub="reparto-cerrar">Cancelar</button>
+      <a class="btn quiet sm" href="/api/cubicaje-libre/plantilla" title="Plantilla de Excel">Plantilla</a></div></div>`;
+}
+async function aplicarReparto(){
+  const area = document.querySelector('[data-cub-reparto-texto]'); if (!area) return;
+  UI.cubOcupado = true; renderSoon();
+  try {
+    const d = await api('POST', '/cubicaje-libre/reparto', {texto: area.value, modo: UI.cubIn.modo || '', caja_master: UI.cubIn.caja_master || '',
+      piso_pallet: UI.cubIn.piso_pallet || '', destino: UI.cubIn.destino || ''});
+    adoptarDoc(d); UI.cubRepAbierto = false;
+    const sucs = new Set((d.predistribuido || []).map(x => x.sucursal)).size;
+    Avisos.agregar((d.errores_archivo || []).length ? 'info' : 'ok', `Reparto cargado: ${sucs} sucursales · ${fmt((d.predistribuido || []).reduce((a, x) => a + (+x.qty || 0), 0))} un.`,
+      (d.errores_archivo || []).slice(0, 3).join(' · '), []);
+  } catch(e){ toast(e.message); }
+  UI.cubOcupado = false; render();
 }
 
 /* ---- Importar / traer un pedido ---- */
@@ -401,7 +426,7 @@ function vistaCubicador(){
     : porSucursal && !grp.length ? `<div class="reparto pendiente">
       <b>Falta el reparto por sucursal</b>
       <p class="small muted">Este modo arma la carga sucursal por sucursal. Sube el predistribuido del cliente tal como lo envía: se leen la sucursal, el producto y las unidades.</p>
-      <div class="row tight">${botonImportar('Subir predistribuido')}<a class="btn quiet sm" href="/api/cubicaje-libre/plantilla">Plantilla</a></div></div>` : '';
+      <div class="row tight">${botonImportar('Subir predistribuido')}<button class="btn sm" data-cub="reparto-abrir">Escribir o pegar</button><a class="btn quiet sm" href="/api/cubicaje-libre/plantilla">Plantilla</a></div></div>` : '';
 
   /* --- opciones, arriba del visor: se ven y se cambian sin bajar --- */
   const cls = (UI.clientes || []).map(x => x.nombre);
@@ -463,6 +488,7 @@ function vistaCubicador(){
         <h2>Carga</h2><span class="muted num small" title="Una caja master es un bulto con varias unidades">${fmt(totUnidades)} un. · ${fmt(totBultos)} bultos · ${lineas.length} SKU</span>
         <div class="mc-acc"><a class="btn quiet sm" href="/api/cubicaje-libre/plantilla" title="Excel para armar la carga fuera de la plataforma">Plantilla</a>
         <label class="btn quiet sm" title="Cargar productos desde un Excel o CSV: la plantilla o el archivo del cliente">Importar<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>
+        <button class="btn quiet sm" data-cub="reparto-abrir" aria-pressed="${UI.cubRepAbierto}" title="Escribir o pegar el reparto por sucursal: sucursal, producto y unidades">Reparto</button>
         ${lineas.length ? `<a class="btn quiet sm" href="/api/cubicaje-libre/excel">Exportar</a><span class="spacer"></span><button class="btn quiet sm" data-cub="vaciar">Vaciar</button>` : ''}</div>
       </div>
       <div class="agregar">
@@ -471,7 +497,7 @@ function vistaCubicador(){
         ${lineas.length && !UI.cubSug.length && !UI.cubQ ? '<p class="small muted ayuda">Enter agrega y salta a las unidades; otro Enter vuelve aquí. También puedes pegar una lista desde Excel (SKU y unidades).</p>' : ''}
       </div>
       <ol class="items">${filas || `<li class="vacio"><b>Empieza por el primer producto</b><span>Escribe un SKU arriba, pega una lista desde Excel, o trae un pedido analizado.</span></li>`}</ol>
-      ${bloqueReparto}${bloqueGrupos}
+      ${UI.cubRepAbierto ? editorReparto(inp) : ''}${bloqueReparto}${bloqueGrupos}
       <div class="mc-pie">
         <div class="row tight"><input type="text" data-cubped placeholder="Traer un pedido analizado (N°)" inputmode="numeric" style="flex:1;min-width:0"><button class="btn sm" data-cub="traer">Traer</button></div>
         ${seccionAjustes()}
@@ -529,6 +555,9 @@ document.addEventListener('click', ev => {
   }
   else if (d.cub === 'vaciar'){ vaciarCub(); }
   else if (d.cub === 'quitar-reparto'){ quitarRepartoCub(); }
+  else if (d.cub === 'reparto-abrir'){ UI.cubRepAbierto = !UI.cubRepAbierto; render(); }
+  else if (d.cub === 'reparto-cerrar'){ UI.cubRepAbierto = false; render(); }
+  else if (d.cub === 'reparto-aplicar'){ aplicarReparto(); }
   else if (d.cub === 'traer'){ const el = document.querySelector('[data-cubped]'); traerPedido(el ? el.value : ''); }
   else if (d.cub === 'pdf-todos'){
     const n = (UI.cub && UI.cub.camiones || []).length;

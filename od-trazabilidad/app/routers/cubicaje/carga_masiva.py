@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ...db import get_session
 from ...integrations import medidas as med_mod
 from .libre import cubicaje_libre
-from .predistribuido import _conocidos
+from .predistribuido import _conocidos, _fila_predist
 
 router = APIRouter()
 
@@ -109,15 +109,49 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
                    piso_pallet: str = Form(""), destino: str = Form(""),
                    s: Session = Depends(get_session)):
     """Carga masiva: lee el Excel y deja los productos listos para cubicar."""
-    import json as _json
-
     from ... import cargas
-    from ...models import Config
     try:
         lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    return _aplicar_carga(s, lec, reemplazar, modo, caja_master, piso_pallet, destino)
 
+
+@router.post("/cubicaje-libre/reparto")
+def pegar_reparto(body: dict, s: Session = Depends(get_session)):
+    """Reparto por sucursal escrito o pegado desde Excel, como la hoja Predistribuido: una línea por sucursal y producto
+    (sucursal, SKU y unidades; la columna de unidades por bulto es opcional). Reemplaza el reparto de la pantalla."""
+    from ... import cargas
+    filas, errores = [], []
+    for i, linea in enumerate(str(body.get("texto", "")).splitlines(), 1):
+        if not linea.strip():
+            continue
+        sep = "\t" if "\t" in linea else (";" if ";" in linea else ",")
+        partes = [x.strip() for x in linea.split(sep)]
+        if len(partes) < 3 or "".join(partes[:3]) == "":
+            errores.append(f"línea {i}: faltan datos (sucursal, SKU y unidades)")
+            continue
+        if partes[0].lower() in ("sucursal", "suc", "tienda", "local"):      # encabezado pegado junto con los datos
+            continue
+        f, error = _fila_predist(i, partes[0], partes[1], partes[2], partes[3] if len(partes) > 3 else None)
+        if error:
+            errores.append(error.replace("fila", "línea", 1))
+        elif f:
+            filas.append(cargas.Fila(n=i, sku=f["sku"], qty=f["unidades"], sucursal=f["sucursal"], bulto=f["por_bulto"]))
+    if not filas:
+        raise HTTPException(422, "No hay filas de reparto válidas. Cada línea lleva: sucursal, SKU y unidades. "
+                            + "; ".join(errores[:3]))
+    lec = cargas.Lectura(filas=filas, errores=errores, hoja="Pegado", leidas=len(filas),
+                         columnas={"sucursal": "Sucursal", "sku": "SKU", "unidades": "Unidades"})
+    return _aplicar_carga(s, lec, "si", str(body.get("modo") or ""), str(body.get("caja_master") or ""),
+                          str(body.get("piso_pallet") or ""), str(body.get("destino") or ""))
+
+
+def _aplicar_carga(s: Session, lec, reemplazar: str, modo: str, caja_master: str, piso_pallet: str, destino: str):
+    """Deja una lectura (archivo o texto pegado) como carga del cubicador y la cubica."""
+    import json as _json
+
+    from ...models import Config
     lineas, sin_medidas, reparto = [], [], []
     errores = list(lec.errores)
     conocidos = _conocidos(s)
@@ -173,8 +207,8 @@ def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
     if reparto and "PREDISTRIBUIDO" not in modo:
         modo = "SDA PREDISTRIBUIDO" if "SDA" in modo else "MDA PREDISTRIBUIDO"
         if "SDA" in modo:
-            caja_master = caja_master or "SIN CAJA MASTER"     # el modo exige indicarla
-        aviso_modo = (f"El archivo trae reparto por sucursal: se cubicó en {modo}"
+            caja_master = caja_master or "CON CAJA MASTER"     # el modo exige indicarla; en SDA va con caja master
+        aviso_modo = (f"La carga trae reparto por sucursal: se cubicó en {modo}"
                       + (f", {caja_master.lower()}" if "SDA" in modo else "")
                       + ". Los modos de stock no separan por sucursal.")
     doc = cubicaje_libre({"lineas": list(juntas.values()), "predistribuido": reparto, "grupos": grupos,
