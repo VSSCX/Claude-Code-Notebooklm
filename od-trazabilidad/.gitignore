@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.db
+data/*.db-wal
+data/*.db-shm
+.pytest_cache/
+data/visores/
+data/archivos/
+data/respaldos/
+web/vendor/xlsx.full.min.js
+data/logs/
+.ruff_cache/

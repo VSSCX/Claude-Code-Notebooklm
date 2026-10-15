@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Taller 6 · Control de Gestión · Municipalidad de Ñuñoa</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:720px;overflow:hidden;background:#1a1f2e;
+  font-family:'Segoe UI',Tahoma,sans-serif;display:flex;justify-content:center;align-items:center}
+
+/* ── SLIDE ENGINE ── */
+.deck{width:1280px;height:720px;position:relative;overflow:hidden}
+.slide{position:absolute;inset:0;display:none;flex-direction:column}
+.slide.on{display:flex}
+
+/* ── NAVIGATION ── */
+.nav{position:fixed;bottom:12px;right:16px;z-index:999;display:flex;gap:8px;align-items:center}
+.nav-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;
+  width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;
+  display:flex;align-items:center;justify-content:center;transition:.15s;backdrop-filter:blur(4px)}
+.nav-btn:hover{background:rgba(255,255,255,.35)}
+.nav-btn:disabled{opacity:.25;cursor:default}
+.nav-counter{color:rgba(255,255,255,.7);font-size:10px;font-family:'Segoe UI',sans-serif;
+  background:rgba(0,0,0,.4);padding:3px 10px;border-radius:10px;backdrop-filter:blur(4px)}
+.nav-dots{display:flex;gap:5px;align-items:center}
+.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:.15s}
+.dot.on{background:#f7a800;width:18px;border-radius:3px}
+
+/* ══════════════════════════════════════════
+   SLIDE 1 — PORTADA
+══════════════════════════════════════════ */
+.s1{background:linear-gradient(135deg,#0d1b3e 0%,#1a2e5a 55%,#0f3d2a 100%)}
+.s1-deco{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.s1-circle{position:absolute;border-radius:50%;opacity:.08}
+.s1 .logo-wrap{position:absolute;top:32px;left:40px}
+.s1 .logo-wrap svg{filter:drop-shadow(0 2px 8px rgba(0,0,0,.5))}
+.s1 .badge-uni{position:absolute;top:36px;right:40px;text-align:right;color:rgba(255,255,255,.7);font-size:10px;line-height:1.6}
+.s1 .badge-uni strong{color:#f7a800}
+.s1 .center{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;padding:0 80px}
+.s1 h1{font-size:38px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:-.5px;margin-bottom:12px}
+.s1 h1 span{color:#f7a800}
+.s1 .subtit{font-size:16px;color:rgba(255,255,255,.75);font-weight:400;margin-bottom:28px}
+.s1 .pill{display:inline-block;background:rgba(247,168,0,.18);border:1px solid rgba(247,168,0,.5);
+  color:#f7a800;padding:6px 20px;border-radius:20px;font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;margin:0 6px}
+.s1 .grupo{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.35);
+  border-top:2px solid rgba(247,168,0,.4);padding:12px 40px;
+  display:flex;justify-content:space-between;align-items:center}
+.s1 .grupo .int{display:flex;gap:28px;flex-wrap:wrap}
+.s1 .grupo .name{font-size:10px;color:rgba(255,255,255,.8);display:flex;align-items:center;gap:5px}
+.s1 .grupo .name::before{content:'';width:6px;height:6px;border-radius:50%;background:#1db14f;flex-shrink:0}
+.s1 .grupo .curso{font-size:10px;color:rgba(255,255,255,.5);text-align:right}
+.s1 .grupo .curso strong{color:#f7a800}
+
+/* ══════════════════════════════════════════
+   SLIDE 2 — AGENDA
+══════════════════════════════════════════ */
+.s2{background:#f0f2f6}
+.s2-hdr{height:70px;background:#1a2e5a;display:flex;align-items:center;padding:0 40px;gap:16px;flex-shrink:0;border-bottom:3px solid #f7a800}
+.s2-hdr h2{font-size:18px;font-weight:700;color:#fff;letter-spacing:-.2px}
+.s2-hdr .num{font-size:28px;font-weight:800;color:rgba(255,255,255,.15);margin-right:4px}
+.s2 .body{flex:1;display:flex;gap:0;overflow:hidden}
+.s2 .agenda-list{flex:1;padding:30px 40px;display:flex;flex-direction:column;gap:12px}
+.agenda-item{display:flex;align-items:center;gap:16px;padding:14px 20px;background:#fff;
+  border:1px solid #d4d8e4;border-left:4px solid}
+.agenda-item .ai-num{font-size:24px;font-weight:800;color:rgba(0,0,0,.1);flex-shrink:0;width:32px}
+.agenda-item .ai-txt{flex:1}
+.agenda-item .ai-tit{font-size:13px;font-weight:700;color:#1a2332;margin-bottom:2px}
+.agenda-item .ai-sub{font-size:10px;color:#6c7280}
+.agenda-item .ai-tag{font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;color:#fff;white-space:nowrap;flex-shrink:0}
+.s2 .side{width:300px;background:#1a2e5a;padding:30px 24px;display:flex;flex-direction:column;gap:16px}
+.s2-kpi{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);padding:12px 16px}
+.s2-kpi .lbl{font-size:9px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.s2-kpi .val{font-size:22px;font-weight:700;color:#f7a800;line-height:1}
+.s2-kpi .sub{font-size:9.5px;color:rgba(255,255,255,.6);margin-top:3px}
+
+/* ══════════════════════════════════════════
+   SLIDE 3 — MARCO TEÓRICO
+══════════════════════════════════════════ */
+.s3{background:#f0f2f6}
+.s3-hdr{height:58px;background:#1a2e5a;display:flex;align-items:center;padding:0 32px;gap:12px;flex-shrink:0;border-bottom:3px solid #f7a800}
+.s3-hdr h2{font-size:15px;font-weight:700;color:#fff}
+.s3-hdr .ht{font-size:9.5px;color:rgba(255,255,255,.6);margin-left:auto}
+.s3 .content{flex:1;display:flex;padding:16px;gap:14px;overflow:hidden}
+.s3 .xpp{flex:0 0 420px;display:flex;flex-direction:column;gap:12px}
+.xpp-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d4696;margin-bottom:4px}
+.xpp-flow{display:flex;flex-direction:column;gap:6px}
+.xpp-step{background:#fff;border:1px solid #d4d8e4;border-left:4px solid #2d4696;padding:10px 14px;position:relative}
+.xpp-step.fase2{border-left-color:#f7a800}
+.xpp-step.fase3{border-left-color:#1db14f}
+.xpp-step .s-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9298a8;margin-bottom:3px}
+.xpp-step .s-title{font-size:12px;font-weight:700;color:#1a2332;margin-bottom:4px}
+.xpp-step .s-items{display:flex;flex-wrap:wrap;gap:4px}
+.xpp-step .s-item{font-size:9px;background:#f0f2f6;padding:2px 7px;border-radius:2px;color:#4a5068}
+.xpp-arrow{text-align:center;color:#9298a8;font-size:14px;margin:-2px 0}
+.s3 .cascade{flex:1;display:flex;flex-direction:column;gap:10px}
+.casc-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d4696;margin-bottom:4px}
+.casc-level{display:flex;gap:10px;align-items:stretch}
+.casc-num{font-size:28px;font-weight:800;color:rgba(45,70,150,.15);flex-shrink:0;width:36px;text-align:center;margin-top:2px}
+.casc-box{flex:1;padding:8px 12px;border:1px solid #d4d8e4;background:#fff;position:relative}
+.casc-box .cb-label{font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:#9298a8;margin-bottom:3px;font-weight:700}
+.casc-box .cb-title{font-size:11px;font-weight:700;color:#1a2332;margin-bottom:4px}
+.casc-box .cb-desc{font-size:9.5px;color:#6c7280;line-height:1.4}
+.casc-box .cb-badge{display:inline-block;font-size:8px;font-weight:700;padding:1px 6px;border-radius:2px;margin-top:5px}
+.casc-conn{width:2px;background:#d4d8e4;flex-shrink:0;align-self:stretch;margin:4px 16px}
+.s3 .bsc-wrap{flex:0 0 260px;display:flex;flex-direction:column;gap:8px}
+.bsc-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d4696;margin-bottom:4px}
+.bsc-persp{padding:10px 12px;border:1px solid;display:flex;align-items:center;gap:10px}
+.bsc-persp .bp-icon{font-size:18px;flex-shrink:0}
+.bsc-persp .bp-txt .bp-name{font-size:10.5px;font-weight:700;margin-bottom:2px}
+.bsc-persp .bp-txt .bp-desc{font-size:8.5px;color:#6c7280;line-height:1.3}
+
+/* ══════════════════════════════════════════
+   SLIDE 4 & 6 — DASHBOARD EMBED
+══════════════════════════════════════════ */
+.s-dash{background:#0f1627}
+.sd-hdr{height:52px;background:#1a2e5a;display:flex;align-items:center;padding:0 28px;gap:12px;flex-shrink:0;border-bottom:3px solid #f7a800}
+.sd-hdr .sd-logo{flex-shrink:0}
+.sd-hdr h2{font-size:14px;font-weight:700;color:#fff}
+.sd-hdr .sd-badge{font-size:9px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);
+  padding:2px 8px;border-radius:2px;margin-left:6px}
+.sd-hdr .sd-right{margin-left:auto;font-size:9px;color:rgba(255,255,255,.6);text-align:right;line-height:1.6}
+.sd-hdr .sd-right strong{color:#f7a800}
+.sd-frame-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(ellipse at center, #1a2440 0%, #0a0f1e 100%)}
+.sd-frame-inner{position:relative;box-shadow:0 8px 40px rgba(0,0,0,.7);outline:2px solid rgba(247,168,0,.3)}
+.sd-frame-inner iframe{display:block;border:none;transform-origin:top left}
+.sd-footer{height:36px;background:#111827;border-top:1px solid rgba(255,255,255,.08);
+  display:flex;align-items:center;padding:0 24px;gap:20px;flex-shrink:0}
+.sd-footer span{font-size:9px;color:rgba(255,255,255,.4)}
+.sd-footer strong{color:rgba(255,255,255,.7)}
+
+/* ══════════════════════════════════════════
+   SLIDE 5 & 7 — HALLAZGOS / ANÁLISIS
+══════════════════════════════════════════ */
+.s-analisis{background:#f0f2f6}
+.sa-hdr{height:58px;background:#1a2e5a;display:flex;align-items:center;padding:0 32px;gap:10px;flex-shrink:0;border-bottom:3px solid #f7a800}
+.sa-hdr h2{font-size:15px;font-weight:700;color:#fff}
+.sa-hdr .sa-sub{font-size:10px;color:rgba(255,255,255,.6);margin-left:auto}
+.sa-body{flex:1;display:flex;gap:12px;padding:14px;overflow:hidden}
+.hallazgo{flex:1;display:flex;flex-direction:column;gap:8px}
+.h-section{background:#fff;border:1px solid #d4d8e4;padding:10px 14px;flex:1}
+.h-section-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:#fff;padding:4px 10px;margin:-10px -14px 10px;display:flex;align-items:center;gap:6px}
+.h-section-hdr .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.h-items{display:flex;flex-direction:column;gap:5px}
+.h-item{display:flex;gap:8px;align-items:flex-start;font-size:10px;color:#1a2332;line-height:1.4}
+.h-item::before{content:'▸';color:#2d4696;flex-shrink:0;margin-top:1px}
+.h-item.warn::before{color:#c0392b}
+.h-item.ok::before{color:#1db14f;content:'✓'}
+.h-item.alert::before{content:'⚠';color:#f7a800}
+.accion{background:linear-gradient(135deg,#1a2e5a,#2d4696);color:#fff;padding:10px 14px;border-left:4px solid #f7a800}
+.accion .ac-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#f7a800;margin-bottom:6px}
+.accion .ac-items{display:flex;flex-direction:column;gap:4px}
+.accion .ac-item{font-size:9.5px;color:rgba(255,255,255,.85);display:flex;gap:6px}
+.accion .ac-item::before{content:'→';color:#f7a800;flex-shrink:0}
+.semaforo-mini{display:flex;gap:8px;margin-top:6px}
+.sem-box{flex:1;padding:6px 10px;text-align:center;border:1px solid}
+.sem-box .sb-val{font-size:20px;font-weight:800;line-height:1}
+.sem-box .sb-lbl{font-size:8px;color:#6c7280;margin-top:2px;text-transform:uppercase;letter-spacing:.04em}
+.sem-box.v{background:#d4f0df;border-color:#1db14f}.sem-box.v .sb-val{color:#138a3a}
+.sem-box.o{background:#fff3cc;border-color:#f7a800}.sem-box.o .sb-val{color:#c57f00}
+.sem-box.r{background:#fde8e8;border-color:#c0392b}.sem-box.r .sb-val{color:#c0392b}
+
+/* ══════════════════════════════════════════
+   SLIDE 8 — CONCLUSIONES
+══════════════════════════════════════════ */
+.s8{background:linear-gradient(135deg,#0d1b3e 0%,#1a2e5a 60%,#0f3d2a 100%)}
+.s8-hdr{height:62px;background:rgba(0,0,0,.3);display:flex;align-items:center;padding:0 36px;flex-shrink:0;border-bottom:2px solid #f7a800}
+.s8-hdr h2{font-size:18px;font-weight:800;color:#fff}
+.s8-hdr .sub{font-size:11px;color:rgba(255,255,255,.6);margin-left:10px}
+.s8-body{flex:1;display:flex;padding:20px 36px;gap:20px;overflow:hidden}
+.s8-col{flex:1;display:flex;flex-direction:column;gap:10px}
+.concl{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-left:4px solid;padding:12px 16px}
+.concl .c-num{font-size:28px;font-weight:800;opacity:.2;line-height:1;float:right;margin-left:8px}
+.concl .c-title{font-size:11.5px;font-weight:700;color:#fff;margin-bottom:5px}
+.concl .c-text{font-size:9.5px;color:rgba(255,255,255,.72);line-height:1.5}
+.s8-right{flex:0 0 320px;display:flex;flex-direction:column;gap:12px}
+.prox-paso{background:rgba(247,168,0,.1);border:1px solid rgba(247,168,0,.3);padding:14px 16px}
+.prox-paso .pp-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#f7a800;margin-bottom:8px}
+.prox-paso .pp-item{font-size:10px;color:rgba(255,255,255,.8);padding:4px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:8px;line-height:1.4}
+.prox-paso .pp-item::before{content:'→';color:#f7a800;flex-shrink:0}
+.framework{background:rgba(29,177,79,.08);border:1px solid rgba(29,177,79,.25);padding:12px 16px;margin-top:auto}
+.framework .fw-title{font-size:9px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:8px;letter-spacing:.06em}
+.fw-items{display:flex;gap:4px}
+.fw-item{flex:1;text-align:center;padding:6px 4px;background:rgba(255,255,255,.05);border-radius:2px}
+.fw-item .fwi-label{font-size:8px;color:rgba(255,255,255,.6);margin-bottom:2px}
+.fw-item .fwi-val{font-size:10px;font-weight:700;color:#1db14f}
+
+/* SVG LOGO reutilizable */
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- ══════════════════════════════════════════
+     SLIDE 1 — PORTADA
+══════════════════════════════════════════ -->
+<div class="slide s1 on" id="slide-0">
+  <div class="s1-deco">
+    <div class="s1-circle" style="width:600px;height:600px;background:#2d4696;top:-200px;right:-150px"></div>
+    <div class="s1-circle" style="width:300px;height:300px;background:#1db14f;bottom:-100px;left:-80px"></div>
+    <div class="s1-circle" style="width:200px;height:200px;background:#f7a800;bottom:100px;right:120px;opacity:.05"></div>
+    <!-- Líneas decorativas -->
+    <svg width="1280" height="720" style="position:absolute;inset:0;opacity:.06">
+      <line x1="0" y1="360" x2="1280" y2="360" stroke="#f7a800" stroke-width="1"/>
+      <line x1="640" y1="0" x2="640" y2="720" stroke="#2d4696" stroke-width="1"/>
+    </svg>
+  </div>
+  <div class="s1 logo-wrap">
+    <svg width="130" height="45" viewBox="0 0 300.88 129.94" xmlns="http://www.w3.org/2000/svg">
+      <defs><style>.c1{fill:#fc0}.c2{fill:#fff}.c3{fill:#2d60a9}</style></defs>
+      <path class="c1" d="M64.97,0C29.09,0,0,29.09,0,64.97s29.09,64.97,64.97,64.97,64.97-29.09,64.97-64.97S100.85,0,64.97,0Z"/>
+      <path class="c3" d="M72.93,48.87c1.33-13.26,12.22-23.7,25.68-24.32.69-.03,1.27.52,1.24,1.21-.59,13-10.34,23.61-22.96,25.53-.21.03-.43,0-.63-.08-.85-.35-1.73-.74-2.64-1.15-.46-.21-.74-.69-.69-1.19Z"/>
+      <path class="c3" d="M63.9,12.51c.47-.52,1.29-.54,1.77-.02,8.67,9.44,9.43,23.55,2.25,33.81-.33.48-.97.64-1.5.39-2.05-.97-3.9-1.82-5.62-2.57-.24-.11-.45-.29-.58-.52-5.39-9.88-4.17-22.41,3.67-31.09Z"/>
+      <path class="c3" d="M31.7,24.1c10.02.56,18.58,6.57,22.78,15.12.54,1.09-.45,2.32-1.63,2-2.74-.74-5.34-1.08-8.22-1.08-2.53,0-4.92.37-7.14,1.09-.57.18-1.19,0-1.56-.46-3.32-4.23-5.41-9.46-5.73-15.17-.05-.84.65-1.54,1.5-1.5Z"/>
+      <path class="c3" d="M61.48,100.58c-6.23-4.75-13.52-10.31-23.42-17.74-.59-.44-1.43-.02-1.43.71v16.03c0,.49-.4.89-.89.89h-8.7c-.49,0-.89-.4-.89-.89v-27.94c0-.49.4-.89.89-.89h9.36c.19,0,.37.06.52.17,3.74,2.67,9.64,7.1,14.17,10.26.59.41,1.4-.01,1.4-.74l-.05-19c0-.65.67-1.09,1.26-.81,2.39,1.11,5.08,2.49,7.52,3.68.38.18.75.35,1.12.52.32.15.52.46.52.81l.05,34.24c0,.74-.84,1.16-1.43.71Z"/>
+      <path class="c3" d="M103.79,100.83c0,.43-.5.68-.84.42-5.95-4.58-14.15-10.8-24.6-18.65-.35-.26-.84-.01-.84.42v17.12c0,.29-.24.53-.53.53h-9.43c-.29,0-.53-.24-.53-.53v-32.44c0-.38.39-.63.73-.48,3.65,1.55,6.53,2.7,9.61,3.43.07.02.13.05.19.09,2.75,2.08,6.39,4.52,10.12,7.33l4.85,3.63c.35.26.84.01.84-.42v-10.42c0-.23.15-.42.36-.5,3.09-1.06,5.8-2.77,8.03-5.1.38-.4.75-.82,1.1-1.25.31-.39.94-.17.94.33v36.48Z"/>
+      <path class="c3" d="M85.92,67.19c-6.23,0-11.84-1.46-22.59-6.45-7.32-3.58-13.09-6.86-18.7-6.86s-7.36,3.51-7.81,11.93c-.04.72-.64,1.29-1.36,1.29l-8.04.02c-.76,0-1.37-.61-1.37-1.37-.09-14.68,8.14-22.16,18.57-22.16,6.54,0,11.53,2.03,21.97,7.01,7.95,3.74,13.71,6.54,19.48,6.54,5.32,0,7.06-4.06,7.36-11.77.03-.73.63-1.31,1.36-1.31h7.72c.75,0,1.35.6,1.37,1.35.26,16.39-8.55,21.77-17.96,21.77Z"/>
+      <path class="c2" d="M165.82,25.17c.29,0,.56.05.84.15.27.1.62.29,1.05.58,1.17.69,2.23,1.03,3.17,1.03,1.2,0,2.25-.38,3.15-1.14.75-.63,1.4-1.52,1.96-2.67.2-.4.04-.89-.36-1.09l-2.39-1.22c-.37-.19-.83-.08-1.05.26-.24.36-.47.63-.69.8-.33.26-.71.39-1.14.39-.29,0-.58-.06-.88-.19-.3-.13-.61-.29-.92-.49-.63-.34-1.2-.61-1.72-.81-.51-.2-1.06-.3-1.63-.3-1.2,0-2.24.39-3.11,1.16-.71.63-1.34,1.48-1.89,2.55-.21.41-.05.91.35,1.11l2.45,1.24c.36.18.79.06,1.03-.26.53-.72,1.12-1.08,1.76-1.08"/>
+      <path class="c2" d="M172.79,46.41l-11.53-15.67c-.15-.21-.4-.33-.66-.33h-4.48c-.45,0-.82.37-.82.82v27.57c0,.45.37.82.82.82h4.63c.45,0,.82-.37.82-.82v-14.7c0-.79,1-1.12,1.47-.49l11.58,15.67c.15.21.4.33.66.33h4.43c.45,0,.82-.37.82-.82v-27.57c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v14.71c0,.79-1.01,1.12-1.47.48"/>
+      <rect class="c2" x="155.31" y="87.47" width="145.49" height="1.65"/>
+    </svg>
+  </div>
+  <div class="s1 badge-uni">
+    <div><strong>Universidad de Chile</strong></div>
+    <div>Facultad de Economía y Negocios</div>
+    <div>Control de Gestión · 2026</div>
+  </div>
+  <div class="s1 center">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:rgba(247,168,0,.8);margin-bottom:16px">Taller 6 · Entrega Final</div>
+    <h1>Control de Gestión<br><span>Municipalidad de Ñuñoa</span></h1>
+    <div class="subtit">Dirección de Medio Ambiente · CMI en cascada · Framework XPP</div>
+    <div>
+      <span class="pill">CMI Corporativo</span>
+      <span class="pill">Dashboard Estratégico</span>
+      <span class="pill">Dashboard Operacional DMA</span>
+    </div>
+  </div>
+  <div class="s1 grupo">
+    <div class="int">
+      <span class="name">Francesca Acuña</span>
+      <span class="name">Jorge Barrezueta</span>
+      <span class="name">Marcos Colipán</span>
+      <span class="name">Valentina Godoy</span>
+      <span class="name">Lucas Muñoz</span>
+      <span class="name">Raquel Negrete</span>
+      <span class="name">Vicente Soto</span>
+    </div>
+    <div class="curso">Profesora: <strong>Alicia Núñez</strong> · FEN — Universidad de Chile</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 2 — AGENDA
+══════════════════════════════════════════ -->
+<div class="slide s2" id="slide-1">
+  <div class="s2-hdr">
+    <span class="num">02</span>
+    <h2>Contenidos de la presentación</h2>
+  </div>
+  <div class="body">
+    <div class="agenda-list">
+      <div class="agenda-item" style="border-left-color:#2d4696">
+        <div class="ai-num">01</div>
+        <div class="ai-txt"><div class="ai-tit">Marco teórico: XPP & CMI en cascada</div><div class="ai-sub">Kaplan & Norton · Execution Premium · Despliegue Nivel 1–4</div></div>
+        <div class="ai-tag" style="background:#2d4696">Teoría</div>
+      </div>
+      <div class="agenda-item" style="border-left-color:#9b59b6">
+        <div class="ai-num">02</div>
+        <div class="ai-txt"><div class="ai-tit">Dashboard Estratégico CMI Corporativo</div><div class="ai-sub">32 indicadores · 4 perspectivas BSC · 3 pilares · 10 iniciativas</div></div>
+        <div class="ai-tag" style="background:#9b59b6">Estratégico</div>
+      </div>
+      <div class="agenda-item" style="border-left-color:#2d4696">
+        <div class="ai-num">03</div>
+        <div class="ai-txt"><div class="ai-tit">Hallazgos CMI: brechas y oportunidades</div><div class="ai-sub">Perspectiva financiera crítica · IPP · Participación ciudadana</div></div>
+        <div class="ai-tag" style="background:#2d4696">Análisis</div>
+      </div>
+      <div class="agenda-item" style="border-left-color:#1db14f">
+        <div class="ai-num">04</div>
+        <div class="ai-txt"><div class="ai-tit">Dashboard Operacional DMA</div><div class="ai-sub">19 indicadores reales · CMI desplegado en cascada Nivel 3 · Reuniones operativas</div></div>
+        <div class="ai-tag" style="background:#1db14f">Operacional</div>
+      </div>
+      <div class="agenda-item" style="border-left-color:#f7a800">
+        <div class="ai-num">05</div>
+        <div class="ai-txt"><div class="ai-tit">Hallazgos DMA y plan de acción</div><div class="ai-sub">Ejecución presupuestaria · Satisfacción vecinal · Recomendaciones</div></div>
+        <div class="ai-tag" style="background:#f7a800;color:#3a2000">Acción</div>
+      </div>
+      <div class="agenda-item" style="border-left-color:#c0392b">
+        <div class="ai-num">06</div>
+        <div class="ai-txt"><div class="ai-tit">Conclusiones y próximos pasos</div><div class="ai-sub">Cierre presupuestario · Fase Probar y Adaptar del XPP · Mejoras</div></div>
+        <div class="ai-tag" style="background:#c0392b">Cierre</div>
+      </div>
+    </div>
+    <div class="side">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,.5);margin-bottom:4px">Cifras clave del caso</div>
+      <div class="s2-kpi"><div class="lbl">Presupuesto DMA 2026</div><div class="val">$15.623</div><div class="sub">millones · Centro de Gasto Discrecional</div></div>
+      <div class="s2-kpi"><div class="lbl">Indicadores CMI corporativo</div><div class="val">32</div><div class="sub">en 4 perspectivas BSC · Nivel 1–2</div></div>
+      <div class="s2-kpi"><div class="lbl">Indicadores tablero DMA</div><div class="val">19</div><div class="sub">Nivel 3 · Tablero no integral</div></div>
+      <div class="s2-kpi"><div class="lbl">Iniciativas estratégicas</div><div class="val">10</div><div class="sub">3 pilares · Plan de implementación</div></div>
+      <div class="s2-kpi"><div class="lbl">Centros de responsabilidad</div><div class="val">79</div><div class="sub">56 CGD · 19 CGT · 4 CIng</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 3 — MARCO TEÓRICO
+══════════════════════════════════════════ -->
+<div class="slide s3" id="slide-2">
+  <div class="s3-hdr">
+    <span style="font-size:24px;font-weight:800;color:rgba(255,255,255,.15);margin-right:4px">03</span>
+    <h2>Marco teórico: XPP & CMI en cascada</h2>
+    <span class="ht">Kaplan &amp; Norton (2008) · Execution Premium Process</span>
+  </div>
+  <div class="content">
+    <!-- XPP -->
+    <div class="xpp">
+      <div class="xpp-title">Execution Premium Process (XPP)</div>
+      <div class="xpp-flow">
+        <div class="xpp-step">
+          <div class="s-label">Fase 1 · Planificar</div>
+          <div class="s-title">Desarrollar la Estrategia</div>
+          <div class="s-items"><span class="s-item">Misión / Visión / Valores</span><span class="s-item">Análisis FODA</span><span class="s-item">Mapa estratégico</span></div>
+        </div>
+        <div class="xpp-arrow">↓</div>
+        <div class="xpp-step">
+          <div class="s-label">Fase 2 · Planificar</div>
+          <div class="s-title">Traducir la Estrategia</div>
+          <div class="s-items"><span class="s-item">CMI Corporativo</span><span class="s-item">Metas e indicadores</span><span class="s-item">Iniciativas estratégicas</span></div>
+        </div>
+        <div class="xpp-arrow">↓</div>
+        <div class="xpp-step fase2">
+          <div class="s-label">Fase 3 · Alinear</div>
+          <div class="s-title">Alinear la Organización</div>
+          <div class="s-items"><span class="s-item">Cascada CMI</span><span class="s-item">Acuerdos de servicio</span><span class="s-item">Metas departamentales</span></div>
+        </div>
+        <div class="xpp-arrow">↓</div>
+        <div class="xpp-step fase3" style="border:2px solid #1db14f;background:#f0fdf4">
+          <div class="s-label" style="color:#138a3a">Fases 5–6 · <strong>CONTROLAR Y APRENDER</strong></div>
+          <div class="s-title" style="color:#138a3a">Reuniones Operativas / Estratégicas</div>
+          <div class="s-items"><span class="s-item" style="background:#d4f0df">Dashboard Oper. DMA</span><span class="s-item" style="background:#d4f0df">Dashboard Estratégico</span><span class="s-item" style="background:#d4f0df">Probar y Adaptar</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- Cascade -->
+    <div class="cascade">
+      <div class="casc-title">Despliegue en cascada — Municipalidad de Ñuñoa</div>
+      <div class="casc-level">
+        <div class="casc-num">1</div>
+        <div class="casc-box" style="border-left:3px solid #2d4696">
+          <div class="cb-label">Alcaldía</div>
+          <div class="cb-title">CMI Corporativo</div>
+          <div class="cb-desc">Visión integral · 32 indicadores · 4 perspectivas BSC · Mapa estratégico comunal</div>
+          <span class="cb-badge" style="background:#2d4696;color:#fff">Nivel 1</span>
+        </div>
+      </div>
+      <div class="casc-level">
+        <div class="casc-num">2</div>
+        <div class="casc-box" style="border-left:3px solid #9b59b6">
+          <div class="cb-label">Gabinete</div>
+          <div class="cb-title">CMI Estratégico</div>
+          <div class="cb-desc">Coordinación transversal de direcciones · Alineación decisiones con objetivos corporativos</div>
+          <span class="cb-badge" style="background:#9b59b6;color:#fff">Nivel 2</span>
+        </div>
+      </div>
+      <div class="casc-level" style="background:#eef8f3;padding:4px;border:2px solid #1db14f;margin:2px 0">
+        <div class="casc-num" style="color:#1db14f;opacity:.5">3</div>
+        <div class="casc-box" style="border-left:3px solid #1db14f;border:none;background:transparent">
+          <div class="cb-label" style="color:#138a3a">Dirección de Medio Ambiente</div>
+          <div class="cb-title">Tablero DMA (no integral)</div>
+          <div class="cb-desc">19 indicadores en 4 perspectivas · Solo objetivos con incidencia directa · Reuniones operativas semanales</div>
+          <span class="cb-badge" style="background:#1db14f;color:#fff">Nivel 3 · Este taller</span>
+        </div>
+      </div>
+      <div class="casc-level">
+        <div class="casc-num">4</div>
+        <div class="casc-box" style="border-left:3px solid #9298a8">
+          <div class="cb-label">Unidades DMA</div>
+          <div class="cb-title">Tableros operativos</div>
+          <div class="cb-desc">Áreas Verdes · Tramitación · Aseo Urbano · Control de ejecución diaria</div>
+          <span class="cb-badge" style="background:#9298a8;color:#fff">Nivel 4</span>
+        </div>
+      </div>
+    </div>
+    <!-- BSC -->
+    <div class="bsc-wrap">
+      <div class="bsc-title">4 Perspectivas BSC</div>
+      <div class="bsc-persp" style="background:#e8f0fe;border-color:#2d4696">
+        <span class="bp-icon">🏘</span>
+        <div class="bp-txt"><div class="bp-name" style="color:#2d4696">Comunitaria (vecinos)</div><div class="bp-desc">Bienestar, satisfacción, equidad, acceso y participación ciudadana</div></div>
+      </div>
+      <div class="bsc-persp" style="background:#fde8e8;border-color:#c0392b">
+        <span class="bp-icon">💰</span>
+        <div class="bp-txt"><div class="bp-name" style="color:#c0392b">Financiera</div><div class="bp-desc">IPP, ejecución presupuestaria, costo per cápita y sostenibilidad</div></div>
+      </div>
+      <div class="bsc-persp" style="background:#fff3cc;border-color:#f7a800">
+        <span class="bp-icon">⚙️</span>
+        <div class="bp-txt"><div class="bp-name" style="color:#c57f00">Procesos Internos</div><div class="bp-desc">SLA, trámites, corporaciones, infraestructura y cobertura</div></div>
+      </div>
+      <div class="bsc-persp" style="background:#d4f0df;border-color:#1db14f">
+        <span class="bp-icon">🎓</span>
+        <div class="bp-txt"><div class="bp-name" style="color:#138a3a">Aprend. y Crecimiento</div><div class="bp-desc">Capital humano, sistemas TI, integridad y cultura organizacional</div></div>
+      </div>
+      <div style="margin-top:8px;background:#1a2e5a;padding:10px 12px">
+        <div style="font-size:8.5px;font-weight:700;color:#f7a800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">3 Pilares estratégicos</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.8);line-height:1.8">
+          ■ <span style="color:#7d9dd4">Orientación al vecino</span><br>
+          ■ <span style="color:#f7a800">Transparencia e Integridad</span><br>
+          ■ <span style="color:#1db14f">Eficiencia Operacional</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 4 — DASHBOARD ESTRATÉGICO (embed)
+══════════════════════════════════════════ -->
+<div class="slide s-dash" id="slide-3">
+  <div class="sd-hdr">
+    <svg class="sd-logo" width="90" height="30" viewBox="0 0 300.88 129.94" xmlns="http://www.w3.org/2000/svg">
+      <defs><style>.d1{fill:#fc0}.d2{fill:#fff}.d3{fill:#2d60a9}</style></defs>
+      <path class="d1" d="M64.97,0C29.09,0,0,29.09,0,64.97s29.09,64.97,64.97,64.97,64.97-29.09,64.97-64.97S100.85,0,64.97,0Z"/>
+      <path class="d3" d="M85.92,67.19c-6.23,0-11.84-1.46-22.59-6.45-7.32-3.58-13.09-6.86-18.7-6.86s-7.36,3.51-7.81,11.93c-.04.72-.64,1.29-1.36,1.29l-8.04.02c-.76,0-1.37-.61-1.37-1.37-.09-14.68,8.14-22.16,18.57-22.16,6.54,0,11.53,2.03,21.97,7.01,7.95,3.74,13.71,6.54,19.48,6.54,5.32,0,7.06-4.06,7.36-11.77.03-.73.63-1.31,1.36-1.31h7.72c.75,0,1.35.6,1.37,1.35.26,16.39-8.55,21.77-17.96,21.77Z"/>
+    </svg>
+    <h2>Dashboard Estratégico CMI</h2>
+    <span class="sd-badge">Nivel 1–2 · Alcaldía / Gabinete</span>
+    <span class="sd-badge">32 indicadores · 4 perspectivas BSC</span>
+    <div class="sd-right"><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2<br>CMI Corporativo · 2026</div>
+  </div>
+  <div class="sd-frame-wrap" id="frame-wrap-est">
+    <div class="sd-frame-inner" id="frame-inner-est">
+      <iframe id="iframe-est" src="taller6_dashboard_estrategico_CMI.html"
+        scrolling="no" title="Dashboard Estratégico CMI"></iframe>
+    </div>
+  </div>
+  <div class="sd-footer">
+    <span>📊 <strong>Página 1:</strong> Mapa Estratégico · Radar BSC · Evolución KPIs</span>
+    <span>📋 <strong>Página 2:</strong> CMI Corporativo — 32 indicadores filtrables</span>
+    <span>🎯 <strong>Página 3:</strong> 10 Iniciativas estratégicas con avance</span>
+    <span style="margin-left:auto">Haz clic en el dashboard para interactuar · Usa las tabs del fondo para navegar</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 5 — HALLAZGOS CMI
+══════════════════════════════════════════ -->
+<div class="slide s-analisis" id="slide-4">
+  <div class="sa-hdr">
+    <span style="font-size:24px;font-weight:800;color:rgba(255,255,255,.15)">05</span>
+    <h2>Análisis CMI Corporativo — principales hallazgos</h2>
+    <span class="sa-sub">32 indicadores · 11 en meta · 16 alerta · 5 bajo meta</span>
+  </div>
+  <div class="sa-body">
+    <div class="hallazgo">
+      <div class="semaforo-mini">
+        <div class="sem-box v"><div class="sb-val">34%</div><div class="sb-lbl">En meta</div></div>
+        <div class="sem-box o"><div class="sb-val">50%</div><div class="sb-lbl">Alerta</div></div>
+        <div class="sem-box r"><div class="sb-val">16%</div><div class="sb-lbl">Bajo meta</div></div>
+      </div>
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#2d4696"><span class="dot" style="background:#7d9dd4"></span>Perspectiva Comunitaria</div>
+        <div class="h-items">
+          <div class="h-item ok">IDH comunal alcanza meta 0,89 (≥ 0,88)</div>
+          <div class="h-item ok">Acceso a servicios: 87% (meta ≥ 85%)</div>
+          <div class="h-item alert">Satisfacción confianza: 71% — 4 pp bajo la meta de 75%</div>
+          <div class="h-item warn">Participación ciudadana: 24% vs. meta ≥ 30% — brecha crítica</div>
+          <div class="h-item alert">Tasa abandono trámites: 12% (meta &lt; 10%) — fricción en atención</div>
+        </div>
+      </div>
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#c0392b"><span class="dot" style="background:#f4b8b8"></span>Perspectiva Financiera — 3 de 5 bajo meta</div>
+        <div class="h-items">
+          <div class="h-item warn">IPP: solo 3,2% variación vs. meta ≥ 5% — riesgo sostenibilidad</div>
+          <div class="h-item warn">Ratio IPP/ingresos: 0,53 vs. meta ≥ 0,55 — dependencia FCM alta</div>
+          <div class="h-item warn">Ejecución presupuestaria: 74% a mayo — proyección cierre en riesgo</div>
+        </div>
+      </div>
+    </div>
+    <div class="hallazgo">
+      <div class="h-section" style="flex:1">
+        <div class="h-section-hdr" style="background:#f7a800;color:#3a2000"><span class="dot" style="background:#fff"></span>Perspectiva Procesos Internos</div>
+        <div class="h-items">
+          <div class="h-item ok">Recaudación IPP: 92% morosos notificados (meta ≥ 90%) ✓</div>
+          <div class="h-item ok">Áreas verdes per cápita: 9,3 m² (meta OMS ≥ 9 m²) ✓</div>
+          <div class="h-item alert">9 de 12 indicadores en alerta — SLA 86%, trámites multicanal 75%</div>
+          <div class="h-item alert">Control corporaciones: ejecución 88% y metas 82% — por debajo del 90%</div>
+        </div>
+      </div>
+      <div class="h-section" style="flex:1">
+        <div class="h-section-hdr" style="background:#1db14f"><span class="dot" style="background:#fff"></span>Perspectiva Aprendizaje y Crecimiento</div>
+        <div class="h-items">
+          <div class="h-item ok">Sistemas TI: uptime 94%, info disponible 0,83 — sobre meta</div>
+          <div class="h-item ok">Código de conducta: 6,1/7 (meta ≥ 6,0) ✓</div>
+          <div class="h-item warn">Quejas válidas: 6 (meta ≤ 5) — única perspectiva con rojo</div>
+          <div class="h-item alert">Ratio capacitación: 0,79 vs. meta 0,83 — plan de personal pendiente</div>
+        </div>
+      </div>
+      <div class="accion">
+        <div class="ac-title">Recomendaciones prioritarias</div>
+        <div class="ac-items">
+          <div class="ac-item">Activar Plan de Gestión de Cobranza Municipal para mejorar IPP y ratio de sostenibilidad</div>
+          <div class="ac-item">Acelerar ejecución presupuestaria Q3 (actualmente en riesgo de subejecución al cierre)</div>
+          <div class="ac-item">Lanzar campaña de participación ciudadana para alcanzar el 30% en instancias</div>
+          <div class="ac-item">Simplificar flujos de trámites digitales para reducir tasa de abandono bajo el 10%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 6 — DASHBOARD OPERACIONAL DMA (embed)
+══════════════════════════════════════════ -->
+<div class="slide s-dash" id="slide-5">
+  <div class="sd-hdr">
+    <svg class="sd-logo" width="90" height="30" viewBox="0 0 300.88 129.94" xmlns="http://www.w3.org/2000/svg">
+      <defs><style>.e1{fill:#fc0}.e2{fill:#fff}.e3{fill:#2d60a9}</style></defs>
+      <path class="e1" d="M64.97,0C29.09,0,0,29.09,0,64.97s29.09,64.97,64.97,64.97,64.97-29.09,64.97-64.97S100.85,0,64.97,0Z"/>
+      <path class="e3" d="M85.92,67.19c-6.23,0-11.84-1.46-22.59-6.45-7.32-3.58-13.09-6.86-18.7-6.86s-7.36,3.51-7.81,11.93c-.04.72-.64,1.29-1.36,1.29l-8.04.02c-.76,0-1.37-.61-1.37-1.37-.09-14.68,8.14-22.16,18.57-22.16,6.54,0,11.53,2.03,21.97,7.01,7.95,3.74,13.71,6.54,19.48,6.54,5.32,0,7.06-4.06,7.36-11.77.03-.73.63-1.31,1.36-1.31h7.72c.75,0,1.35.6,1.37,1.35.26,16.39-8.55,21.77-17.96,21.77Z"/>
+    </svg>
+    <h2>Dashboard Operacional DMA</h2>
+    <span class="sd-badge">Dirección de Medio Ambiente · Nivel 3</span>
+    <span class="sd-badge">19 indicadores · CMI en cascada</span>
+    <div class="sd-right"><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2<br>Reunión operativa semanal · S-21/2026</div>
+  </div>
+  <div class="sd-frame-wrap" id="frame-wrap-oper">
+    <div class="sd-frame-inner" id="frame-inner-oper">
+      <iframe id="iframe-oper" src="taller6_dashboard_operacional_DMA.html"
+        scrolling="no" title="Dashboard Operacional DMA"></iframe>
+    </div>
+  </div>
+  <div class="sd-footer">
+    <span>📊 <strong>Página 1:</strong> Resumen ejecutivo · Proyección presupuestaria · Radar BSC</span>
+    <span>💰 <strong>Página 2:</strong> Ejecución presupuestaria $15.623 MM</span>
+    <span>📋 <strong>Página 3:</strong> 19 indicadores DMA — tablero de control completo</span>
+    <span style="margin-left:auto">Filtros activos en la barra lateral izquierda · Tabs al fondo</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 7 — HALLAZGOS DMA
+══════════════════════════════════════════ -->
+<div class="slide s-analisis" id="slide-6">
+  <div class="sa-hdr">
+    <span style="font-size:24px;font-weight:800;color:rgba(255,255,255,.15)">07</span>
+    <h2>Análisis DMA — principales hallazgos operacionales</h2>
+    <span class="sa-sub">19 indicadores · 8 en meta · 10 alerta · 1 bajo meta · Presupuesto $15.623 MM</span>
+  </div>
+  <div class="sa-body">
+    <div class="hallazgo">
+      <div class="semaforo-mini">
+        <div class="sem-box v"><div class="sb-val">42%</div><div class="sb-lbl">En meta</div></div>
+        <div class="sem-box o"><div class="sb-val">53%</div><div class="sb-lbl">Alerta</div></div>
+        <div class="sem-box r"><div class="sb-val">5%</div><div class="sb-lbl">Bajo meta</div></div>
+      </div>
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#2d4696"><span class="dot" style="background:#7d9dd4"></span>Comunitaria & Procesos Internos</div>
+        <div class="h-items">
+          <div class="h-item ok">M² áreas verdes: 9,3 m²/hab — cumple estándar OMS (≥ 9 m²)</div>
+          <div class="h-item ok">Acceso a servicios DMA: 87% (meta ≥ 85%)</div>
+          <div class="h-item alert">Satisfacción gestión DMA: 73% — 2 pp bajo meta ≥ 75%</div>
+          <div class="h-item alert">Tasa abandono trámites: 12% — persistente sobre el 10%</div>
+          <div class="h-item alert">6 de 11 indicadores en alerta en estas dos perspectivas</div>
+        </div>
+      </div>
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#c0392b"><span class="dot" style="background:#f4b8b8"></span>Financiera — indicador crítico</div>
+        <div class="h-items">
+          <div class="h-item warn">Ejecución ppto. dentro de plazos: 71% (mayo) vs. meta ≥ 90%</div>
+          <div class="h-item warn">Proyección cierre: llegaría ~82% al ritmo actual (brecha −$2.660 MM)</div>
+          <div class="h-item ok">Variación personas beneficiadas: +9% (meta ≥ 7%) ✓</div>
+        </div>
+      </div>
+    </div>
+    <div class="hallazgo">
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#1db14f"><span class="dot" style="background:#fff"></span>Aprendizaje y Crecimiento</div>
+        <div class="h-items">
+          <div class="h-item ok">Sistemas TI y código de conducta sobre meta ✓</div>
+          <div class="h-item ok">% funcionarios en integración: 84% (meta > 80%) ✓</div>
+          <div class="h-item alert">Quejas válidas: 4 (meta ≤ 3) — leve desviación, seguimiento semanal</div>
+          <div class="h-item alert">Satisfacción laboral: 5,5 (meta ≥ 5,7) — oportunidad de mejora</div>
+        </div>
+      </div>
+      <div class="h-section">
+        <div class="h-section-hdr" style="background:#f7a800;color:#3a2000"><span class="dot" style="background:#fff"></span>Análisis presupuestario DMA 2026</div>
+        <div class="h-items">
+          <div class="h-item">Ejecutado a mayo: $10.542 MM (71% del total $15.623 MM)</div>
+          <div class="h-item warn">Ítems críticos: Activos no financieros (45%) y Equipos (38%)</div>
+          <div class="h-item alert">Déficit mensual creciente: brecha mayo −$1.926 MM vs. programado</div>
+          <div class="h-item ok">OC emitidas: 187 · SLA normal cumplido en mayoría de casos</div>
+        </div>
+      </div>
+      <div class="accion">
+        <div class="ac-title">Acciones correctivas DMA</div>
+        <div class="ac-items">
+          <div class="ac-item">Acelerar licitaciones de activos no financieros en Q3 — prioridad alta</div>
+          <div class="ac-item">Implementar encuesta post-atención semanal para elevar satisfacción sobre 75%</div>
+          <div class="ac-item">Digitalizar flujo de trámites para reducir abandono bajo el 10%</div>
+          <div class="ac-item">Revisar estrategia presupuestaria con DAF: proyectar cierre ≥ 90%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     SLIDE 8 — CONCLUSIONES
+══════════════════════════════════════════ -->
+<div class="slide s8" id="slide-7">
+  <div class="s8-hdr">
+    <span style="font-size:28px;font-weight:800;color:rgba(255,255,255,.15);margin-right:8px">08</span>
+    <h2>Conclusiones y próximos pasos</h2>
+    <span class="sub">Taller 6 · Fase Controlar y Aprender · Execution Premium</span>
+  </div>
+  <div class="s8-body">
+    <div class="s8-col">
+      <div class="concl" style="border-left-color:#1db14f">
+        <span class="c-num">01</span>
+        <div class="c-title">CMI en cascada implementado correctamente</div>
+        <div class="c-text">El despliegue desde el CMI Corporativo (32 ind.) hasta el tablero DMA (19 ind. no integrales) refleja la estructura matricial de la municipalidad y las competencias específicas de la DMA como CGD.</div>
+      </div>
+      <div class="concl" style="border-left-color:#f7a800">
+        <span class="c-num">02</span>
+        <div class="c-title">Riesgo financiero: perspectiva más crítica</div>
+        <div class="c-text">3 de 5 indicadores financieros bajo meta en el corporativo. La DMA proyecta cerrar 2026 con 82% de ejecución vs. meta 90%. Se requiere acción inmediata en Q3.</div>
+      </div>
+      <div class="concl" style="border-left-color:#2d4696">
+        <span class="c-num">03</span>
+        <div class="c-title">Fortaleza: Perspectiva Procesos y AyC</div>
+        <div class="c-text">Áreas verdes, infraestructura, sistemas TI y cultura de integridad sobre meta. La DMA tiene base sólida para mejorar sus indicadores comunitarios y financieros.</div>
+      </div>
+    </div>
+    <div class="s8-col">
+      <div class="concl" style="border-left-color:#c0392b">
+        <span class="c-num">04</span>
+        <div class="c-title">Participación ciudadana: brecha estructural</div>
+        <div class="c-text">24% vs. meta 30% en el corporativo refleja una oportunidad no explotada. El Programa de Vinculación Vecinal (iniciativa 1) es clave para cerrar esta brecha.</div>
+      </div>
+      <div class="concl" style="border-left-color:#1db14f">
+        <span class="c-num">05</span>
+        <div class="c-title">Los dashboards habilitan el ciclo XPP</div>
+        <div class="c-text">El dashboard operacional (reuniones semanales) y el estratégico (reuniones trimestrales) permiten cerrar el ciclo Controlar → Aprender → Probar y Adaptar de Kaplan & Norton.</div>
+      </div>
+    </div>
+    <div class="s8-right">
+      <div class="prox-paso">
+        <div class="pp-title">Próximos pasos recomendados</div>
+        <div class="pp-item">Implementar Plan de Cobranza Municipal (IPP) — Q3 2026</div>
+        <div class="pp-item">Acelerar licitaciones activos no financieros DMA antes de agosto</div>
+        <div class="pp-item">Lanzar plataforma digital de trámites (iniciativa 4) para reducir abandono</div>
+        <div class="pp-item">Establecer revisión mensual del CMI en reuniones de gabinete</div>
+        <div class="pp-item">Campaña participación ciudadana para cierre del año ≥ 28%</div>
+      </div>
+      <div class="framework">
+        <div class="fw-title">Métricas de éxito al cierre 2026</div>
+        <div class="fw-items">
+          <div class="fw-item"><div class="fwi-label">Ppto. DMA</div><div class="fwi-val">≥ 90%</div></div>
+          <div class="fw-item"><div class="fwi-label">Satisfac.</div><div class="fwi-val">≥ 75%</div></div>
+          <div class="fw-item"><div class="fwi-label">IPP ratio</div><div class="fwi-val">≥ 0,55</div></div>
+          <div class="fw-item"><div class="fwi-label">Part. ciud.</div><div class="fwi-val">≥ 28%</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- NAVIGATION -->
+<nav class="nav">
+  <button class="nav-btn" id="btn-prev" onclick="go(-1)" disabled>‹</button>
+  <div class="nav-dots" id="dots"></div>
+  <button class="nav-btn" id="btn-next" onclick="go(1)">›</button>
+</nav>
+
+<script>
+const TOTAL=8;
+let cur=0;
+
+// Escala los iframes al cargar
+function scaleFrame(wrapId,innerId,iframeId){
+  const wrap=document.getElementById(wrapId);
+  if(!wrap) return;
+  const wh=wrap.clientHeight||580;
+  const ww=wrap.clientWidth||1118;
+  const scaleH=wh/720;
+  const scaleW=ww/1280;
+  const scale=Math.min(scaleH,scaleW)*0.97;
+  const ifrW=Math.round(1280*scale);
+  const ifrH=Math.round(720*scale);
+  const inner=document.getElementById(innerId);
+  const iframe=document.getElementById(iframeId);
+  inner.style.width=ifrW+'px';
+  inner.style.height=ifrH+'px';
+  iframe.style.width='1280px';
+  iframe.style.height='720px';
+  iframe.style.transform='scale('+scale+')';
+  iframe.style.transformOrigin='top left';
+}
+
+function go(dir){
+  const slides=document.querySelectorAll('.slide');
+  slides[cur].classList.remove('on');
+  cur=Math.max(0,Math.min(TOTAL-1,cur+dir));
+  slides[cur].classList.add('on');
+  document.getElementById('btn-prev').disabled=cur===0;
+  document.getElementById('btn-next').disabled=cur===TOTAL-1;
+  document.querySelectorAll('.dot').forEach((d,i)=>{d.classList.toggle('on',i===cur)});
+  // re-scale iframes when visible
+  if(cur===3) setTimeout(()=>scaleFrame('frame-wrap-est','frame-inner-est','iframe-est'),100);
+  if(cur===5) setTimeout(()=>scaleFrame('frame-wrap-oper','frame-inner-oper','iframe-oper'),100);
+}
+
+// Build dots
+const dotsEl=document.getElementById('dots');
+for(let i=0;i<TOTAL;i++){
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' on':'');
+  d.title=['Portada','Agenda','Marco Teórico','Dashboard Estratégico','Hallazgos CMI','Dashboard Operacional DMA','Hallazgos DMA','Conclusiones'][i];
+  d.onclick=(()=>{const idx=i;return()=>{const diff=idx-cur;if(diff!==0)go(diff);}})();
+  dotsEl.appendChild(d);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '){e.preventDefault();if(cur<TOTAL-1)go(1);}
+  if(e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();if(cur>0)go(-1);}
+});
+
+// Initial scale
+window.addEventListener('load',()=>{
+  // Pre-scale so they're ready when activated
+  setTimeout(()=>{
+    scaleFrame('frame-wrap-est','frame-inner-est','iframe-est');
+    scaleFrame('frame-wrap-oper','frame-inner-oper','iframe-oper');
+  },500);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>DMA · Tablero Operacional · Municipalidad de Ñuñoa</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;position:relative;
+  font-family:'Segoe UI',Tahoma,sans-serif;font-size:11px;
+  background:#4a5068}
+.root{width:1280px;height:720px;overflow:hidden;display:flex;flex-direction:column;background:#f0f2f6;
+  position:absolute;top:0;left:0;transform-origin:top left}
+
+/* ── HEADER ── */
+.hdr{height:42px;background:#1a2e5a;display:flex;align-items:center;
+  padding:0 12px;gap:10px;flex-shrink:0;color:#fff;border-bottom:2px solid #f7a800}
+.logo-svg{flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))}
+.hdr-mid{flex:1}
+.hdr-mid h1{font-size:13px;font-weight:700;letter-spacing:.01em}
+.hdr-mid .sub{font-size:9px;color:rgba(255,255,255,.7);margin-top:1px}
+.hdr-right{font-size:9px;color:rgba(255,255,255,.8);line-height:1.5;flex-shrink:0}
+.hdr-right strong{color:#fff}
+.aviso-hdr{font-size:9px;background:#f7a800;color:#3a2000;padding:2px 8px;border-radius:2px;margin-left:8px;white-space:nowrap}
+
+/* ── BODY ── */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* ── SIDEBAR ── */
+.sidebar{width:162px;background:#fff;border-right:1px solid #d0d4e0;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sb-header{background:#2d4696;color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:7px 10px;display:flex;align-items:center;gap:5px}
+.sb-section{padding:8px 10px 6px;border-bottom:1px solid #e8eaf0}
+.sb-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#4a5068;margin-bottom:4px}
+.sb-opt{display:flex;align-items:center;gap:5px;padding:2px 0;cursor:pointer;font-size:10px;color:#2a3050}
+.sb-opt input[type=radio]{accent-color:#2d4696;width:11px;height:11px;cursor:pointer}
+.sb-opt.active{color:#2d4696;font-weight:600}
+.sb-sep{height:1px;background:#e8eaf0;margin:4px 0}
+.sb-filter-note{font-size:8.5px;color:#8890a0;padding:8px 10px;line-height:1.4}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── KPI STRIP ── */
+.kpi-strip{height:52px;background:#fff;border-bottom:1px solid #d0d4e0;display:flex;align-items:stretch;flex-shrink:0}
+.kpi-box{flex:1;padding:5px 10px;border-right:1px solid #e8eaf0;display:flex;flex-direction:column;justify-content:center}
+.kpi-box:last-child{border-right:none}
+.kb-lbl{font-size:8.5px;color:#6c7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px}
+.kb-val{font-size:19px;font-weight:700;line-height:1;color:#1a2332}
+.kb-val.r{color:#c0392b}.kb-val.o{color:#c57f00}.kb-val.v{color:#138a3a}
+.kb-sub{font-size:8px;color:#9298a8;margin-top:1px;display:flex;align-items:center;gap:3px}
+.kb-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;color:#fff}
+.kb-badge.r{background:#c0392b}.kb-badge.o{background:#f7a800;color:#3a2000}.kb-badge.v{background:#1db14f}
+
+/* ── CONTENT PAGES ── */
+.pages{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;display:none;padding:7px;gap:7px;flex-direction:column;min-height:0}
+.page.on{display:flex}
+
+/* ── ROW ── */
+.row{display:flex;gap:7px;min-height:0;min-width:0}
+
+/* ── PANEL ── */
+.panel{background:#fff;border:1px solid #d4d8e4;display:flex;flex-direction:column;overflow:hidden;min-height:0;min-width:0}
+.panel-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:#2d4696;padding:5px 8px 4px;border-bottom:1px solid #e4e8f2;flex-shrink:0;
+  display:flex;align-items:center;gap:5px;background:#f7f8fc}
+.panel-hdr .accent{width:3px;height:10px;border-radius:1px;background:#2d4696;flex-shrink:0}
+.panel-hdr .accent.v{background:#1db14f}.panel-hdr .accent.o{background:#f7a800}.panel-hdr .accent.r{background:#c0392b}
+.panel-body{flex:1;padding:6px;overflow:hidden;position:relative}
+.panel-body canvas{width:100%!important;height:100%!important}
+
+/* ── TABLE ── */
+.tbl{width:100%;border-collapse:collapse;font-size:10px}
+.tbl thead tr{background:#2d4696}
+.tbl th{color:#fff;padding:4px 7px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.tbl td{padding:4px 7px;border-bottom:1px solid #edf0f5;color:#1a2332;white-space:nowrap}
+.tbl tr:nth-child(even) td{background:#f7f8fc}
+.tbl tr:hover td{background:#edf2ff}
+.tag{display:inline-block;font-size:8.5px;font-weight:700;padding:1px 7px;border-radius:2px;color:#fff;white-space:nowrap}
+.tag.v{background:#1db14f}.tag.o{background:#f7a800;color:#3a2000}.tag.r{background:#c0392b}
+
+/* ── TABS ── */
+.tab-bar{height:28px;background:#1a2e5a;display:flex;align-items:flex-end;padding:0 6px;flex-shrink:0;gap:2px}
+.tab-btn{background:#243d6e;color:rgba(255,255,255,.6);border:none;font-family:inherit;font-size:9.5px;
+  padding:5px 12px;cursor:pointer;border-radius:3px 3px 0 0;transition:.1s;white-space:nowrap}
+.tab-btn.on{background:#f0f2f6;color:#2d4696;font-weight:700}
+.tab-btn:hover:not(.on){color:#fff;background:#2d4fa0}
+.tab-right{margin-left:auto;display:flex;align-items:center;gap:10px;padding-bottom:4px}
+.tab-right span{font-size:8px;color:rgba(255,255,255,.45)}
+</style>
+</head>
+<body>
+<div class="root">
+
+<!-- ═══ HEADER ═══ -->
+<div class="hdr">
+  <svg class="logo-svg" width="110" height="38" viewBox="0 0 300.88 129.94" xmlns="http://www.w3.org/2000/svg">
+    <defs><style>.c1{fill:#fc0}.c2{fill:#fff}.c3{fill:#2d60a9}</style></defs>
+    <path class="c1" d="M64.97,0C29.09,0,0,29.09,0,64.97s29.09,64.97,64.97,64.97,64.97-29.09,64.97-64.97S100.85,0,64.97,0Z"/>
+    <path class="c2" d="M165.82,25.17c.29,0,.56.05.84.15.27.1.62.29,1.05.58,1.17.69,2.23,1.03,3.17,1.03,1.2,0,2.25-.38,3.15-1.14.75-.63,1.4-1.52,1.96-2.67.2-.4.04-.89-.36-1.09l-2.39-1.22c-.37-.19-.83-.08-1.05.26-.24.36-.47.63-.69.8-.33.26-.71.39-1.14.39-.29,0-.58-.06-.88-.19-.3-.13-.61-.29-.92-.49-.63-.34-1.2-.61-1.72-.81-.51-.2-1.06-.3-1.63-.3-1.2,0-2.24.39-3.11,1.16-.71.63-1.34,1.48-1.89,2.55-.21.41-.05.91.35,1.11l2.45,1.24c.36.18.79.06,1.03-.26.53-.72,1.12-1.08,1.76-1.08"/>
+    <path class="c2" d="M172.79,46.41l-11.53-15.67c-.15-.21-.4-.33-.66-.33h-4.48c-.45,0-.82.37-.82.82v27.57c0,.45.37.82.82.82h4.63c.45,0,.82-.37.82-.82v-14.7c0-.79,1-1.12,1.47-.49l11.58,15.67c.15.21.4.33.66.33h4.43c.45,0,.82-.37.82-.82v-27.57c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v14.71c0,.79-1.01,1.12-1.47.48"/>
+    <path class="c2" d="M203.43,47.6c0,2.03-.47,3.61-1.41,4.74-.94,1.13-2.33,1.69-4.16,1.69s-3.22-.56-4.18-1.69c-.96-1.13-1.44-2.71-1.44-4.74v-16.38c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v16.25c0,2.8.46,5.14,1.37,7.01.91,1.87,2.25,3.28,4.01,4.22,1.76.94,3.92,1.41,6.5,1.41s4.74-.47,6.5-1.41c1.76-.94,3.09-2.35,4.01-4.22.91-1.87,1.37-4.21,1.37-7.01v-16.25c0-.45-.37-.82-.82-.82h-4.67c-.45,0-.82.37-.82.82v16.38Z"/>
+    <path class="c2" d="M232.66,46.41l-11.53-15.67c-.15-.21-.4-.33-.66-.33h-4.48c-.45,0-.82.37-.82.82v27.57c0,.45.37.82.82.82h4.63c.45,0,.82-.37.82-.82v-14.7c0-.79,1-1.12,1.47-.49l11.58,15.67c.15.21.4.33.66.33h4.43c.45,0,.82-.37.82-.82v-27.57c0-.45-.37-.82-.82-.82h-4.63c-.45,0-.82.37-.82.82v14.71c0,.79-1.01,1.12-1.47.48"/>
+    <path class="c2" d="M225.69,25.17c.29,0,.56.05.84.15.27.1.62.29,1.05.58,1.17.69,2.23,1.03,3.17,1.03,1.2,0,2.25-.38,3.15-1.14.75-.63,1.4-1.52,1.96-2.67.2-.4.04-.89-.36-1.09l-2.39-1.22c-.37-.19-.83-.08-1.05.26-.24.36-.47.63-.69.8-.33.26-.71.39-1.14.39-.29,0-.58-.06-.88-.19-.3-.13-.61-.29-.92-.49-.63-.34-1.2-.61-1.72-.81-.51-.2-1.06-.3-1.63-.3-1.2,0-2.24.39-3.11,1.16-.71.63-1.34,1.48-1.89,2.55-.21.41-.05.91.35,1.11l2.45,1.24c.36.18.79.06,1.03-.26.53-.72,1.12-1.08,1.76-1.08"/>
+    <path class="c2" d="M273.27,38.96c-.73-1.84-1.77-3.44-3.11-4.8-1.34-1.36-2.94-2.41-4.78-3.15-1.84-.74-3.85-1.12-6.03-1.12s-4.26.37-6.09,1.12c-1.83.74-3.42,1.79-4.76,3.15-1.34,1.36-2.38,2.96-3.11,4.8-.73,1.84-1.09,3.87-1.09,6.07s.36,4.22,1.09,6.07c.73,1.84,1.76,3.45,3.11,4.8,1.34,1.36,2.93,2.4,4.76,3.13,1.83.73,3.86,1.09,6.09,1.09s4.18-.36,6.03-1.09c1.84-.73,3.44-1.77,4.78-3.13,1.34-1.36,2.38-2.96,3.11-4.8.73-1.84,1.09-3.87,1.09-6.07s-.36-4.22-1.09-6.07M266.85,49.75c-.74,1.34-1.77,2.39-3.07,3.13-1.3.74-2.78,1.11-4.44,1.11s-3.18-.37-4.48-1.11c-1.3-.74-2.32-1.79-3.07-3.13-.74-1.34-1.12-2.92-1.12-4.72s.37-3.41,1.12-4.74c.74-1.33,1.76-2.37,3.07-3.11,1.3-.74,2.79-1.12,4.48-1.12s3.14.36,4.44,1.09c1.3.73,2.32,1.77,3.07,3.11.74,1.34,1.12,2.92,1.12,4.72s-.37,3.42-1.12,4.76"/>
+    <path class="c2" d="M295.37,59.61h4.61c.56,0,.95-.55.77-1.08l-9.31-27.57c-.11-.33-.42-.55-.77-.55h-5.74c-.35,0-.65.22-.77.54l-9.8,27.57c-.19.53.21,1.09.77,1.09h4.57c.35,0,.66-.22.77-.55l1.5-4.35c.11-.33.42-.55.77-.55h9.7c.35,0,.67.23.78.57l1.38,4.31c.11.34.42.57.78.57M284.52,47.29l2.47-7.18c.26-.74,1.31-.73,1.55.02l2.3,7.18c.17.53-.22,1.06-.78,1.06h-4.77c-.56,0-.95-.55-.77-1.08"/>
+    <rect class="c2" x="155.31" y="87.47" width="145.49" height="1.65"/>
+    <path class="c2" d="M158.38,75.06c.11-.65.2-1.29.27-1.93,0-.03,0-.06,0-.09.01.04.02.08.03.12.16.61.36,1.23.58,1.87l1.65,4.73h1.83l1.65-4.73c.22-.62.42-1.24.58-1.86.01-.05.02-.1.04-.14,0,.03,0,.07.01.1.08.64.17,1.28.26,1.93l.75,4.83h2.33l-1.92-10.81h-2.08l-2.53,7.24-2.53-7.24h-2.08l-1.91,10.81h2.32l.75-4.83Z"/>
+    <path class="c3" d="M72.93,48.87c1.33-13.26,12.22-23.7,25.68-24.32.69-.03,1.27.52,1.24,1.21-.59,13-10.34,23.61-22.96,25.53-.21.03-.43,0-.63-.08-.85-.35-1.73-.74-2.64-1.15-.46-.21-.74-.69-.69-1.19Z"/>
+    <path class="c3" d="M63.9,12.51c.47-.52,1.29-.54,1.77-.02,8.67,9.44,9.43,23.55,2.25,33.81-.33.48-.97.64-1.5.39-2.05-.97-3.9-1.82-5.62-2.57-.24-.11-.45-.29-.58-.52-5.39-9.88-4.17-22.41,3.67-31.09Z"/>
+    <path class="c3" d="M31.7,24.1c10.02.56,18.58,6.57,22.78,15.12.54,1.09-.45,2.32-1.63,2-2.74-.74-5.34-1.08-8.22-1.08-2.53,0-4.92.37-7.14,1.09-.57.18-1.19,0-1.56-.46-3.32-4.23-5.41-9.46-5.73-15.17-.05-.84.65-1.54,1.5-1.5Z"/>
+    <path class="c3" d="M61.48,100.58c-6.23-4.75-13.52-10.31-23.42-17.74-.59-.44-1.43-.02-1.43.71v16.03c0,.49-.4.89-.89.89h-8.7c-.49,0-.89-.4-.89-.89v-27.94c0-.49.4-.89.89-.89h9.36c.19,0,.37.06.52.17,3.74,2.67,9.64,7.1,14.17,10.26.59.41,1.4-.01,1.4-.74l-.05-19c0-.65.67-1.09,1.26-.81,2.39,1.11,5.08,2.49,7.52,3.68.38.18.75.35,1.12.52.32.15.52.46.52.81l.05,34.24c0,.74-.84,1.16-1.43.71Z"/>
+    <path class="c3" d="M103.79,100.83c0,.43-.5.68-.84.42-5.95-4.58-14.15-10.8-24.6-18.65-.35-.26-.84-.01-.84.42v17.12c0,.29-.24.53-.53.53h-9.43c-.29,0-.53-.24-.53-.53v-32.44c0-.38.39-.63.73-.48,3.65,1.55,6.53,2.7,9.61,3.43.07.02.13.05.19.09,2.75,2.08,6.39,4.52,10.12,7.33l4.85,3.63c.35.26.84.01.84-.42v-10.42c0-.23.15-.42.36-.5,3.09-1.06,5.8-2.77,8.03-5.1.38-.4.75-.82,1.1-1.25.31-.39.94-.17.94.33v36.48Z"/>
+    <path class="c3" d="M85.92,67.19c-6.23,0-11.84-1.46-22.59-6.45-7.32-3.58-13.09-6.86-18.7-6.86s-7.36,3.51-7.81,11.93c-.04.72-.64,1.29-1.36,1.29l-8.04.02c-.76,0-1.37-.61-1.37-1.37-.09-14.68,8.14-22.16,18.57-22.16,6.54,0,11.53,2.03,21.97,7.01,7.95,3.74,13.71,6.54,19.48,6.54,5.32,0,7.06-4.06,7.36-11.77.03-.73.63-1.31,1.36-1.31h7.72c.75,0,1.35.6,1.37,1.35.26,16.39-8.55,21.77-17.96,21.77Z"/>
+  </svg>
+  <div class="hdr-mid">
+    <h1>Dashboard Operacional · Dirección de Medio Ambiente</h1>
+    <div class="sub">Tablero DMA · Reunión operativa semanal · Fase Controlar y Aprender · Execution Premium (Kaplan &amp; Norton)</div>
+  </div>
+  <span class="aviso-hdr">⚠ Datos simulados</span>
+  <div class="hdr-right">
+    <div><strong>Municipalidad de Ñuñoa</strong> · Taller 6 · Grupo 2</div>
+    <div>CGD · Presupuesto 2026: $15.623 MM · Semana S-21/2026</div>
+  </div>
+</div>
+
+<!-- ═══ BODY ═══ -->
+<div class="body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-header">⚙ Filtros</div>
+    <div class="sb-section">
+      <div class="sb-lbl">Unidad DMA</div>
+      <label class="sb-opt active" id="f-unit-Completa"><input type="radio" name="unit" value="Completa" checked onchange="onFilter('unit',this.value)"> DMA Completa</label>
+      <label class="sb-opt" id="f-unit-Áreas Verdes"><input type="radio" name="unit" value="Áreas Verdes" onchange="onFilter('unit',this.value)"> Áreas Verdes</label>
+      <label class="sb-opt" id="f-unit-Tramitación"><input type="radio" name="unit" value="Tramitación" onchange="onFilter('unit',this.value)"> Tramitación</label>
+      <label class="sb-opt" id="f-unit-Aseo Urbano"><input type="radio" name="unit" value="Aseo Urbano" onchange="onFilter('unit',this.value)"> Aseo Urbano</label>
+    </div>
+    <div class="sb-section">
+      <div class="sb-lbl">Período de análisis</div>
+      <label class="sb-opt active" id="f-period-Q1 2026"><input type="radio" name="period" value="Q1 2026" checked onchange="onFilter('period',this.value)"> Q1 2026 (12 sem.)</label>
+      <label class="sb-opt" id="f-period-Mayo 2026"><input type="radio" name="period" value="Mayo 2026" onchange="onFilter('period',this.value)"> Mayo 2026 (4 sem.)</label>
+      <label class="sb-opt" id="f-period-Sem. 21"><input type="radio" name="period" value="Sem. 21" onchange="onFilter('period',this.value)"> Semana 21 actual</label>
+    </div>
+    <div class="sb-section">
+      <div class="sb-lbl">Año presupuestario</div>
+      <label class="sb-opt active" id="f-year-2026"><input type="radio" name="year" value="2026" checked onchange="onFilter('year',this.value)"> 2026 (en curso)</label>
+      <label class="sb-opt" id="f-year-2025"><input type="radio" name="year" value="2025" onchange="onFilter('year',this.value)"> 2025 (cierre)</label>
+    </div>
+    <div class="sb-section">
+      <div class="sb-lbl">Vista indicadores</div>
+      <label class="sb-opt active" id="f-view-Todos"><input type="radio" name="view" value="Todos" checked onchange="onFilter('view',this.value)"> Todos</label>
+      <label class="sb-opt" id="f-view-Alertas"><input type="radio" name="view" value="Alertas" onchange="onFilter('view',this.value)"> Solo alertas</label>
+    </div>
+    <div class="sb-section">
+      <div class="sb-lbl">Perspectiva CMI</div>
+      <label class="sb-opt active" id="f-persp-Todas"><input type="radio" name="persp" value="Todas" checked onchange="onFilter('persp',this.value)"> Todas (19 ind.)</label>
+      <label class="sb-opt" id="f-persp-Comunitaria"><input type="radio" name="persp" value="Comunitaria" onchange="onFilter('persp',this.value)"> Comunitaria (6)</label>
+      <label class="sb-opt" id="f-persp-Financiera"><input type="radio" name="persp" value="Financiera" onchange="onFilter('persp',this.value)"> Financiera (3)</label>
+      <label class="sb-opt" id="f-persp-Procesos Int."><input type="radio" name="persp" value="Procesos Int." onchange="onFilter('persp',this.value)"> Procesos Int. (5)</label>
+      <label class="sb-opt" id="f-persp-Aprend. y Crec."><input type="radio" name="persp" value="Aprend. y Crec." onchange="onFilter('persp',this.value)"> Aprend. y Crec. (5)</label>
+    </div>
+    <div class="sb-filter-note">CMI desplegado en cascada<br>Nivel 3 · Tablero DMA (no integral)<br>Centro de Gasto Discrecional<br>79 centros de responsabilidad<br><br>Datos operativos simulados</div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- KPI STRIP -->
+    <div class="kpi-strip">
+      <div class="kpi-box">
+        <div class="kb-lbl">Ppto. ejecutado en plazo</div>
+        <div class="kb-val r" id="kb-ejec">71%</div>
+        <div class="kb-sub"><span class="kb-badge r" id="kb-ejec-b">Bajo meta</span> <span id="kb-ejec-s">meta ≥ 90%</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Satisf. gestión DMA</div>
+        <div class="kb-val o" id="kb-sat">73%</div>
+        <div class="kb-sub"><span class="kb-badge o" id="kb-sat-b">Alerta</span> <span id="kb-sat-s">meta ≥ 75%</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Áreas verdes per cápita</div>
+        <div class="kb-val v" id="kb-av">9,3 m²</div>
+        <div class="kb-sub"><span class="kb-badge v" id="kb-av-b">En meta</span> <span id="kb-av-s">meta ≥ 9 m²</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Abandono de trámites</div>
+        <div class="kb-val o" id="kb-ab">12%</div>
+        <div class="kb-sub"><span class="kb-badge o" id="kb-ab-b">Alerta</span> <span id="kb-ab-s">meta &lt; 10%</span></div>
+      </div>
+      <div class="kpi-box">
+        <div class="kb-lbl">Reclamos formales</div>
+        <div class="kb-val v" id="kb-rec">3,8%</div>
+        <div class="kb-sub"><span class="kb-badge v" id="kb-rec-b">En meta</span> <span id="kb-rec-s">meta &lt; 5%</span></div>
+      </div>
+      <div class="kpi-box" style="border-right:2px solid #2d4696">
+        <div class="kb-lbl">Estado indicadores</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-top:2px">
+          <span style="font-size:18px;font-weight:700;color:#1db14f" id="kb-cv">8</span><span style="font-size:9px;color:#6c7280">meta</span>
+          <span style="font-size:18px;font-weight:700;color:#c57f00" id="kb-co">10</span><span style="font-size:9px;color:#6c7280">alerta</span>
+          <span style="font-size:18px;font-weight:700;color:#c0392b" id="kb-cr">1</span><span style="font-size:9px;color:#6c7280">bajo</span>
+        </div>
+        <div class="kb-sub" id="kb-total-u">DMA Completa · 19 indicadores</div>
+      </div>
+    </div>
+
+    <!-- PAGES -->
+    <div class="pages">
+
+      <!-- ══ PAGE 1: Resumen ══ -->
+      <div id="pg1" class="page on">
+        <div style="flex:1;display:flex;gap:7px;min-height:0;min-width:0">
+          <!-- LEFT: charts -->
+          <div style="flex:1;display:flex;flex-direction:column;gap:7px;min-height:0;min-width:0">
+            <div class="row" style="flex:0 0 175px">
+              <div class="panel" style="flex:0 0 340px">
+                <div class="panel-hdr"><span class="accent"></span><span id="p1-trend-title">Satisfacción vecinal vs. tasa de reclamos — Q1 2026</span></div>
+                <div class="panel-body"><canvas id="trend"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent r"></span>Diagnóstico DMA — la brecha en cifras</div>
+                <div class="panel-body" style="padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:5px">
+                  <div style="font-size:9px;color:#4a5068;line-height:1.3">La DMA <b>no convierte</b> su presupuesto en servicio percibido por el vecino:</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px">
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">71%</span> <span style="font-size:7.5px;color:#6c7280">ejec. ppto. (meta ≥90%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">68%</span> <span style="font-size:7.5px;color:#6c7280">satisf. vecinal (≥75%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">14%</span> <span style="font-size:7.5px;color:#6c7280">abandono trám. (&lt;10%)</span></div>
+                    <div><span style="font-size:16px;font-weight:700;color:#c0392b">65%</span> <span style="font-size:7.5px;color:#6c7280">cobertura prog. (≥80%)</span></div>
+                  </div>
+                  <div style="font-size:8px;color:#9298a8;line-height:1.3">5/19 indicadores bajo meta — brecha presente en las 4 perspectivas BSC.</div>
+                </div>
+              </div>
+            </div>
+            <div class="row" style="flex:0 0 175px">
+              <div class="panel" style="flex:0 0 230px">
+                <div class="panel-hdr"><span class="accent r"></span>Proyección cierre presupuestario 2026 — ¿alcanzamos el 90%?</div>
+                <div class="panel-body"><canvas id="proyeccion"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 200px">
+                <div class="panel-hdr"><span class="accent o"></span>Radar BSC — desempeño vs. meta por perspectiva</div>
+                <div class="panel-body"><canvas id="radar_bsc"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent"></span>Indicadores en alerta — evolución últimas 4 semanas</div>
+                <div class="panel-body"><canvas id="alertas_trend"></canvas></div>
+              </div>
+            </div>
+            <div class="row" style="flex:1">
+              <div class="panel" style="flex:0 0 180px">
+                <div class="panel-hdr"><span class="accent o"></span>Ejecuc. acumulada 2026 vs. prog. (%)</div>
+                <div class="panel-body"><canvas id="presup_mini"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 120px">
+                <div class="panel-hdr"><span class="accent r"></span>Brecha vs. prog. ($MM)</div>
+                <div class="panel-body"><canvas id="brecha_mini"></canvas></div>
+              </div>
+              <div class="panel" style="flex:1">
+                <div class="panel-hdr"><span class="accent"></span>Estado ind. BSC por perspectiva</div>
+                <div class="panel-body"><canvas id="bsc_bar"></canvas></div>
+              </div>
+              <div class="panel" style="flex:0 0 100px">
+                <div class="panel-hdr"><span class="accent v"></span>Distribución</div>
+                <div class="panel-body"><canvas id="donut_est"></canvas></div>
+              </div>
+            </div>
+          </div>
+          <!-- RIGHT: Semáforo de indicadores, full height -->
+          <div class="panel" style="flex:0 0 440px">
+            <div class="panel-hdr"><span class="accent v"></span>Semáforo de indicadores DMA</div>
+            <div class="panel-body" style="padding:4px 6px">
+              <table class="tbl" id="tbl1"><thead><tr><th>Perspect.</th><th>Indicador</th><th>Valor</th><th>Meta</th><th>Estado</th></tr></thead><tbody id="tbl1-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE 2: Perspectiva Comunitaria ══ -->
+      <div id="pg2" class="page">
+        <div class="row" style="flex:0 0 268px">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Indicadores comunitarios — valor vs. meta (% cumplimiento)</div>
+            <div class="panel-body"><canvas id="com_vsm"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 290px">
+            <div class="panel-hdr"><span class="accent"></span>Satisfacción vecinal — tendencia semanal 2026</div>
+            <div class="panel-body"><canvas id="com_sat"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 220px">
+            <div class="panel-hdr"><span class="accent v"></span>% acceso servicios DMA por sector</div>
+            <div class="panel-body"><canvas id="com_acceso"></canvas></div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Abandono trámites ambientales por tipo (%)</div>
+            <div class="panel-body"><canvas id="com_abandono"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Distribución inversión por sector — índice equidad (%)</div>
+            <div class="panel-body"><canvas id="com_inv"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 200px">
+            <div class="panel-hdr"><span class="accent r"></span>Reclamos formales por categoría</div>
+            <div class="panel-body"><canvas id="com_rec"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE 3: Perspectiva Financiera ══ -->
+      <div id="pg3" class="page">
+        <div class="row" style="flex:0 0 255px">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent"></span><span id="p3-title">Ejecución Presupuestaria — acumulada vs. programada 2026 · % y $MM mensual</span></div>
+            <div class="panel-body"><canvas id="presup_acum"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 215px">
+            <div class="panel-hdr"><span class="accent r"></span>Brecha mensual ($MM)</div>
+            <div class="panel-body"><canvas id="brecha"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 230px">
+            <div class="panel-hdr"><span class="accent"></span>Resumen presupuestario</div>
+            <div class="panel-body" style="padding:8px 10px;display:flex;flex-direction:column;gap:6px">
+              <div id="p3-summary"></div>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent v"></span>% Ejecución por ítem presupuestario</div>
+            <div class="panel-body"><canvas id="items_pres"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 250px">
+            <div class="panel-hdr"><span class="accent o"></span>Costo per cápita DMA — tendencia (índice base 2023=100)</div>
+            <div class="panel-body"><canvas id="costo_pc"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 215px">
+            <div class="panel-hdr"><span class="accent v"></span>Variación personas beneficiadas (%)</div>
+            <div class="panel-body"><canvas id="var_ben"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE 4: Procesos Internos ══ -->
+      <div id="pg4" class="page">
+        <div class="row" style="flex:0 0 255px">
+          <div class="panel" style="flex:0 0 295px">
+            <div class="panel-hdr"><span class="accent"></span>Cumplimiento SLA — Autorización OC (DAF)</div>
+            <div class="panel-body"><canvas id="sla"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 360px">
+            <div class="panel-hdr"><span class="accent v"></span>Tiempos tramitación ambiental (días hábiles)</div>
+            <div class="panel-body"><canvas id="tramit"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent o"></span>Satisfacción post-atención (nota 1–7) por unidad</div>
+            <div class="panel-body"><canvas id="sat_post"></canvas></div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:0 0 285px">
+            <div class="panel-hdr"><span class="accent v"></span>M² áreas verdes per cápita por sector</div>
+            <div class="panel-body"><canvas id="areas"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 270px">
+            <div class="panel-hdr"><span class="accent o"></span>Cobertura programas ambientales (%)</div>
+            <div class="panel-body"><canvas id="cobertura"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent v"></span>% Infraestructura urbana buen estado por tipo</div>
+            <div class="panel-body"><canvas id="infraest"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PAGE 5: Aprendizaje y Crecimiento ══ -->
+      <div id="pg5" class="page">
+        <div class="row" style="flex:0 0 258px">
+          <div class="panel" style="flex:0 0 350px">
+            <div class="panel-hdr"><span class="accent o"></span>Satisfacción laboral (nota 1–7) — tendencia semestral</div>
+            <div class="panel-body"><canvas id="ac_sat"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent v"></span>% Funcionarios en programas de integración</div>
+            <div class="panel-body"><canvas id="ac_integ"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 235px">
+            <div class="panel-hdr"><span class="accent v"></span>Ratio habilidades ambientales cubiertas</div>
+            <div class="panel-body"><canvas id="ac_hab"></canvas></div>
+          </div>
+        </div>
+        <div class="row" style="flex:1">
+          <div class="panel" style="flex:0 0 310px">
+            <div class="panel-hdr"><span class="accent o"></span>Quejas válidas atribuibles a DMA — últimas 8 semanas</div>
+            <div class="panel-body"><canvas id="ac_quejas"></canvas></div>
+          </div>
+          <div class="panel" style="flex:0 0 260px">
+            <div class="panel-hdr"><span class="accent v"></span>Puntaje código de conducta — comparación unidades</div>
+            <div class="panel-body"><canvas id="ac_conducta"></canvas></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="panel-hdr"><span class="accent"></span>Resumen indicadores — Aprendizaje y Crecimiento</div>
+            <div class="panel-body" style="padding:5px 7px;overflow-y:auto">
+              <table class="tbl"><thead><tr><th>Indicador</th><th>Valor actual</th><th>Meta</th><th>Tendencia</th><th>Estado</th></tr></thead>
+              <tbody>
+                <tr><td>Ratio habilidades ambientales</td><td><b>0,82</b></td><td>↑ alza</td><td>▲ +0,04 vs S2-2025</td><td><span class="tag v">En meta</span></td></tr>
+                <tr><td>Índice satisfacción laboral (nota)</td><td><b>5,5</b></td><td>≥ 5,7</td><td>▼ −0,1 vs S2-2025</td><td><span class="tag o">Alerta</span></td></tr>
+                <tr><td>% funcionarios en integración</td><td><b>84%</b></td><td>&gt; 80%</td><td>▲ +2pp vs T1-2026</td><td><span class="tag v">En meta</span></td></tr>
+                <tr><td>N° quejas válidas atribuibles a DMA</td><td><b>4</b></td><td>≤ 3</td><td>▼ −1 vs S20</td><td><span class="tag o">Alerta</span></td></tr>
+                <tr><td>Puntaje código de conducta (nota)</td><td><b>6,1</b></td><td>≥ 6,0</td><td>▲ +0,1 vs S1-2026</td><td><span class="tag v">En meta</span></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pages -->
+
+    <!-- TABS -->
+    <div class="tab-bar">
+      <button class="tab-btn on" onclick="switchPg('pg1',this)">📊 Resumen ejecutivo</button>
+      <button class="tab-btn" onclick="switchPg('pg2',this)">🌿 Perspectiva Comunitaria</button>
+      <button class="tab-btn" onclick="switchPg('pg3',this)">💰 Perspectiva Financiera</button>
+      <button class="tab-btn" onclick="switchPg('pg4',this)">🔧 Procesos Internos</button>
+      <button class="tab-btn" onclick="switchPg('pg5',this)">🎓 Aprendizaje y Crecimiento</button>
+      <div class="tab-right">
+        <span>CMI-DMA · 19 ind. · 4 perspectivas BSC</span>
+        <span>Prof. Alicia Núñez · FEN</span>
+        <span>Taller 6 · Grupo 2</span>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /body -->
+</div><!-- /root -->
+
+<script>
+Chart.register(ChartDataLabels);
+Chart.defaults.font.family="'Segoe UI',Tahoma,sans-serif";
+Chart.defaults.font.size=9.5;
+Chart.defaults.plugins.legend.labels.boxWidth=9;
+Chart.defaults.plugins.legend.labels.padding=7;
+Chart.defaults.set('plugins.datalabels',{display:false});
+
+// ─── DATA ───────────────────────────────────────────
+const WK=['S10','S11','S12','S13','S14','S15','S16','S17','S18','S19','S20','S21'];
+const MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+const UNITS={
+  'Completa':{
+    ejec:'71%',ejec_c:'r',sat:'68%',sat_c:'r',av:'9,3 m²',av_c:'v',ab:'14%',ab_c:'r',rec:'3,8%',rec_c:'v',
+    ejec_b:'Bajo meta',sat_b:'Bajo meta',av_b:'En meta',ab_b:'Bajo meta',rec_b:'En meta',
+    t_sat:[5.6,5.5,5.4,5.5,5.3,5.4,5.3,5.2,5.3,5.2,5.1,5.2],
+    t_rec:[2.9,3.1,3.0,3.4,3.6,3.5,3.9,4.1,3.8,4.0,3.9,3.8],
+    sem:[
+      {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',    v:'68%',   m:'≥ 70%',    e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio', v:'3,8%',  m:'< 5%',     e:'v'},
+      {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',     v:'68%',   m:'≥ 75%',    e:'r'},
+      {p:'Comunitaria',    i:'% población accede a servicios DMA',     v:'87%',   m:'≥ 85%',    e:'v'},
+      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',     v:'14%',   m:'< 10%',    e:'r'},
+      {p:'Comunitaria',    i:'Índice distrib. inversión por sector',   v:'76%',   m:'≥ 80%',    e:'o'},
+      {p:'Financiera',     i:'Costo per cápita servicios DMA',         v:'−8%',   m:'red. ≥10%',e:'o'},
+      {p:'Financiera',     i:'Variación personas beneficiadas',        v:'4%',    m:'≥ 7%',     e:'r'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',     v:'71%',   m:'≥ 90%',    e:'r'},
+      {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',      v:'5,2',   m:'≥ 5,5',    e:'o'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',            v:'88%',   m:'≥ 90%',    e:'o'},
+      {p:'Procesos Int.',  i:'M² áreas verdes per cápita',             v:'9,3 m²',m:'≥ 9 m²',  e:'v'},
+      {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',   v:'82%',   m:'≥ 80%',    e:'v'},
+      {p:'Procesos Int.',  i:'% cobertura programas focalizados',      v:'65%',   m:'≥ 80%',    e:'r'},
+      {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas',v:'0,82',  m:'↑ alza',   e:'v'},
+      {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',     v:'5,5',   m:'≥ 5,7',    e:'o'},
+      {p:'Aprend. y Crec.',i:'% funcionarios en integración',          v:'84%',   m:'> 80%',    e:'v'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles a DMA',    v:'4',     m:'≤ 3',      e:'o'},
+      {p:'Aprend. y Crec.',i:'Puntaje código de conducta (nota)',      v:'6,1',   m:'≥ 6,0',    e:'v'}
+    ]
+  },
+  'Áreas Verdes':{
+    ejec:'61%',ejec_c:'r',sat:'80%',sat_c:'v',av:'9,8 m²',av_c:'v',ab:'8%',ab_c:'v',rec:'1,8%',rec_c:'v',
+    ejec_b:'Bajo meta',sat_b:'En meta',av_b:'En meta',ab_b:'En meta',rec_b:'En meta',
+    t_sat:[5.8,5.9,5.7,5.8,5.6,5.7,5.6,5.5,5.6,5.5,5.4,5.5],
+    t_rec:[1.5,1.6,1.4,1.8,2.0,1.9,2.1,2.0,1.8,2.0,1.9,1.8],
+    sem:[
+      {p:'Comunitaria',    i:'% satisfacción servicio áreas verdes',  v:'80%',   m:'≥ 75%',    e:'v'},
+      {p:'Procesos Int.',  i:'M² áreas verdes gestionados p/c',       v:'9,8 m²',m:'≥ 9 m²',  e:'v'},
+      {p:'Procesos Int.',  i:'% infraestructura verde buen estado',   v:'84%',   m:'≥ 80%',    e:'v'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',    v:'61%',   m:'≥ 90%',    e:'r'},
+      {p:'Procesos Int.',  i:'Poda de emergencia en plazo',           v:'88%',   m:'≥ 90%',    e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales',                v:'1,8%',  m:'< 5%',     e:'v'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles',         v:'2',     m:'≤ 3',      e:'v'}
+    ]
+  },
+  'Tramitación':{
+    ejec:'42%',ejec_c:'r',sat:'64%',sat_c:'r',av:'N/A',av_c:'',ab:'15%',ab_c:'r',rec:'5,0%',rec_c:'o',
+    ejec_b:'Bajo meta',sat_b:'Bajo meta',av_b:'N/A',ab_b:'Bajo meta',rec_b:'Alerta',
+    t_sat:[5.2,5.1,5.0,5.1,4.9,5.0,4.9,4.8,4.9,4.8,4.7,4.8],
+    t_rec:[4.1,4.3,4.2,4.6,4.8,4.7,5.1,5.3,5.0,5.2,5.1,5.0],
+    sem:[
+      {p:'Comunitaria',    i:'% satisfacción trámites DMA',           v:'64%',   m:'≥ 75%',    e:'r'},
+      {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',    v:'15%',   m:'< 10%',    e:'r'},
+      {p:'Comunitaria',    i:'% población accede a servicios',        v:'81%',   m:'≥ 85%',    e:'o'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',    v:'42%',   m:'≥ 90%',    e:'r'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',           v:'79%',   m:'≥ 90%',    e:'r'},
+      {p:'Comunitaria',    i:'Tasa reclamos trámites formales',       v:'5,0%',  m:'< 5%',     e:'o'},
+      {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles',         v:'5',     m:'≤ 3',      e:'r'}
+    ]
+  },
+  'Aseo Urbano':{
+    ejec:'58%',ejec_c:'r',sat:'71%',sat_c:'o',av:'N/A',av_c:'',ab:'12%',ab_c:'o',rec:'4,1%',rec_c:'v',
+    ejec_b:'Bajo meta',sat_b:'Alerta',av_b:'N/A',ab_b:'Alerta',rec_b:'En meta',
+    t_sat:[5.4,5.3,5.2,5.3,5.1,5.2,5.1,5.0,5.1,5.0,4.9,5.0],
+    t_rec:[3.2,3.4,3.3,3.7,3.9,3.8,4.2,4.4,4.1,4.3,4.2,4.1],
+    sem:[
+      {p:'Comunitaria',    i:'% satisfacción aseo urbano',            v:'71%',   m:'≥ 75%',    e:'o'},
+      {p:'Comunitaria',    i:'Tasa reclamos formales aseo',           v:'4,1%',  m:'< 5%',     e:'v'},
+      {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',    v:'58%',   m:'≥ 90%',    e:'r'},
+      {p:'Procesos Int.',  i:'% servicios que cumplen SLA',           v:'86%',   m:'≥ 90%',    e:'o'},
+      {p:'Procesos Int.',  i:'% cobertura puntos limpios',            v:'65%',   m:'≥ 100%',   e:'r'},
+      {p:'Aprend. y Crec.',i:'% funcionarios en integración',         v:'82%',   m:'> 80%',    e:'v'}
+    ]
+  }
+};
+
+const BUDGET={
+  2026:{
+    prog:[8.3,16.7,25.0,41.7,58.3,66.7,75.0,83.3,90.0,95.0,98.3,100],
+    ejec:[6,12,18,33,45,null,null,null,null,null,null,null],
+    mens:[937,843,1249,2349,1504,null,null,null,null,null,null,null],
+    brecha:[-187,-313,-551,-1404,-2025],bl:['Ene','Feb','Mar','Abr','May'],
+    ej_val:'$11.082',ej_pct:'71%',saldo:'$4.541',oc:'197'
+  },
+  2025:{
+    prog:[8.3,16.7,25.0,41.7,58.3,66.7,75.0,83.3,90.0,95.0,98.3,100],
+    ejec:[8,16,25,39,55,65,74,82,89,94,97,99],
+    mens:[1092,1249,1092,2505,2505,1404,1404,1249,1092,937,625,468],
+    brecha:[-94,-187,-374,0,187,280,94,94,94,94,-94,-103],bl:MESES,
+    ej_val:'$14.849',ej_pct:'99%',saldo:'$78',oc:'218'
+  }
+};
+
+const ITEMS={
+  L:['Remuneraciones','Bienes y servicios','Activos no financ.','Transferencias','Prest. seg. social','Otros gastos'],
+  2026:[92,68,45,78,55,61],2025:[97,85,78,91,72,84]
+};
+
+const FULL_SEM=[
+  {p:'Comunitaria',    i:'% vecinos perciben mejora ambiental',     f:'Σ puntajes 6–7 dim. amb. / encuestados',   v:'68%',   m:'≥ 70%',  u:'65–70%', fr:'Anual',     e:'o'},
+  {p:'Comunitaria',    i:'Tasa reclamos formales calidad servicio', f:'Reclamos formales / servicios entregados', v:'3,8%',  m:'< 5%',   u:'4,0–5,0',fr:'Trimestral',e:'v'},
+  {p:'Comunitaria',    i:'% satisfacción vecinal gestión DMA',      f:'Σ puntajes 6–7 gestión DMA / encuestados', v:'68%',   m:'≥ 75%',  u:'70–75%', fr:'Anual',     e:'r'},
+  {p:'Comunitaria',    i:'% población accede a servicios DMA',      f:'Personas acceden / población objetivo',    v:'87%',   m:'≥ 85%',  u:'80–85%', fr:'Semestral', e:'v'},
+  {p:'Comunitaria',    i:'Tasa abandono trámites ambientales',      f:'(Iniciados − finalizados) / iniciados',    v:'14%',   m:'< 10%',  u:'10–15%', fr:'Anual',     e:'r'},
+  {p:'Comunitaria',    i:'Índice distrib. inversión por sector',    f:'Sectores ±15% del promedio / total sect.', v:'76%',   m:'≥ 80%',  u:'75–80%', fr:'Semestral', e:'o'},
+  {p:'Financiera',     i:'Costo per cápita servicios DMA',          f:'Σ gastos servicio / residentes benef.',    v:'−8%',   m:'red. ≥10%',u:'5–10%',fr:'Semestral', e:'o'},
+  {p:'Financiera',     i:'Variación personas beneficiadas',         f:'(PBt − PBt-1) / PBt-1',                    v:'4%',    m:'≥ 7%',   u:'5–7%',   fr:'Semestral', e:'r'},
+  {p:'Financiera',     i:'% ppto. ejecutado dentro de plazos',      f:'Ppto. ejec. en plazo / ppto. programado',  v:'71%',   m:'≥ 90%',  u:'75–90%', fr:'Semestral', e:'r'},
+  {p:'Procesos Int.',  i:'Satisfacción post-atención (nota)',       f:'Σ encuesta post-atención 1–7 / encuestas', v:'5,2',   m:'≥ 5,5',  u:'4,5–5,5',fr:'Trimestral',e:'o'},
+  {p:'Procesos Int.',  i:'% servicios que cumplen SLA',             f:'Servicios cumplen SLA / total catastrados',v:'88%',   m:'≥ 90%',  u:'80–90%', fr:'Semestral', e:'o'},
+  {p:'Procesos Int.',  i:'M² áreas verdes per cápita',              f:'m² áreas verdes mantenidas / habitantes',  v:'9,3 m²',m:'≥ 9 m²', u:'8,0–9,0',fr:'Anual',     e:'v'},
+  {p:'Procesos Int.',  i:'% infraestructura urbana buen estado',    f:'m² infra. buen estado / m² catastrada',    v:'82%',   m:'≥ 80%',  u:'75–80%', fr:'Anual',     e:'v'},
+  {p:'Procesos Int.',  i:'% cobertura programas focalizados',       f:'Beneficiarios efectivos / población obj.', v:'65%',   m:'≥ 80%',  u:'70–80%', fr:'Semestral', e:'r'},
+  {p:'Aprend. y Crec.',i:'Ratio habilidades ambientales cubiertas', f:'Habilidades cubiertas / demandadas',       v:'0,82',  m:'↑ alza', u:'0,7–0,8',fr:'Semestral', e:'v'},
+  {p:'Aprend. y Crec.',i:'Índice satisfacción laboral (nota)',      f:'Promedio encuesta satisf. laboral 1–7',    v:'5,5',   m:'≥ 5,7',  u:'5,0–5,7',fr:'Semestral', e:'o'},
+  {p:'Aprend. y Crec.',i:'% funcionarios en integración',          f:'Funcionarios participantes / total DMA',   v:'84%',   m:'> 80%',  u:'75–80%', fr:'Por activ.',e:'v'},
+  {p:'Aprend. y Crec.',i:'N° quejas válidas atribuibles a DMA',     f:'Conteo quejas válidas servicios DMA',      v:'4',     m:'≤ 3',    u:'3–5',    fr:'Semanal',   e:'o'},
+  {p:'Aprend. y Crec.',i:'Puntaje código de conducta (nota)',       f:'Promedio evaluación interna 1–7',          v:'6,1',   m:'≥ 6,0',  u:'5,5–6,0',fr:'Semestral', e:'v'}
+];
+
+// ─── STATE ──────────────────────────────────────────
+const ST={unit:'Completa',period:'Q1 2026',view:'Todos',year:2026,persp:'Todas'};
+const CH={};
+const INITED={pg1:false,pg2:false,pg3:false,pg4:false,pg5:false};
+const tag=e=>`<span class="tag ${e}">${e==='v'?'En meta':e==='o'?'Alerta':'Bajo meta'}</span>`;
+const PERSP=['Comunitaria','Financiera','Procesos Int.','Aprend. y Crec.'];
+
+function bscData(u){
+  const v=[],o=[],r=[];
+  PERSP.forEach(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    v.push(rows.filter(x=>x.e==='v').length);
+    o.push(rows.filter(x=>x.e==='o').length);
+    r.push(rows.filter(x=>x.e==='r').length);
+  });
+  return {v,o,r};
+}
+function sliceByPeriod(arr){return ST.period==='Sem. 21'?arr.slice(-1):ST.period==='Mayo 2026'?arr.slice(-4):arr;}
+function labsByPeriod(){return ST.period==='Sem. 21'?WK.slice(-1):ST.period==='Mayo 2026'?WK.slice(-4):WK;}
+
+// ─── KPI STRIP ──────────────────────────────────────
+function updateStrip(u){
+  function set(id,val,cls,bdg,sub){
+    document.getElementById(id).textContent=val;
+    document.getElementById(id).className='kb-val '+cls;
+    document.getElementById(id+'-b').textContent=bdg;
+    document.getElementById(id+'-b').className='kb-badge '+cls;
+    document.getElementById(id+'-s').textContent=sub;
+  }
+  set('kb-ejec',u.ejec,u.ejec_c,u.ejec_b,'meta ≥ 90%');
+  set('kb-sat',u.sat,u.sat_c,u.sat_b,'meta ≥ 75%');
+  set('kb-av',u.av,u.av_c||'',u.av_b,'meta ≥ 9 m²');
+  set('kb-ab',u.ab,u.ab_c,u.ab_b,'meta < 10%');
+  set('kb-rec',u.rec,u.rec_c,u.rec_b,'meta < 5%');
+  const cv=u.sem.filter(r=>r.e==='v').length;
+  const co=u.sem.filter(r=>r.e==='o').length;
+  const cr=u.sem.filter(r=>r.e==='r').length;
+  document.getElementById('kb-cv').textContent=cv;
+  document.getElementById('kb-co').textContent=co;
+  document.getElementById('kb-cr').textContent=cr;
+  document.getElementById('kb-total-u').textContent=ST.unit+' · '+u.sem.length+' indicadores';
+}
+
+function renderTbl1(u){
+  let rows=u.sem;
+  if(ST.persp!=='Todas') rows=rows.filter(r=>r.p===ST.persp);
+  if(ST.view==='Alertas') rows=rows.filter(r=>r.e!=='v');
+  document.getElementById('tbl1-body').innerHTML=rows.map(r=>
+    `<tr><td>${r.p}</td><td>${r.i}</td><td><b>${r.v}</b></td><td>${r.m}</td><td>${tag(r.e)}</td></tr>`
+  ).join('')||'<tr><td colspan="5" style="text-align:center;color:#9298a8;padding:8px">Sin resultados</td></tr>';
+}
+
+// ─── PAGE 1: RESUMEN ────────────────────────────────
+function initPg1(){
+  const u=UNITS[ST.unit];
+  const ls=labsByPeriod(),sat=sliceByPeriod(u.t_sat),rec=sliceByPeriod(u.t_rec);
+
+  CH.trend=new Chart(document.getElementById('trend'),{
+    data:{labels:ls,datasets:[
+      {type:'line',label:'Satisfacción (/7)',data:sat,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.07)',tension:.35,fill:true,yAxisID:'y',pointRadius:2,pointBackgroundColor:'#2d4696',borderWidth:2},
+      {type:'line',label:'Reclamos (%)',data:rec,borderColor:'#c0392b',tension:.35,yAxisID:'y1',pointRadius:2,pointBackgroundColor:'#c0392b',borderWidth:2}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:3.5,max:7,title:{display:true,text:'Satisfacción /7',font:{size:8.5}}},
+              y1:{position:'right',min:0,max:8,grid:{drawOnChartArea:false},title:{display:true,text:'Reclamos %',font:{size:8.5}}}},
+      plugins:{legend:{position:'top'}}}
+  });
+
+  const b=BUDGET[ST.year];
+  CH.pmini=new Chart(document.getElementById('presup_mini'),{
+    data:{labels:MESES,datasets:[
+      {type:'line',label:'Prog.',data:b.prog,borderColor:'#9298a8',borderDash:[4,3],tension:.2,pointRadius:0},
+      {type:'line',label:'Ejec.',data:b.ejec,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.09)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696'}
+    ]},
+    options:{maintainAspectRatio:false,scales:{y:{max:100,title:{display:true,text:'%',font:{size:8}}}},
+      plugins:{legend:{position:'top'}}}
+  });
+
+  CH.bmini=new Chart(document.getElementById('brecha_mini'),{type:'bar',
+    data:{labels:b.bl,datasets:[{label:'$MM',data:b.brecha,
+      backgroundColor:b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f'),
+      datalabels:{display:true,anchor:'end',align:v=>v.dataset.data[v.dataIndex]<0?'bottom':'top',
+        color:v=>v.dataset.data[v.dataIndex]<0?'#c0392b':'#1a2332',font:{size:8,weight:'700'},formatter:v=>v}}]},
+    options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'$MM',font:{size:8}}}},
+      plugins:{legend:{display:false}}}
+  });
+
+  const bd=bscData(u);
+  const bscDL={display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:9,weight:'700'},anchor:'center',align:'center'};
+  CH.bsc=new Chart(document.getElementById('bsc_bar'),{type:'bar',
+    data:{labels:PERSP,datasets:[
+      {label:'En meta',data:bd.v,backgroundColor:'#1db14f',datalabels:bscDL},
+      {label:'Alerta',data:bd.o,backgroundColor:'#f7a800',datalabels:bscDL},
+      {label:'Bajo meta',data:bd.r,backgroundColor:'#c0392b',datalabels:bscDL}
+    ]},
+    options:{maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'N° ind.',font:{size:8}}}},
+      plugins:{legend:{position:'top'}}}
+  });
+
+  const cv=u.sem.filter(r=>r.e==='v').length;
+  const co=u.sem.filter(r=>r.e==='o').length;
+  const cr=u.sem.filter(r=>r.e==='r').length;
+  CH.donut=new Chart(document.getElementById('donut_est'),{type:'doughnut',
+    data:{labels:['En meta','Alerta','Bajo meta'],datasets:[{data:[cv,co,cr],
+      backgroundColor:['#1db14f','#f7a800','#c0392b'],borderWidth:2,borderColor:'#fff',
+      datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',font:{size:10,weight:'700'}}}]},
+    options:{maintainAspectRatio:false,cutout:'58%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:9}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed}}}}
+  });
+
+  const ejActual=[6,12,18,33,45,null,null,null,null,null,null,null];
+  const ejProy=[null,null,null,null,45,54,63,70,75,78,80,82];
+  const ejIdeal=[null,null,null,null,58,66.7,75,83.3,90,95,98.3,100];
+  const lastPointDL=color=>({display:c=>{
+      const d=c.dataset.data;let last=-1;
+      for(let i=d.length-1;i>=0;i--){if(d[i]!=null){last=i;break;}}
+      return c.dataIndex===last;
+    },align:'top',offset:4,color,font:{size:8.5,weight:'700'},formatter:v=>Math.round(v)+'%'});
+  CH.proyec=new Chart(document.getElementById('proyeccion'),{
+    data:{labels:MESES,datasets:[
+      {type:'line',label:'Ejec. real',data:ejActual,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.2,pointRadius:3,pointBackgroundColor:'#2d4696',borderWidth:2,datalabels:lastPointDL('#2d4696')},
+      {type:'line',label:'Proyección (ritmo actual)',data:ejProy,borderColor:'#f7a800',borderDash:[6,3],tension:.2,pointRadius:2,pointBackgroundColor:'#f7a800',borderWidth:1.5,datalabels:lastPointDL('#c57f00')},
+      {type:'line',label:'Ideal ≥ 90%',data:ejIdeal,borderColor:'#1db14f',borderDash:[3,3],tension:.2,pointRadius:0,borderWidth:1.5,datalabels:{display:false}}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:0,max:100,title:{display:true,text:'% acum.',font:{size:8}},ticks:{callback:v=>v+'%'}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  const rData=PERSP.map(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    if(!rows.length) return 0;
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar=new Chart(document.getElementById('radar_bsc'),{type:'radar',
+    data:{labels:['Comunitaria','Financiera','Procesos\nInternos','Aprend. y\nCrecimiento'],
+      datasets:[
+        {label:'% ind. en meta',data:rData,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.18)',pointBackgroundColor:'#2d4696',pointRadius:3,borderWidth:2,
+          datalabels:{display:true,color:'#2d4696',backgroundColor:'#fff',borderRadius:2,padding:2,font:{size:8,weight:'700'},formatter:v=>v+'%'}},
+        {label:'Meta (100%)',data:[100,100,100,100],borderColor:'rgba(29,177,79,.5)',borderDash:[5,3],backgroundColor:'transparent',pointRadius:0,borderWidth:1,datalabels:{display:false}}
+      ]},
+    options:{maintainAspectRatio:false,scales:{r:{min:0,max:100,ticks:{stepSize:25,font:{size:8},callback:v=>v+'%'},
+      pointLabels:{font:{size:8.5}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  const S4=['S18','S19','S20','S21'];
+  CH.alerta=new Chart(document.getElementById('alertas_trend'),{
+    data:{labels:S4,datasets:[
+      {type:'line',label:'Satisf. gestión DMA (%)',data:[73,71,69,68],borderColor:'#f7a800',backgroundColor:'rgba(247,168,0,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y',borderWidth:2,datalabels:lastPointDL('#c57f00')},
+      {type:'line',label:'Abandono trámites (%)',data:[11,12,13,14],borderColor:'#c0392b',tension:.3,pointRadius:3,yAxisID:'y1',borderWidth:2,datalabels:{...lastPointDL('#c0392b'),align:'bottom'}},
+      {type:'line',label:'Cobertura prog. (%)',data:[74,71,68,65],borderColor:'#2d4696',tension:.3,pointRadius:3,yAxisID:'y',borderWidth:1.5,borderDash:[4,3],datalabels:lastPointDL('#2d4696')}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{min:60,max:100,title:{display:true,text:'%',font:{size:8}}},
+              y1:{position:'right',min:0,max:25,grid:{drawOnChartArea:false},title:{display:true,text:'Abandono %',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8,padding:5}}}}
+  });
+
+  renderTbl1(u);
+  updateStrip(u);
+}
+
+function updatePg1(){
+  const u=UNITS[ST.unit];
+  const ls=labsByPeriod(),sat=sliceByPeriod(u.t_sat),rec=sliceByPeriod(u.t_rec);
+  CH.trend.data.labels=ls;
+  CH.trend.data.datasets[0].data=sat;
+  CH.trend.data.datasets[1].data=rec;
+  CH.trend.update();
+  document.getElementById('p1-trend-title').textContent='Satisfacción vecinal vs. reclamos — '+ST.period;
+  const b=BUDGET[ST.year];
+  CH.pmini.data.datasets[0].data=b.prog;
+  CH.pmini.data.datasets[1].data=b.ejec;
+  CH.pmini.update();
+  CH.bmini.data.labels=b.bl;
+  CH.bmini.data.datasets[0].data=b.brecha;
+  CH.bmini.data.datasets[0].backgroundColor=b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f');
+  CH.bmini.update();
+  const cv=u.sem.filter(r=>r.e==='v').length;
+  const co=u.sem.filter(r=>r.e==='o').length;
+  const cr=u.sem.filter(r=>r.e==='r').length;
+  CH.donut.data.datasets[0].data=[cv,co,cr];
+  CH.donut.update('none');
+  const bd=bscData(u);
+  CH.bsc.data.datasets[0].data=bd.v;
+  CH.bsc.data.datasets[1].data=bd.o;
+  CH.bsc.data.datasets[2].data=bd.r;
+  CH.bsc.update('none');
+  const rData=PERSP.map(p=>{
+    const rows=u.sem.filter(x=>x.p===p);
+    if(!rows.length) return 0;
+    return Math.round(rows.filter(x=>x.e==='v').length/rows.length*100);
+  });
+  CH.radar.data.datasets[0].data=rData;
+  CH.radar.update('none');
+  renderTbl1(u);
+  updateStrip(u);
+}
+
+// ─── PAGE 2: COMUNITARIA ────────────────────────────
+function initPg2(){
+  const u=UNITS[ST.unit];
+
+  // Indicadores comunitarios vs meta (% cumplimiento)
+  const comLbls=['Mejora ambiental\n68% / 70%','Reclamos\n3,8% (inv)','Satisfacción\n73% / 75%','Acceso servicios\n87% / 85%','Abandono\n12% (inv)','Distrib. inversión\n76% / 80%'];
+  const comActual=[97,100,97,102,83,95]; // % cumplimiento de meta
+  const comMeta=[100,100,100,100,100,100];
+  const comColor=['#f7a800','#1db14f','#f7a800','#1db14f','#f7a800','#f7a800'];
+  CH.comvsm=new Chart(document.getElementById('com_vsm'),{type:'bar',
+    data:{labels:['Mejora\nambiental','Reclamos\n(inv)','Satisfacción\nvecinal','Acceso\nservicios','Abandono\ntrámites (inv)','Distrib.\ninversión'],
+      datasets:[
+        {label:'% cumplimiento meta',data:comActual,backgroundColor:comColor,borderWidth:0},
+        {label:'Meta (100%)',data:comMeta,backgroundColor:'transparent',borderColor:'#1a2e5a',borderWidth:1.5,type:'line',pointRadius:0}
+      ]},
+    options:{maintainAspectRatio:false,scales:{y:{min:60,max:110,title:{display:true,text:'% cumplimiento',font:{size:8}},ticks:{callback:v=>v+'%'}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Satisfacción vecinal trend
+  CH.comsat=new Chart(document.getElementById('com_sat'),{type:'line',
+    data:{labels:WK,datasets:[
+      {label:'Satisfacción vecinal (%)',data:[68,69,70,71,70,72,71,73,72,71,72,73],borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.35,pointRadius:2,borderWidth:2},
+      {label:'Meta 75%',data:Array(12).fill(75),borderColor:'#1db14f',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+    ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:60,max:85,title:{display:true,text:'%',font:{size:8}},ticks:{callback:v=>v+'%'}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // % Acceso por sector
+  const accV=[92,90,88,84,79];
+  CH.comacceso=new Chart(document.getElementById('com_acceso'),{type:'bar',
+    data:{labels:['Tobalaba','Ñuñoa\nCentro','Irarrázaval','La Granja','Macul\nNorte'],
+      datasets:[
+        {label:'% acceso',data:accV,backgroundColor:accV.map(v=>v>=85?'#1db14f':'#f7a800')},
+        {label:'Meta 85%',data:Array(5).fill(85),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,scales:{y:{min:60,max:100,title:{display:true,text:'%',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Abandono trámites por tipo
+  const abV=[5,8,18,14,11,15];
+  CH.comaband=new Chart(document.getElementById('com_abandono'),{type:'bar',
+    data:{labels:['Poda de árbol','Permiso obra','Insp. ambiental','Denuncia ruido','Retiro escombros','Permiso evento'],
+      datasets:[
+        {label:'% abandono',data:abV,backgroundColor:abV.map(v=>v<10?'#1db14f':v<15?'#f7a800':'#c0392b')},
+        {label:'Meta < 10%',data:Array(6).fill(10),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{title:{display:true,text:'%',font:{size:8}},max:25}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Distribución inversión por sector
+  const invV=[82,79,91,68,76,77];
+  CH.cominv=new Chart(document.getElementById('com_inv'),{type:'bar',
+    data:{labels:['Tobalaba','Ñuñoa\nCentro','Irarrázaval','La Granja','Macul\nNorte','Pedro de\nValdivia'],
+      datasets:[
+        {label:'% inversión vs promedio',data:invV,backgroundColor:invV.map(v=>v>=80?'#1db14f':'#f7a800')},
+        {label:'Equidad 80%',data:Array(6).fill(80),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'%',font:{size:8}},max:100}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Reclamos por categoría
+  CH.comrec=new Chart(document.getElementById('com_rec'),{type:'doughnut',
+    data:{labels:['Ruido','Árboles','Basura','Plagas','Aguas','Otros'],
+      datasets:[{data:[28,22,18,14,11,7],backgroundColor:['#2d4696','#c0392b','#f7a800','#1db14f','#4a67b8','#c8cdd6'],borderWidth:2,borderColor:'#fff'}]},
+    options:{maintainAspectRatio:false,cutout:'50%',
+      plugins:{legend:{position:'right',labels:{font:{size:8.5}}},tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}}}}
+  });
+}
+
+// ─── PAGE 3: FINANCIERA ──────────────────────────────
+function initPg3(){
+  const b=BUDGET[ST.year];
+
+  CH.presup=new Chart(document.getElementById('presup_acum'),{
+    data:{labels:MESES,datasets:[
+      {type:'line',label:'Programado (%)',data:b.prog,borderColor:'#9298a8',borderDash:[5,3],tension:.25,pointRadius:2,yAxisID:'y'},
+      {type:'line',label:'Ejecutado (%)',data:b.ejec,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.09)',fill:true,tension:.25,pointRadius:3,yAxisID:'y'},
+      {type:'bar',label:'Ejec. mensual ($MM)',data:b.mens,backgroundColor:'rgba(29,177,79,.25)',borderColor:'#1db14f',borderWidth:1,yAxisID:'y2'}
+    ]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      scales:{y:{max:100,title:{display:true,text:'% acumulado',font:{size:8.5}}},
+              y2:{position:'right',title:{display:true,text:'$MM mensual',font:{size:8.5}},grid:{drawOnChartArea:false}}},
+      plugins:{legend:{position:'top'}}}
+  });
+
+  CH.brecha=new Chart(document.getElementById('brecha'),{type:'bar',
+    data:{labels:b.bl,datasets:[{label:'$MM',data:b.brecha,
+      backgroundColor:b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f')}]},
+    options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'$MM',font:{size:8.5}}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y+' MM'}}}}
+  });
+
+  renderP3summary(b);
+
+  const iv=ITEMS[ST.year];
+  CH.items=new Chart(document.getElementById('items_pres'),{type:'bar',
+    data:{labels:ITEMS.L,datasets:[
+      {label:'% ejecutado',data:iv,backgroundColor:iv.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b'),
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',formatter:v=>v+'%',font:{size:9.5,weight:'700'}}},
+      {label:'% restante',data:iv.map(v=>100-v),backgroundColor:'#e4e8f0',datalabels:{display:false}}
+    ]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{stacked:true,max:100,title:{display:true,text:'%',font:{size:8.5}}},y:{stacked:true}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.x+'%'}}}}
+  });
+
+  // Costo per cápita — tendencia (índice base S1-2024 = 100)
+  CH.costopc=new Chart(document.getElementById('costo_pc'),{type:'line',
+    data:{labels:['S1-2024','S2-2024','S1-2025','S2-2025','S1-2026'],
+      datasets:[
+        {label:'Índice costo p/c DMA',data:[100,98,97,94,92],borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.3,pointRadius:4,pointBackgroundColor:['#1db14f','#1db14f','#f7a800','#f7a800','#f7a800'],borderWidth:2},
+        {label:'Meta (red. ≥10% → ≤90)',data:[100,97,95,93,90],borderColor:'#1db14f',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:82,max:105,title:{display:true,text:'Índice (base S1-2024=100)',font:{size:8}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Variación personas beneficiadas por trimestre — tendencia a la baja (cobertura insuficiente)
+  const benV=[9,7,6,5,4];
+  CH.varben=new Chart(document.getElementById('var_ben'),{type:'bar',
+    data:{labels:['Q1 2025','Q2 2025','Q3 2025','Q4 2025','Q1 2026'],
+      datasets:[
+        {label:'% variación anual',data:benV,backgroundColor:benV.map(v=>v>=7?'#1db14f':v>=5?'#f7a800':'#c0392b')},
+        {label:'Meta ≥ 7%',data:Array(5).fill(7),type:'line',borderColor:'#6c7280',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:0,max:15,title:{display:true,text:'%',font:{size:8}},ticks:{callback:v=>v+'%'}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+}
+
+function renderP3summary(b){
+  document.getElementById('p3-summary').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px">
+      <div style="background:#f7f8fc;border:1px solid #e4e8f2;padding:5px 8px;border-left:3px solid #2d4696">
+        <div style="font-size:8.5px;color:#6c7280;text-transform:uppercase">Presupuesto total</div>
+        <div style="font-size:17px;font-weight:700;color:#1a2332">$15.623</div>
+        <div style="font-size:8.5px;color:#6c7280">millones · DMA 2026</div>
+      </div>
+      <div style="background:#fde8e8;border:1px solid #f4b8b8;padding:5px 8px;border-left:3px solid #c0392b">
+        <div style="font-size:8.5px;color:#6c7280;text-transform:uppercase">Ejecutado</div>
+        <div style="font-size:17px;font-weight:700;color:#c0392b">${b.ej_val}</div>
+        <div style="font-size:8.5px;color:#6c7280">${b.ej_pct} del total</div>
+      </div>
+      <div style="background:#fff3cc;border:1px solid #f4d88a;padding:5px 8px;border-left:3px solid #f7a800">
+        <div style="font-size:8.5px;color:#6c7280;text-transform:uppercase">Saldo disponible</div>
+        <div style="font-size:17px;font-weight:700;color:#c57f00">${b.saldo}</div>
+        <div style="font-size:8.5px;color:#6c7280">millones restantes</div>
+      </div>
+      <div style="background:#d4f0df;border:1px solid #9dd8b4;padding:5px 8px;border-left:3px solid #1db14f">
+        <div style="font-size:8.5px;color:#6c7280;text-transform:uppercase">OC emitidas</div>
+        <div style="font-size:17px;font-weight:700;color:#138a3a">${b.oc}</div>
+        <div style="font-size:8.5px;color:#6c7280">órdenes de compra</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:9px;color:#6c7280;border-top:1px solid #e4e8f2;padding-top:5px;line-height:1.4">
+      <div><b>Ítems críticos:</b> Activos no financ. 45% · Equipos 38%</div>
+      <div><b>Recomendación:</b> Acelerar compras Q3 para evitar subejecución</div>
+    </div>
+  `;
+}
+
+function updatePg3(){
+  const b=BUDGET[ST.year];
+  CH.presup.data.datasets[0].data=b.prog;
+  CH.presup.data.datasets[1].data=b.ejec;
+  CH.presup.data.datasets[2].data=b.mens;
+  CH.presup.update();
+  CH.brecha.data.labels=b.bl;
+  CH.brecha.data.datasets[0].data=b.brecha;
+  CH.brecha.data.datasets[0].backgroundColor=b.brecha.map(v=>v<-500?'#c0392b':v<-100?'#f7a800':'#1db14f');
+  CH.brecha.update();
+  const iv=ITEMS[ST.year];
+  CH.items.data.datasets[0].data=iv;
+  CH.items.data.datasets[0].backgroundColor=iv.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b');
+  CH.items.data.datasets[1].data=iv.map(v=>100-v);
+  CH.items.update();
+  document.getElementById('p3-title').textContent='Ejecución Presupuestaria — acumulada vs. programada '+ST.year+' · % y $MM mensual';
+  renderP3summary(b);
+}
+
+// ─── PAGE 4: PROCESOS INTERNOS ───────────────────────
+function initPg4(){
+  CH.sla=new Chart(document.getElementById('sla'),{type:'bar',
+    data:{labels:['OC normal (i=1)','OC urgente (i=2)','OC crítica (i=3)'],datasets:[
+      {label:'Tiempo real (días)',data:[2.6,2.3,8.5],backgroundColor:['#1db14f','#c0392b','#1db14f']},
+      {label:'Meta SLA',data:[3,1,12],backgroundColor:'rgba(180,185,200,.4)',borderColor:'#9298a8',borderWidth:1}
+    ]},
+    options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'días hábiles',font:{size:8.5}}}},
+      plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+' d'}}}}
+  });
+
+  const tV=[8.2,2.1,12.4,5.6,3.8,4.2],tM=[10,3,15,7,5,5];
+  CH.tramit=new Chart(document.getElementById('tramit'),{type:'bar',
+    data:{labels:['Poda árbol','Tala urgente','Permiso evento','Insp. ambiental','Retiro escombros','Denuncia ruido'],
+      datasets:[{label:'Días promedio',data:tV,backgroundColor:tV.map((v,i)=>v<=tM[i]*.8?'#1db14f':v<=tM[i]?'#f7a800':'#c0392b')}]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{title:{display:true,text:'días hábiles',font:{size:8.5}}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.x+' días'}}}}
+  });
+
+  // Satisfacción post-atención por unidad vs meta 5,5
+  const spV=[5.2,5.6,4.8,5.1];
+  CH.satpost=new Chart(document.getElementById('sat_post'),{type:'bar',
+    data:{labels:['DMA\nCompleta','Áreas\nVerdes','Tramitación','Aseo\nUrbano'],
+      datasets:[
+        {label:'Nota promedio (1–7)',data:spV,backgroundColor:spV.map(v=>v>=5.5?'#1db14f':v>=5.0?'#f7a800':'#c0392b')},
+        {label:'Meta 5,5',data:Array(4).fill(5.5),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:3.5,max:7,title:{display:true,text:'Nota /7',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Áreas verdes p/c por sector
+  const aV=[11.2,8.4,9.1,7.8,10.4];
+  CH.areas=new Chart(document.getElementById('areas'),{type:'bar',
+    data:{labels:['Tobalaba','Ñuñoa\nCentro','Irarrázaval','La Granja','Macul\nNorte'],
+      datasets:[
+        {label:'m² p/c',data:aV,backgroundColor:aV.map(v=>v>=9?'#1db14f':'#f7a800')},
+        {label:'Meta 9 m²',data:Array(5).fill(9),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'m²',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Cobertura programas ambientales
+  const cV=[78,91,85,62,44];
+  CH.cob=new Chart(document.getElementById('cobertura'),{type:'bar',
+    data:{labels:['Reciclaje\nvecinal','Parques\ngestionados','Arbolado\nurbano','Jardines\ncomunit.','Fauna\nnativa'],
+      datasets:[
+        {label:'%',data:cV,backgroundColor:cV.map(v=>v>=80?'#1db14f':v>=60?'#f7a800':'#c0392b')},
+        {label:'Meta 80%',data:Array(5).fill(80),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,indexAxis:'y',
+      scales:{x:{max:100,title:{display:true,text:'%',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Infraestructura urbana buen estado por tipo
+  const infV=[78,88,79,85,92,82];
+  CH.infraest=new Chart(document.getElementById('infraest'),{type:'bar',
+    data:{labels:['Veredas\ny calles','Plazas\ny parques','Equipam.\nambiental','Luminaria\npública','Señalética\nambiental','Recintos\ndeportivos'],
+      datasets:[
+        {label:'% buen estado',data:infV,backgroundColor:infV.map(v=>v>=80?'#1db14f':'#f7a800')},
+        {label:'Meta 80%',data:Array(6).fill(80),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:60,max:100,title:{display:true,text:'%',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+}
+
+// ─── PAGE 5: APRENDIZAJE Y CRECIMIENTO ──────────────
+function initPg5(){
+  // Satisfacción laboral — tendencia semestral
+  const slV=[5.3,5.4,5.6,5.5,5.4,5.5];
+  CH.acsat=new Chart(document.getElementById('ac_sat'),{type:'line',
+    data:{labels:['S1-2023','S2-2023','S1-2024','S2-2024','S2-2025','S1-2026'],
+      datasets:[
+        {label:'Índice satisfacción laboral',data:slV,borderColor:'#2d4696',backgroundColor:'rgba(45,70,150,.1)',fill:true,tension:.3,pointRadius:4,
+          pointBackgroundColor:slV.map(v=>v>=5.7?'#1db14f':v>=5.5?'#f7a800':'#f7a800'),borderWidth:2},
+        {label:'Meta ≥ 5,7',data:Array(6).fill(5.7),borderColor:'#1db14f',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:4.5,max:7,title:{display:true,text:'Nota /7',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // % Funcionarios en programas de integración
+  const intV=[96,92,88,81,78,71];
+  CH.acinteg=new Chart(document.getElementById('ac_integ'),{type:'bar',
+    data:{labels:['Inducción\nanual','Capacitación\nTIC ambiental','Formación\ncontinua','Actividades\nculturales','Mentoría\nambiental','Bienestar\nfuncionario'],
+      datasets:[
+        {label:'% participación',data:intV,backgroundColor:intV.map(v=>v>80?'#1db14f':'#f7a800')},
+        {label:'Meta > 80%',data:Array(6).fill(80),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:50,max:105,title:{display:true,text:'%',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Ratio habilidades ambientales cubiertas — evolución
+  const habV=[0.68,0.72,0.74,0.78,0.82];
+  CH.achab=new Chart(document.getElementById('ac_hab'),{type:'line',
+    data:{labels:['S1-2024','S2-2024','S1-2025','S2-2025','S1-2026'],
+      datasets:[
+        {label:'Ratio cubierto',data:habV,borderColor:'#1db14f',backgroundColor:'rgba(29,177,79,.12)',fill:true,tension:.3,pointRadius:4,pointBackgroundColor:'#1db14f',borderWidth:2},
+        {label:'S1-2025 (base)',data:Array(5).fill(0.74),borderColor:'#9298a8',borderDash:[4,3],pointRadius:0,borderWidth:1}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:0.55,max:1.0,title:{display:true,text:'Ratio (0–1)',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Quejas válidas — últimas 8 semanas
+  const qV=[3,2,5,4,3,4,3,4];
+  const qLbls=['S14','S15','S16','S17','S18','S19','S20','S21'];
+  CH.acquejas=new Chart(document.getElementById('ac_quejas'),{type:'bar',
+    data:{labels:qLbls,
+      datasets:[
+        {label:'N° quejas válidas',data:qV,backgroundColor:qV.map(v=>v<=3?'#1db14f':'#c0392b')},
+        {label:'Meta ≤ 3',data:Array(8).fill(3),type:'line',borderColor:'#1a2e5a',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:0,max:8,title:{display:true,text:'N° quejas',font:{size:8.5}},ticks:{stepSize:1}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+
+  // Código de conducta — comparación por unidad
+  const ccV=[6.1,6.3,5.9,6.0];
+  CH.accond=new Chart(document.getElementById('ac_conducta'),{type:'bar',
+    data:{labels:['DMA\nCompleta','Áreas\nVerdes','Tramitación','Aseo\nUrbano'],
+      datasets:[
+        {label:'Puntaje (nota 1–7)',data:ccV,backgroundColor:ccV.map(v=>v>=6.0?'#1db14f':'#f7a800')},
+        {label:'Meta ≥ 6,0',data:Array(4).fill(6.0),type:'line',borderColor:'#c0392b',borderDash:[5,3],pointRadius:0,borderWidth:1.5}
+      ]},
+    options:{maintainAspectRatio:false,
+      scales:{y:{min:5.0,max:7,title:{display:true,text:'Nota /7',font:{size:8.5}}}},
+      plugins:{legend:{position:'top',labels:{font:{size:8.5},boxWidth:8}}}}
+  });
+}
+
+// ─── FILTER HANDLER ─────────────────────────────────
+function onFilter(key,val){
+  ST[key]=key==='year'?parseInt(val):val;
+  document.querySelectorAll(`[id^="f-${key}-"]`).forEach(el=>el.classList.remove('active'));
+  const t=document.getElementById(`f-${key}-${val}`);
+  if(t)t.classList.add('active');
+  if(INITED.pg1) updatePg1();
+  if(INITED.pg3) updatePg3();
+}
+
+// ─── TAB SWITCHING ───────────────────────────────────
+function switchPg(id,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  btn.classList.add('on');
+  if(!INITED[id]){
+    INITED[id]=true;
+    setTimeout(()=>{
+      if(id==='pg1') initPg1();
+      else if(id==='pg2') initPg2();
+      else if(id==='pg3') initPg3();
+      else if(id==='pg4') initPg4();
+      else if(id==='pg5') initPg5();
+    },50);
+  }
+}
+
+// ─── BOOT ────────────────────────────────────────────
+function fitToViewport(){
+  const root=document.querySelector('.root');
+  const sx=window.innerWidth/1280;
+  const sy=window.innerHeight/720;
+  const s=Math.min(sx,sy,1);
+  const offsetX=(window.innerWidth-1280*s)/2;
+  const offsetY=(window.innerHeight-720*s)/2;
+  root.style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+s+')';
+}
+window.addEventListener('resize',fitToViewport);
+fitToViewport();
+window.addEventListener('load',()=>{INITED.pg1=true;initPg1();});
+</script>
+</body>
+</html>
