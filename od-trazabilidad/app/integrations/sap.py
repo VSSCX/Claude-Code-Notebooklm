@@ -702,6 +702,7 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
         anotar("SAP no mostró la lista de layouts")
     if publicado is not None:
         publicado["layout"] = elegido
+    t_export = time.time()                       # todo archivo nuevo desde aquí puede ser esta exportación
     menu = _por_id(ses, "wnd[0]/mbar/menu[0]/menu[3]/menu[1]")
     if menu is not None:
         menu.Select()
@@ -710,23 +711,34 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
     if radio is not None:
         radio.Select()
     _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 5)
-    if _por_id(ses, "wnd[1]/usr/ctxtDY_PATH") is None:
-        raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo" + _ventana_inesperada(ses) + ".")
-
     Path(carpeta).mkdir(parents=True, exist_ok=True)
     destino = Path(carpeta) / nombre
-    _limpiar_exportaciones(Path(carpeta), conservar=destino)
-    _texto(ses, "wnd[1]/usr/ctxtDY_PATH", str(carpeta))
-    _texto(ses, "wnd[1]/usr/ctxtDY_FILENAME", nombre)
-    campo = _por_id(ses, "wnd[1]/usr/ctxtDY_PATH")
-    try:
-        puesto = str(campo.Text).strip().rstrip("\\/") if campo is not None else ""
-    except Exception:  # noqa: BLE001
-        puesto = ""
-    if puesto and puesto.lower() != str(carpeta).rstrip("\\/").lower():
-        raise ErrorSap(f"SAP cambió la carpeta de guardado: pedí «{carpeta}» y quedó «{puesto}». "
-                       "Define SAP_EXPORT_DIR con una ruta corta y sin tildes.")
-    _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar / guardar
+    # El diálogo de guardado no siempre aparece al instante (SAP lento, VPN): se espera en vez de mirar una sola vez.
+    if _esperar_objeto(ses, "wnd[1]/usr/ctxtDY_PATH", 20):
+        _limpiar_exportaciones(Path(carpeta), conservar=destino)
+        _texto(ses, "wnd[1]/usr/ctxtDY_PATH", str(carpeta))
+        _texto(ses, "wnd[1]/usr/ctxtDY_FILENAME", nombre)
+        campo = _por_id(ses, "wnd[1]/usr/ctxtDY_PATH")
+        try:
+            puesto = str(campo.Text).strip().rstrip("\\/") if campo is not None else ""
+        except Exception:  # noqa: BLE001
+            puesto = ""
+        if puesto and puesto.lower() != str(carpeta).rstrip("\\/").lower():
+            raise ErrorSap(f"SAP cambió la carpeta de guardado: pedí «{carpeta}» y quedó «{puesto}». "
+                           "Define SAP_EXPORT_DIR con una ruta corta y sin tildes.")
+        _presionar(ses, "wnd[1]/tbar[0]/btn[11]", 10)    # Reemplazar / guardar
+    else:
+        # Hay equipos donde SAP exporta sin preguntar dónde guardar (deja el archivo en su carpeta de trabajo y lo abre en
+        # Excel). Si el archivo apareció, se usa en vez de dar la exportación por fallida.
+        hallado = _buscar_export_reciente(t_export, [Path(carpeta), *_carpetas_de_trabajo_sap()])
+        if hallado is None:
+            raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo" + _ventana_inesperada(ses) + ". "
+                           "No apareció tampoco ningún archivo exportado en " + str(carpeta) + ".")
+        if hallado != destino:
+            import shutil
+            shutil.copy2(hallado, destino)
+        if avisar:
+            avisar(f"SAP exportó ZSD001_03 sin mostrar el diálogo de guardado; se usó el archivo {hallado.name} de {hallado.parent}.")
 
     _esperar_archivo(ses, destino)
     try:
@@ -749,6 +761,31 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
         return filas
     finally:
         pass     # el archivo NO se borra aquí: SAP lo abre en Excel apenas lo guarda y, si ya no existe, Excel dice «no hemos encontrado…»
+
+
+def _carpetas_de_trabajo_sap() -> list:
+    """Donde SAP GUI deja las exportaciones cuando no pregunta la ruta."""
+    from pathlib import Path
+    base = Path.home()
+    return [base / "Documents" / "SAP" / "SAP GUI", base / "Documentos" / "SAP" / "SAP GUI"]
+
+
+def _buscar_export_reciente(desde: float, carpetas: list, espera: float = 20.0):
+    """El archivo de planilla más nuevo (modificado desde `desde`) en esas carpetas, esperando hasta `espera` s a que aparezca."""
+    t0 = time.time()
+    while True:
+        mejor = None
+        for c in carpetas:
+            try:
+                for f in c.glob("*"):
+                    if f.suffix.lower() in (".xls", ".xlsx", ".xlsm", ".txt", ".csv") and f.stat().st_size > 0 \
+                            and f.stat().st_mtime >= desde - 1 and (mejor is None or f.stat().st_mtime > mejor.stat().st_mtime):
+                        mejor = f
+            except OSError:
+                continue
+        if mejor is not None or time.time() - t0 >= espera:
+            return mejor
+        time.sleep(0.5)
 
 
 def _ventana_inesperada(ses) -> str:

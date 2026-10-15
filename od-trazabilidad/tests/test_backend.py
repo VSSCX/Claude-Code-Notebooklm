@@ -1487,3 +1487,19 @@ def test_las_consultas_a_sql_se_refrescan_cuando_se_piden_frescas(monkeypatch):
         bases._cache("f", falla)
     assert len(bases._FALLOS) == 1
     bases.limpiar_cache()
+
+
+def test_export_sin_dialogo_de_guardado_se_recupera_si_el_archivo_aparecio(tmp_path):
+    """En algunos equipos SAP exporta ZSD001_03 sin preguntar dónde guardar: si el archivo apareció, se usa."""
+    import os
+    from app.integrations import sap
+    carpeta, trabajo = tmp_path / "export", tmp_path / "SAP GUI"
+    carpeta.mkdir(); trabajo.mkdir()
+    viejo = carpeta / "viejo.xlsx"; viejo.write_bytes(b"x")
+    os.utime(viejo, (1_000, 1_000))                                  # de antes de esta exportación
+    ahora = time.time()
+    assert sap._buscar_export_reciente(ahora, [carpeta, trabajo], espera=0.2) is None
+    nuevo = trabajo / "export.XLSX"; nuevo.write_bytes(b"contenido")
+    (trabajo / "vacio.xlsx").write_bytes(b"")                        # un archivo vacío no cuenta
+    (trabajo / "foto.png").write_bytes(b"png")                       # ni lo que no es planilla
+    assert sap._buscar_export_reciente(ahora, [carpeta, trabajo], espera=0.2) == nuevo
