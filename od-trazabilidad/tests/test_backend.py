@@ -1199,24 +1199,48 @@ def test_el_pallet_de_sodimac_deja_105_cm_de_carga(datos):
 
 
 # ---------- el análisis no debe morir justo después de exportar ZSD001_03 ----------
-def test_sin_sql_server_el_analisis_falla_antes_de_tocar_sap_con_un_motivo_claro(monkeypatch, datos):
+def test_sin_sql_server_el_analisis_sigue_con_sap_y_avisa_que_no_hubo_cruce_con_el_plan(monkeypatch, datos):
     from fastapi.testclient import TestClient
-    from app.integrations import bases, sap
+    from app.integrations import base_medidas, bases, sap
     from app.main import app
     c = TestClient(app)
     llamadas = []
-    monkeypatch.setattr(sap, "leer_pedido", lambda *a: llamadas.append("vl01n"))
-    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: llamadas.append("zsd"))
 
-    def sin_red(grupo, fresco=False):
+    def vl01n(*a):
+        llamadas.append("vl01n")
+        return SimpleNamespace(posiciones=[SimpleNamespace(sku="9000", qty_entrega=100, qty_pendiente=100),
+                                           SimpleNamespace(sku="9001", qty_entrega=5, qty_pendiente=20)], aviso="")
+    monkeypatch.setattr(sap, "leer_pedido", vl01n)
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: llamadas.append("zsd") or [])
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: llamadas.append("mmbe") or {})
+
+    def sin_red(*a, **k):
         raise RuntimeError("('08001', '[08001] Named Pipes Provider: Could not open a connection to SQL Server [53]')")
     monkeypatch.setattr(bases, "plan_sop", sin_red)
+    monkeypatch.setattr(bases, "disponibilidad", sin_red)
+    monkeypatch.setattr(bases, "oc_de", lambda *a: llamadas.append("oc_sql") or "")
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {"9000": {"desc": "9000 PRODUCTO", "max_camion": 300},
+                                                           "9001": {"desc": "9001 OTRO", "max_camion": 300}})
     r = c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"})
     t = _esperar(c, r.json()["id"])
-    assert t["estado"] == "error"
-    assert "SQL Server" in t["error"] and "no se empezó con SAP" in t["error"] and "VPN" in t["error"]
-    assert t["paso"].startswith("0/4")
-    assert llamadas == []                                    # no se abrió SAP ni se exportó nada
+    assert t["estado"] == "ok", t                            # antes moría en la revisión previa
+    assert "vl01n" in llamadas and "zsd" in llamadas and "oc_sql" not in llamadas
+    assert t["datos"]["sin_sql"]["plan"] is True and t["datos"]["sin_sql"]["disponibilidad"] is True
+    assert "SQL Server" in t["datos"]["sin_sql"]["motivo"]
+    doc = c.get("/api/analisis/4005100000").json()
+    assert doc["sin_sql"]["plan"] and doc["resultado"]["sin_plan"] is True
+    filas = {f["sku"]: f for f in doc["resultado"]["filas"]}
+    # sin plan no se limita la carga: se carga lo que pide el pedido, y nada queda como «Limitado SOP»
+    assert filas["9000"]["carga"] == 100 and filas["9000"]["alerta"] == "Completo" and filas["9000"]["sin_plan"]
+    assert filas["9001"]["carga"] == 5 and filas["9001"]["alerta"] == "Stock parcial"
+    assert t["datos"]["limitadas"] == 0
+    # ajustar la carga a mano sigue funcionando y no vuelve a inventar un plan
+    r = c.put("/api/analisis/4005100000/carga", json={"sku": "9000", "carga": 60})
+    assert r.status_code == 200, r.text
+    assert c.get("/api/analisis/4005100000").json()["resultado"]["filas"][0]["sin_plan"] is True
+    est = c.get("/api/estado").json()
+    assert est["config"]["flujo:4005100000"]["analisis"]["sin_plan"] is True
+    time.sleep(0.2)
 
 
 def test_el_error_de_un_paso_dice_en_cual_se_detuvo(monkeypatch, datos):

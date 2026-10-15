@@ -163,7 +163,11 @@ function cierreAnalisis(){
   const j = UI.job; if (!j) return;
   if (j.estado === 'ok' && j.datos){
     const d = j.datos;
-    j.resultado = `${d.posiciones} productos analizados · ${d.limitadas} limitados por el plan · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
+    const sinPlan = !!(d.sin_sql && d.sin_sql.plan);
+    j.resultado = `${d.posiciones} productos analizados · ${sinPlan ? 'SIN cruce con el plan SOP (sin conexión a SQL Server)' : d.limitadas + ' limitados por el plan'} · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
+    if (d.sin_sql && Object.keys(d.sin_sql).length) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
+      (sinPlan ? 'No se cruzó con el plan SOP: la carga no está limitada por el plan. ' : '') + (d.sin_sql.disponibilidad ? 'Faltan la primera disponibilidad y, si no venía en ZSD001_03, la OC. ' : '') + 'Lo de SAP sí se leyó.',
+      ['Revisa la VPN o la red y la conexión en Configuración, y vuelve a analizar antes de crear entregas.']);
     if (d.suministro_nuevo) Avisos.agregar('info', `Se abrió el suministro ${d.suministro} de este pedido`,
       'Lo que ya se suministró queda registrado en el suministro anterior, con sus entregas y su cubicaje. Este análisis trabaja solo lo que se liberó ahora.', []);
     if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
@@ -203,6 +207,14 @@ const ICONO_ALERTA = Object.fromEntries(Object.entries(PIP_ALERTA).map(([k, t]) 
 /* Lo primero que se ve al analizar: qué productos limitó el plan SOP y si se puede exceder */
 function avisosAnalisis(p, a, r){
   const out = [];
+  if (a.sin_sql && Object.keys(a.sin_sql).length){
+    const s = a.sin_sql;
+    out.push(`<div class="aviso error" role="alert"><div class="aviso-cuerpo"><b>No hubo conexión con SQL Server: este análisis no se cruzó con el plan SOP.</b>
+      <div class="small">${s.plan ? 'No hay <b>plan SOP, real ni saldo SOP</b>, así que la carga <b>no está limitada por el plan</b>: se toma lo que pide el pedido y puede exceder lo que el plan permite. ' : ''}${s.disponibilidad ? 'Tampoco hay la <b>primera disponibilidad</b> de los productos' + (s.plan ? ' ni la OC de Pedidos Ingresados (si venía en ZSD001_03, se usó esa). ' : '. ') : ''}Lo de SAP (pedido, Qty en entrega y stock) sí está al día.
+      Revisa la VPN o la red y la conexión en Configuración, y presiona <b>Volver a analizar</b> para cruzarlo con el plan antes de crear entregas.</div>
+      ${s.motivo ? `<div class="small muted">Detalle: ${esc(s.motivo)}</div>` : ''}</div>
+      <button class="btn primary sm" data-act="abrirAnalisis">Volver a analizar</button></div>`);
+  }
   const previo = resumen(p).sums.filter(s => s.n < (a.suministro || 1)).reduce((x, s) => x + s.unidades, 0);
   if ((a.suministro || 1) > 1) out.push(`<div class="aviso info aviso-sum"><div class="aviso-cuerpo"><b>Suministro ${a.suministro}.</b> Del pedido ya se suministraron <b>${fmt(previo)} un.</b> en los suministros anteriores (con sus entregas y cubicaje guardados). Aquí se trabaja solo lo que se liberó ahora.</div></div>`);
   if ((a.cliente || '').toUpperCase() !== (p.cliente || '').toUpperCase())
@@ -217,6 +229,7 @@ function avisosAnalisis(p, a, r){
     out.push(`<div class="aviso warn"><div><b>ZSD001_03 trajo ${r.zsd_sin_cruce.length} producto${r.zsd_sin_cruce.length === 1 ? '' : 's'} que no calzan por nombre con ningún SKU del pedido:</b>
       ${r.zsd_sin_cruce.map(esc).join(' · ')}. Su Qty en entrega no se descontó del saldo: revisa si corresponde a algún producto del pedido.</div></div>`);
   const lim = r.filas.filter(f => f.carga_calculada < f.qty_entrega);
+  if (r.sin_plan) return out.join('');                     // sin plan no hay recortes que explicar: el aviso de arriba lo dice todo
   if (!lim.length){
     out.push(`<div class="aviso ok"><div><b>El plan SOP cubre todo lo pedido.</b> Se carga lo que pide el pedido, sin recortes.</div></div>`);
   } else {
@@ -248,8 +261,8 @@ function vistaAnalisis(p){
       <td><span class="tag ${TAG_ALERTA[f.alerta]}">${ICONO_ALERTA[f.alerta]} ${esc(f.alerta)}</span></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
-      <td class="n">${fmt(f.plan)}</td><td class="n">${fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
-      <td class="n"><b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b></td>
+      <td class="n">${f.sin_plan ? '—' : fmt(f.plan)}</td><td class="n">${f.sin_plan ? '—' : fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
+      <td class="n">${f.sin_plan ? '—' : `<b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b>`}</td>
       <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--accent);font-weight:600' : ''}">
         ${f.ajustada ? `<button class="btn quiet sm" data-act="resetCarga" data-sku="${esc(f.sku)}" title="Volver a ${fmt(f.carga_calculada)} (calculado)" aria-label="Volver al valor calculado">${ICON.undo}</button>` : ''}
         ${aut ? `<span class="tag ink" title="Superó el plan SOP (calculado ${fmt(aut.calculada)}). Autorizó ${esc(aut.por)} el ${esc(aut.at.slice(0, 16).replace('T', ' '))}">Autorizado · ${esc(aut.por)}</span>` : ''}

@@ -449,7 +449,7 @@ function flujoDe(p){
   const omitido = !an && ents.length > 0 ? new Set(['analisis', 'ajuste', 'cubicaje']) : new Set();
   const det = {
     analisis: desact ? `era de ${an.cliente}` : an ? `${an.filas} productos` : 'pendiente',
-    ajuste: !an ? '' : lim ? `${lim} limitados por el plan${an.excedidas ? ` · ${an.excedidas} autorizados` : ''}` : 'sin límites',
+    ajuste: !an ? '' : an.sin_plan ? 'sin plan SOP: sin conexión a SQL' : lim ? `${lim} limitados por el plan${an.excedidas ? ` · ${an.excedidas} autorizados` : ''}` : 'sin límites',
     cubicaje: cb ? `${camiones} ${camiones === 1 ? 'camión' : 'camiones'}` : '',
     entregas: camiones ? `${ents.length} de ${camiones}` : ents.length ? String(ents.length) : '',
     grupos: ents.length ? `${conGrupo} de ${ents.length}` : '',

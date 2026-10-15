@@ -169,8 +169,11 @@ def alerta(j: float, k: float, t: float) -> str:
 
 def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
              medidas: dict, disponibilidad: dict, stock: dict | None = None,
-             ajustes: dict | None = None) -> dict:
-    """posiciones: [{sku, qty_entrega, qty_pendiente}] tal como las lee VL01N."""
+             ajustes: dict | None = None, sin_plan: bool = False) -> dict:
+    """posiciones: [{sku, qty_entrega, qty_pendiente}] tal como las lee VL01N.
+
+    sin_plan: no hubo conexión con SQL Server y el plan SOP es desconocido. Entonces no se puede limitar la carga por el
+    plan: se carga lo que pide el pedido (el saldo se toma como no limitante) y cada fila queda marcada `sin_plan`."""
     stock, ajustes = stock or {}, ajustes or {}
     en_ent_sku, cruce, sin_cruce = cruzar_en_entrega(
         {str(p["sku"]): modelo(medidas[str(p["sku"])]["desc"]) for p in posiciones if str(p["sku"]) in medidas},
@@ -184,7 +187,7 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
         pl = plan.get(sku) or {}
         m, n = float(pl.get("plan") or 0), float(pl.get("vendido") or 0)
         o = en_ent_sku.get(sku, 0.0)
-        t = m - n - o
+        t = max(j, k) if sin_plan else m - n - o
         carga_calc = max(0.0, min(j, t))
         carga = float(ajustes[sku]) if sku in ajustes else carga_calc
         max_cam = med["max_camion"] if med else 0
@@ -193,7 +196,7 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
         d = disponibilidad.get(sku)
         filas.append({
             "sku": sku, "descripcion": desc, "qty_entrega": j, "pendiente": k, "cruce_zsd": cruce.get(sku, ""),
-            "plan": m, "real": n, "en_entrega": o, "saldo": t,
+            "plan": m, "real": n, "en_entrega": o, "saldo": t, "sin_plan": sin_plan,
             "carga_calculada": carga_calc, "carga": carga, "ajustada": sku in ajustes,
             "ocupacion": ocup, "alerta": al, "orden": ORDEN[al],
             "disponibilidad": "" if al == COMPLETO or not d else f"{d['cantidad']} - {d['fecha']}",
@@ -204,5 +207,5 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
     for f in filas:
         acumulado += f["ocupacion"] or 0
         f["acumulado"] = acumulado
-    return {"filas": filas, "ocupacion_total": acumulado, "zsd_sin_cruce": sin_cruce,
+    return {"filas": filas, "ocupacion_total": acumulado, "zsd_sin_cruce": sin_cruce, "sin_plan": sin_plan,
             "alertadas": [f["sku"] for f in filas if f["alerta"] in ALERTADAS]}

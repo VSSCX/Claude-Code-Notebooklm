@@ -158,6 +158,7 @@ PESADAS = ("analisis:%", "cubicaje:%")
 def resumen_analisis(doc: dict) -> dict:
     filas = (doc.get("resultado") or {}).get("filas", [])
     return {"generado": doc.get("generado", ""), "generado_hora": doc.get("generado_hora", ""),
+            "sin_sql": bool(doc.get("sin_sql")), "sin_plan": bool((doc.get("sin_sql") or {}).get("plan")),
             "suministro": doc.get("suministro", 1), "cliente": doc.get("cliente", ""), "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
             "limitadas": sum(1 for f in filas if f["carga_calculada"] < f["qty_entrega"]),
             "excedidas": sum(1 for f in filas if f.get("ajustada") and f["carga"] > f["carga_calculada"]),

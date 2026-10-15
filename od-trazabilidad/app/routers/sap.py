@@ -111,12 +111,22 @@ def analizar(numero: str, body: dict):
             filas_med = ses.execute(select(Medida.sku, Medida.descripcion, Medida.max_camion)).all()
         if not codigo:
             raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
+        # Sin conexión a SQL Server el análisis sigue con SAP: lo que se pierde es el cruce con el plan SOP (y la
+        # disponibilidad), y queda avisado en el resultado en vez de detener todo.
+        sin_sql: dict = {}
         try:
             plan = bases.plan_sop(grupo, fresco=True)           # el análisis siempre pregunta de nuevo
+        except Exception as e:  # noqa: BLE001
+            plan = None
+            sin_sql = {"plan": True, "motivo": _causa(e)}
+        try:
             disp = bases.disponibilidad(fresco=True)
         except Exception as e:  # noqa: BLE001
-            raise RuntimeError("No se pudo consultar SQL Server (plan SOP y disponibilidad), por eso no se empezó con SAP. "
-                               "Revisa la VPN o la red y la conexión en Configuración. Detalle: " + _causa(e)) from e
+            disp = {}
+            sin_sql["disponibilidad"] = True
+            sin_sql.setdefault("motivo", _causa(e))
+        if sin_sql:
+            avance("Sin conexión con SQL Server: se sigue con SAP, sin el plan SOP")
         if filas_med:
             med = {sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
         else:
@@ -149,18 +159,20 @@ def analizar(numero: str, body: dict):
 
         avance("3/4 Calculando saldos y alertas")
         # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
-        oc, oc_origen = bases.oc_de(numero), "Pedidos Ingresados"
+        oc, oc_origen = ("" if sin_sql.get("plan") and sin_sql.get("disponibilidad") else bases.oc_de(numero)), "Pedidos Ingresados"
         if not oc:
             oc, oc_origen = oc_de_zsd(filas_zsd, numero), "ZSD001_03"
         if not oc:
             oc_origen = ""
         en_ent = en_entrega_por_modelo(filas_zsd)
-        res = calcular(posiciones, plan, en_ent, med, disp)
+        sin_plan = plan is None
+        plan = plan or {}
+        res = calcular(posiciones, plan, en_ent, med, disp, sin_plan=sin_plan)
 
         stock = {}
         if res["alertadas"]:
             stock = sap.mmbe(res["alertadas"], lambda t: avance("4/4 " + t))
-            res = calcular(posiciones, plan, en_ent, med, disp, stock)
+            res = calcular(posiciones, plan, en_ent, med, disp, stock, sin_plan=sin_plan)
         else:
             avance("4/4 Sin alertas: no se consulta MMBE")
 
@@ -172,6 +184,7 @@ def analizar(numero: str, body: dict):
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
                "stock": stock, "ajustes": {}, "resultado": res, "oc_sap": oc, "oc_origen": oc_origen,
+               "sin_sql": sin_sql,
                "generado": _date.today().isoformat(),
                "generado_hora": datetime.now().astimezone().isoformat(timespec="minutes")}
         with SessionLocal() as ses:
@@ -204,7 +217,7 @@ def analizar(numero: str, body: dict):
         return {"pedido": numero, "posiciones": len(posiciones), "alertadas": len(res["alertadas"]),
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
-                "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen,
+                "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen, "sin_sql": sin_sql,
                 "recubicado": recubicado, "sesion_sap": sap.ultima_sesion,
                 "suministro": doc["suministro"], "suministro_nuevo": suministro_nuevo,
                 "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
@@ -419,7 +432,8 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
             doc["autorizaciones"].pop(sku, None)
     # Recalcula con los mismos datos guardados (no vuelve a consultar SAP)
     doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
-                                doc["disponibilidad"], doc["stock"], doc["ajustes"])
+                                doc["disponibilidad"], doc["stock"], doc["ajustes"],
+                                sin_plan=bool((doc.get("sin_sql") or {}).get("plan")))
     domain.guardar_config(s, _clave_analisis(numero), doc)
     domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
     _commit(s)
