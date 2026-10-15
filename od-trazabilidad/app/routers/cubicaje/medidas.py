@@ -138,5 +138,6 @@ def sugerir_medidas(q: str = "", s: Session = Depends(get_session)):
         out.append({"sku": m.sku, "descripcion": m.descripcion, "piezas": m.piezas,
                     "caja_master": es_caja or m.piezas > 1,
                     "medidas": f"{m.largo:g} × {m.ancho:g} × {m.alto:g} cm",
+                    "largo": m.largo, "ancho": m.ancho, "alto": m.alto, "peso": m.peso,
                     "max_camion": m.max_camion, "max_pallet": m.max_pallet})
     return {"sugerencias": out[:20]}

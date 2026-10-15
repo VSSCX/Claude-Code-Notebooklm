@@ -291,6 +291,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "caja": int(dc.piezas or 1) if dc is not None else 0,
                             "descripcion": d.desc or sku,
                             "medidas": f"{d.L:g} × {d.w:g} × {d.h:g} cm",
+                            "largo": d.L, "ancho": d.w, "alto": d.h,
                             "apilable": d.apilable, "peso": d.peso,
                             "letra": letra, "color": color}
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,

@@ -62,7 +62,7 @@ function vistaBandeja(){
    calcula una sola vez más con lo último: gana siempre la edición más reciente. */
 UI.cubIn = null; UI.cub = null; UI.cubError = ''; UI.cubCalculando = false; UI.cubSucio = false;
 UI.cubSug = []; UI.cubQ = ''; UI.cubSugQ = ''; UI.cubSel = 0; UI.cubInfo = {}; UI.cubFoco = null; UI.cubCam = 0;
-UI.cubIniciado = false; UI.cubFiltro = null; UI.cubFalta = false; UI.cubGen = 0; UI.cubOcupado = false; UI.ajustes = null; UI.verAjustes = false; UI.vistaCamion = 'rampla';
+UI.cubIniciado = false; UI.cubAbierto = null; UI.cubFiltro = null; UI.cubFalta = false; UI.cubGen = 0; UI.cubOcupado = false; UI.ajustes = null; UI.verAjustes = false; UI.vistaCamion = 'rampla';
 
 const VISTAS = [['rampla', 'Rampla 53'], ['camion50', 'Camión 50'], ['pallet', 'Un pallet']];
 const PALETA_CUB = ['#E8534E','#F2C94C','#56A3D9','#27AE60','#9B59B6','#E67E22',
@@ -207,6 +207,7 @@ function cambiarQty(i, v){
 function quitarLinea(i){
   const [q] = UI.cubIn.lineas.splice(i, 1);
   if (q && q.sku === UI.cubFiltro) UI.cubFiltro = null;
+  if (q && q.sku === UI.cubAbierto) UI.cubAbierto = null;
   pedirCalculo();
 }
 
@@ -394,6 +395,29 @@ function seccionAjustes(){
     </div></details>`;
 }
 
+/* Ficha de un producto de la carga: largo, ancho, alto y peso de la unidad (o de la caja master si la línea es una caja).
+   Salen del cubicaje; mientras no se calcula, de lo que trajo el buscador. */
+const dimTxt = x => (+x).toLocaleString('es-CL', {maximumFractionDigits: 1});
+function fichaProducto(l, d, info, bultos){
+  const num = v => v == null || v === '' || isNaN(+v) ? null : +v;
+  let L = num(d.largo ?? info.largo), W = num(d.ancho ?? info.ancho), H = num(d.alto ?? info.alto);
+  if (L == null){                                                // sin números: se leen del texto «70 × 75 × 185 cm»
+    const m = /([\d.,]+)\s*×\s*([\d.,]+)\s*×\s*([\d.,]+)/.exec(d.medidas || info.medidas || '');
+    if (m) [L, W, H] = m.slice(1).map(x => +x.replace(',', '.'));
+  }
+  const peso = num(d.peso ?? info.peso), qty = +l.qty || 0;
+  const celda = (cap, v, u) => `<div><dt>${cap}</dt><dd>${v == null || (cap === 'Peso' && !v) ? '<span class="muted">—</span>' : `<b>${dimTxt(v)}</b><small>${u}</small>`}</dd></div>`;
+  const hechos = [];
+  if (d.master || /^C\d/i.test(l.sku)) hechos.push(`Caja master de <b class="num">${fmt(d.piezas || info.piezas || 0)}</b> un.`);
+  else if (d.caja > 1) hechos.push(`Caja master disponible: <b class="num">${fmt(d.caja)}</b> un. por caja`);
+  if (d.apilable != null) hechos.push(d.apilable ? 'Se puede apilar' : 'No se apila');
+  if (L && W && H) hechos.push(`Volumen <b class="num">${(L * W * H / 1e6).toLocaleString('es-CL', {maximumFractionDigits: 3})}</b> m³ por ${d.master ? 'caja' : 'unidad'}`);
+  if (peso && qty) hechos.push(`Esta línea pesa ≈ <b class="num">${fmt(Math.round(peso * qty))}</b> kg`);
+  else if (!peso && (d.medidas || info.medidas)) hechos.push('<span class="muted">Sin peso en la Base de Medidas: no suma al peso del camión.</span>');
+  return `<dl class="medidas" aria-label="Medidas de una ${d.master ? 'caja' : 'unidad'}">${celda('Largo', L, 'cm')}${celda('Ancho', W, 'cm')}${celda('Alto', H, 'cm')}${celda('Peso', peso, 'kg')}</dl>
+    ${hechos.length ? `<ul class="item-hechos small">${hechos.map(h => `<li>${h}</li>`).join('')}</ul>` : ''}`;
+}
+
 function vistaCubicador(){
   if (!UI.cubIn){
     if (!UI.cubIniciado) setTimeout(cargarCubLibre, 0);
@@ -428,19 +452,24 @@ function vistaCubicador(){
     const d = det[l.sku] || {}, info = UI.cubInfo[l.sku] || {};
     const color = d.color || PALETA_CUB[i % PALETA_CUB.length];
     const sinMedidas = (c.desconocidos || []).includes(l.sku);
-    return `<li class="item ${sinMedidas ? 'faltante' : ''}" data-k="it-${esc(l.sku)}" data-cubsku="${esc(l.sku)}">
-      <button class="letra" style="background:${esc(color)};color:${tintaSobre(color)}" data-cub-filtro="${esc(l.sku)}" aria-pressed="${UI.cubFiltro === l.sku}" title="Aislar este producto en el 3D" aria-label="Aislar ${esc(l.sku)} en el 3D">${esc(d.letra || letraItem(i))}</button>
-      <div class="cuerpo">
-        <div class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err" title="No se cubica hasta que tenga medidas">no se carga · sin medidas</span>' : ''}</div>
-        <div class="l2" title="${esc(d.descripcion || info.descripcion || '')}">${esc(d.descripcion || info.descripcion || '')}</div>
-        ${(d.medidas || info.medidas) ? `<div class="l3 num">${esc(d.medidas || info.medidas)}${resB[i].caja ? ` · ${fmt(resB[i].bultos)} bultos de ${resB[i].caja} un.` : ''}</div>` : ''}
+    const abierto = UI.cubAbierto === l.sku, desc = d.descripcion || info.descripcion || '';
+    return `<li class="item ${sinMedidas ? 'faltante' : ''} ${abierto ? 'abierto' : ''}" data-k="it-${esc(l.sku)}" data-cubsku="${esc(l.sku)}">
+      <div class="item-fila">
+        <button class="letra" style="background:${esc(color)};color:${tintaSobre(color)}" data-cub-filtro="${esc(l.sku)}" aria-pressed="${UI.cubFiltro === l.sku}" title="Aislar este producto en el 3D" aria-label="Aislar ${esc(l.sku)} en el 3D">${esc(d.letra || letraItem(i))}</button>
+        <button class="cuerpo" data-cub-abrir="${esc(l.sku)}" aria-expanded="${abierto}" aria-controls="det-${esc(l.sku)}" title="${abierto ? 'Ocultar' : 'Ver'} largo, ancho, alto y peso">
+          <span class="l1"><span class="code">${esc(l.sku)}</span>${sinMedidas ? '<span class="tag err" title="No se cubica hasta que tenga medidas">no se carga · sin medidas</span>' : ''}</span>
+          <span class="chev">${ICON.chevronAbajo}</span>
+          <span class="l2">${esc(desc)}</span>
+          ${(d.medidas || info.medidas) ? `<span class="l3 num">${esc(d.medidas || info.medidas)}${resB[i].caja ? ` · ${fmt(resB[i].bultos)} bultos de ${resB[i].caja} un.` : ''}</span>` : ''}
+        </button>
+        <div class="step">
+          <button class="btn quiet icon sm" data-cub-menos="${i}" aria-label="Una unidad menos">${ICON.minus}</button>
+          <input class="qty" type="number" inputmode="numeric" min="0" step="1" value="${l.qty}" data-cubqty="${i}" aria-label="Unidades de ${esc(l.sku)}">
+          <button class="btn quiet icon sm" data-cub-mas="${i}" aria-label="Una unidad más">${ICON.plus}</button>
+        </div>
+        <button class="btn quiet icon sm" data-cub-quitar="${i}" aria-label="Quitar ${esc(l.sku)}" title="Quitar">${ICON.x}</button>
       </div>
-      <div class="step">
-        <button class="btn quiet icon sm" data-cub-menos="${i}" aria-label="Una unidad menos">${ICON.minus}</button>
-        <input class="qty" type="number" inputmode="numeric" min="0" step="1" value="${l.qty}" data-cubqty="${i}" aria-label="Unidades de ${esc(l.sku)}">
-        <button class="btn quiet icon sm" data-cub-mas="${i}" aria-label="Una unidad más">${ICON.plus}</button>
-      </div>
-      <button class="btn quiet icon sm" data-cub-quitar="${i}" aria-label="Quitar ${esc(l.sku)}" title="Quitar">${ICON.x}</button>
+      <div class="item-det" id="det-${esc(l.sku)}" role="group" aria-label="Detalle de ${esc(l.sku)}"><div><div class="item-det-in">${abierto || lineas.length <= 60 ? fichaProducto(l, d, info, resB[i]) : ''}</div></div></div>
     </li>`;
   }).join('');
 
@@ -534,7 +563,7 @@ function vistaCubicador(){
   return `<div class="mesa">
     <aside class="panel mesa-carga" aria-label="Carga">
       <div class="mc-h">
-        <h2>Carga</h2><span class="muted num small" title="Una caja master es un bulto con varias unidades">${fmt(totUnidades)} un. · ${fmt(totBultos)} bultos · ${lineas.length} SKU</span>
+        <h2>Carga</h2><span class="mc-tot num" title="Una caja master es un bulto con varias unidades"><span><b>${fmt(totUnidades)}</b> un.</span><span><b>${fmt(totBultos)}</b> bultos</span><span><b>${lineas.length}</b> SKU</span></span>
         <div class="mc-acc"><a class="btn quiet sm" href="/api/cubicaje-libre/plantilla" title="Excel para armar la carga fuera de la plataforma">Plantilla</a>
         <label class="btn quiet sm" title="Cargar productos desde un Excel o CSV: la plantilla o el archivo del cliente">Importar<input type="file" accept=".xlsx,.xlsm,.xls,.csv" data-cub-import hidden></label>
         <button class="btn quiet sm" data-cub="reparto-abrir" aria-pressed="${UI.cubRepAbierto}" title="Escribir o pegar el reparto por sucursal: sucursal, producto y unidades">Reparto</button>
@@ -599,6 +628,7 @@ document.addEventListener('click', ev => {
   else if (d.cubMenos !== undefined){ cambiarQty(+d.cubMenos, (UI.cubIn.lineas[+d.cubMenos].qty || 0) - (ev.shiftKey ? 10 : 1)); }
   else if (d.cubQuitar !== undefined){ quitarLinea(+d.cubQuitar); }
   else if (d.cubCam !== undefined){ UI.cubCam = +d.cubCam; Visor.camion(UI.cubCam); render(); }
+  else if (d.cubAbrir){ UI.cubAbierto = UI.cubAbierto === d.cubAbrir ? null : d.cubAbrir; render(); }
   else if (d.cubFiltro){
     UI.cubFiltro = UI.cubFiltro === d.cubFiltro ? null : d.cubFiltro;
     Visor.filtro(UI.cubFiltro); render();
