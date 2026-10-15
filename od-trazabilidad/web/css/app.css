@@ -342,6 +342,8 @@ tr.limitada td{background:var(--warn-soft)}
 .col h3 .num{font-size:var(--t-md);color:var(--warn)}
 .tarea{background:var(--paper);border:1px solid var(--hair);border-radius:var(--r);padding:10px 12px;margin-bottom:8px}
 .tarea .c1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.tarea .c1 .tarea-x{margin:-3px -6px -3px 0;flex:none;color:var(--muted)}
+.tarea .c1 .num{margin-left:auto}
 .tarea .c1 b{font-family:var(--f-code);font-size:15px;letter-spacing:-.02em}
 .tarea .c2{font-size:var(--t-sm);color:var(--muted);margin:2px 0 9px;overflow-wrap:anywhere}
 

@@ -438,6 +438,8 @@ document.addEventListener('click', ev => {
     case 'cargarPkg': cargarPaquete(); break;
     case 'borrarArchivo': borrarArchivo(t.dataset.id); break;
     case 'borrarKit': borrarKit(t.dataset.sku); break;
+    case 'cerrarTarea': cerrarTarea(t.dataset.clave, t.dataset.titulo); break;
+    case 'restaurarTareas': restaurarTareas(); break;
     case 'guardarConexion': guardarConexion(); break;
     case 'probarConexion': probarConexion(); break;
     case 'nuevoCliente': UI.cliEdit = {nuevo:true, pallet:[120,100,140], canal:'RETAIL', region:'RM'}; render(); break;

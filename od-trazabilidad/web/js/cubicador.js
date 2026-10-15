@@ -2,15 +2,32 @@
    Parte de la interfaz de Trazabilidad Order Desk. */
 
 /* ============ Vista: Por hacer ============ */
+/* Cada tarjeta se identifica por pedido/grupo + paso: si el pedido avanza de paso aparece una tarjeta nueva. */
+const claveTareaFlujo = (p, k) => `f-${safeId(p.pedido)}-${k}`;
+const claveTareaGrupo = (g, k) => `t-${g.key}-${k}`;
+const botonCerrarTarea = (clave, titulo) =>
+  `<button class="btn quiet sm icon tarea-x" data-act="cerrarTarea" data-clave="${esc(clave)}" data-titulo="${esc(titulo)}" aria-label="Cerrar ${esc(titulo)}" title="Cerrar">${ICON.x}</button>`;
+async function cerrarTarea(clave, titulo){
+  if (!await preguntar({titulo: `Cerrar ${titulo}`, texto: 'Sale de Por hacer. Puedes volver a mostrar las cerradas desde el botón de arriba.', ok: 'Cerrar'})) return;
+  const c = clone(config()); c.cerradas = [...new Set([...(c.cerradas || []), clave])];
+  save('config', 'app', c);
+}
+function restaurarTareas(){
+  const c = clone(config()); c.cerradas = [];
+  save('config', 'app', c);
+}
 function vistaBandeja(){
+  const cerradas = new Set(config().cerradas || []); let ocultas = 0;
+  const abierta = clave => { if (!cerradas.has(clave)) return true; ocultas++; return false; };
   const gs = grupos().filter(g => g.next).filter(g => {
     if (!UI.cliente) return true;
     return g.entregas.some(e => (Store.get('pedidos', safeId(e.pedido)) || {}).cliente === UI.cliente);
-  });
+  }).filter(g => abierta(claveTareaGrupo(g, g.next.k)));
   // pedidos analizados en la plataforma que todavía no terminan el flujo: análisis → cubicaje → entregas → grupos
   const COLS_FLUJO = [['ajuste', 'Revisar la carga'], ['cubicaje', 'Por cubicar'], ['entregas', 'Crear entregas'], ['grupos', 'Crear grupos'], ['analisis', 'Volver a analizar']];
   const delFlujo = Store.list('pedidos').filter(p => !UI.cliente || p.cliente === UI.cliente)
     .map(p => ({p, f: flujoDe(p)})).filter(x => x.f.enPlataforma && x.f.sig)
+    .filter(x => abierta(claveTareaFlujo(x.p, x.f.sig.k)))
     .sort((a, b) => (b.p.actualizado || '').localeCompare(a.p.actualizado || ''));
   const colsFlujo = COLS_FLUJO.map(([k, t]) => ({k, t, items: delFlujo.filter(x => x.f.sig.k === k)})).filter(c => c.items.length);
   const tarjetaFlujo = ({p, f}, k) => {
@@ -19,17 +36,18 @@ function vistaBandeja(){
       : k === 'cubicaje' ? `${fmt(f.an.carga)} un. a cargar`
       : k === 'entregas' ? `${f.ents.length} de ${f.cb.camiones} entregas`
       : k === 'grupos' ? `${f.ents.filter(e => e.grupo).length} de ${f.ents.length} con grupo` : `era de ${f.an.cliente}`;
-    return `<div class="tarea" data-k="f-${esc(safeId(p.pedido))}-${k}"><div class="c1"><b>Pedido ${esc(p.pedido)}</b><span class="num">${fmt(f.an.pedida)} un.</span></div>
+    return `<div class="tarea" data-k="${esc(claveTareaFlujo(p, k))}"><div class="c1"><b>Pedido ${esc(p.pedido)}</b><span class="num">${fmt(f.an.pedida)} un.</span>${botonCerrarTarea(claveTareaFlujo(p, k), 'pedido ' + p.pedido)}</div>
       <div class="c2">${esc(p.cliente || '—')} · ${esc(det)}</div>
       <div class="row tight"><button class="btn primary sm" data-abrir="${esc(safeId(p.pedido))}" data-sub="${f.tab[k]}">${esc(FLUJO_ACCION[k])}</button></div></div>`;
   };
   const cols = STEPS.map(s => ({s, items: gs.filter(g => g.next.k === s.k)
     .sort((a, b) => (a.cita.fecha || '9').localeCompare(b.cita.fecha || '9'))})).filter(c => c.items.length);
-  return `<div class="page-head"><h2>Por hacer</h2><span class="spacer"></span>${filtroCliente()}</div>
+  return `<div class="page-head"><h2>Por hacer</h2><span class="spacer"></span>${(config().cerradas || []).length ? `<button class="btn quiet sm" data-act="restaurarTareas">Mostrar cerradas (${(config().cerradas || []).length})</button>` : ''}${filtroCliente()}</div>
   ${colsFlujo.length ? `<div class="inbox">${colsFlujo.map(c => `<section class="col"><h3>${esc(c.t)} <span class="num">${c.items.length}</span></h3>${c.items.map(x => tarjetaFlujo(x, c.k)).join('')}</section>`).join('')}</div>` : ''}
   ${cols.length ? `<div class="inbox">${cols.map(({s, items}) => `<section class="col"><h3>${esc(s.t)} <span class="num">${items.length}</span></h3>
     ${items.map(g => { const p = Store.get('pedidos', safeId(g.entregas[0].pedido)) || {};
-      return `<div class="tarea" data-k="t-${esc(g.key)}-${s.k}"><div class="c1"><b>${g.sinGrupo ? 'Entrega ' + esc(g.entregas[0].entrega) : 'Grupo ' + esc(g.grupo)}</b><span class="num">${fmt(g.unidades)} un.</span></div>
+      const nombre = g.sinGrupo ? 'entrega ' + g.entregas[0].entrega : 'grupo ' + g.grupo;
+      return `<div class="tarea" data-k="${esc(claveTareaGrupo(g, s.k))}"><div class="c1"><b>${g.sinGrupo ? 'Entrega ' + esc(g.entregas[0].entrega) : 'Grupo ' + esc(g.grupo)}</b><span class="num">${fmt(g.unidades)} un.</span>${botonCerrarTarea(claveTareaGrupo(g, s.k), nombre)}</div>
       <div class="c2">${esc(p.cliente || '—')} · ${g.pedidos.length > 1 ? g.pedidos.length + ' pedidos' : 'Pedido ' + esc(g.pedidos[0])} · ${g.entregas.length} entrega(s)${g.cita.fecha ? ` · ${fmtFecha(g.cita.fecha)} ${esc(g.cita.hora || '')}` : ''}</div>
       <div class="row tight">${POR_ENTREGA.includes(s.k) ? '' : `<button class="btn primary sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1">Marcar hecho</button>`}
       <button class="btn quiet sm" data-abrir="${esc(safeId(g.pedidos[0]))}" data-sub="${POR_ENTREGA.includes(s.k) ? 'entregas' : 'grupos'}">Ver pedido</button></div></div>`; }).join('')}</section>`).join('')}</div>`
