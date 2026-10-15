@@ -90,6 +90,7 @@ function avisoCliente(){
 }
 document.addEventListener('input', ev => { if (ev.target.matches && ev.target.matches('#dlg [name="lsCliente"]')) avisoCliente(); });
 function abrirLecturaSap(modo){
+  if (!UI.pasosAn) cargarPasosAnalisis();
   const p = UI.sel && Store.get('pedidos', UI.sel);
   const cfg = config();
   const analizar = modo === 'analizar';
@@ -97,6 +98,7 @@ function abrirLecturaSap(modo){
     <p style="margin-top:0" class="small">${analizar
       ? 'Hace en un solo paso lo del botón 01 del Excel: lee el pedido en VL01N, trae la Qty en entrega de ZSD001_03, calcula saldo SOP, carga y alertas, y consulta MMBE solo para los SKU con alerta. Sin mensajes que aceptar.'
       : 'Abre VL01N con tu sesión de SAP y trae las posiciones del pedido.'} <b>Solo lee</b>: no crea ni modifica nada en SAP. Mientras corre, no uses el mouse ni el teclado sobre SAP.</p>
+    ${analizar && pasosDesactivados().length ? `<p class="small"><span class="tag warn">Pasos desactivados</span> Este análisis se saltará: ${pasosDesactivados().map(esc).join(' y ')} (Configuración → Pasos del análisis).</p>` : ''}
     <div class="fgrid">
       <label class="f">N° de pedido<input type="text" name="lsPedido" value="${esc(p ? p.pedido : '')}"></label>
       <label class="f">…o la orden de compra<input type="text" name="lsOc" placeholder="OC del cliente y Enter"></label>
@@ -165,6 +167,8 @@ function cierreAnalisis(){
     const d = j.datos;
     const sinPlan = !!(d.sin_sql && d.sin_sql.plan);
     j.resultado = `${d.posiciones} productos analizados · ${sinPlan ? 'SIN cruce con el plan SOP (sin conexión a SQL Server)' : d.limitadas + ' limitados por el plan'} · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
+    if ((d.omitidos || []).length) Avisos.agregar('warn', `Pedido ${d.pedido} analizado sin ${d.omitidos.map(k => PASOS_OPCIONALES[k] ? PASOS_OPCIONALES[k][0] : k).join(' ni ')}`,
+      'Esos pasos están desactivados en Configuración → Pasos del análisis, así que el análisis quedó incompleto.', []);
     if (d.sin_sql && Object.keys(d.sin_sql).length) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
       (sinPlan ? 'No se cruzó con el plan SOP: la carga no está limitada por el plan. ' : '') + (d.sin_sql.disponibilidad ? 'Faltan la primera disponibilidad y, si no venía en ZSD001_03, la OC. ' : '') + 'Lo de SAP sí se leyó.',
       ['Revisa la VPN o la red y la conexión en Configuración, y vuelve a analizar antes de crear entregas.']);
@@ -207,6 +211,14 @@ const ICONO_ALERTA = Object.fromEntries(Object.entries(PIP_ALERTA).map(([k, t]) 
 /* Lo primero que se ve al analizar: qué productos limitó el plan SOP y si se puede exceder */
 function avisosAnalisis(p, a, r){
   const out = [];
+  const omitidos = a.omitidos || [];
+  if (omitidos.length){
+    const efecto = [omitidos.includes('zsd') ? '<b>Qty en entrega:</b> no se descontó lo que el cliente ya tiene en entrega en SAP, así que el saldo SOP y la carga pueden estar de más.' : '',
+                    omitidos.includes('mmbe') ? '<b>Stock:</b> no se consultó MMBE, no hay stock por almacén.' : ''].filter(Boolean).join(' ');
+    out.push(`<div class="aviso warn" role="alert"><div class="aviso-cuerpo"><b>Análisis incompleto: se omitió ${omitidos.map(k => esc(PASOS_OPCIONALES[k] ? PASOS_OPCIONALES[k][0] : k)).join(' y ')}.</b>
+      <div class="small">Estaba desactivado en Configuración → Pasos del análisis. ${efecto}</div></div>
+      <button class="btn primary sm" data-act="abrirAnalisis">Volver a analizar</button></div>`);
+  }
   if (a.sin_sql && Object.keys(a.sin_sql).length){
     const s = a.sin_sql;
     out.push(`<div class="aviso error" role="alert"><div class="aviso-cuerpo"><b>No hubo conexión con SQL Server: este análisis no se cruzó con el plan SOP.</b>
@@ -586,6 +598,36 @@ async function probarConexion(){
   } catch(e){ UI.cxResultado = {ok:false, mensaje:e.message}; }
   UI.cxProbando = false; render();
 }
+/* Pasos opcionales del análisis: si uno falla en el equipo de un analista, se desactiva mientras se arregla. */
+const PASOS_OPCIONALES = {zsd: ['Qty en entrega (ZSD001_03)', 'Exporta de SAP lo que el cliente ya tiene en entrega y lo descuenta del saldo SOP.'],
+                          mmbe: ['Stock (MMBE)', 'Consulta el stock de los productos con alerta (CD30, EC01, TP01).']};
+async function cargarPasosAnalisis(){
+  try { UI.pasosAn = await api('GET', '/ajustes-analisis'); } catch(e){ UI.pasosAn = {zsd: true, mmbe: true}; }
+  render();
+}
+async function cambiarPasoAnalisis(clave, activo){
+  const antes = {...(UI.pasosAn || {zsd: true, mmbe: true})};
+  UI.pasosAn = {...antes, [clave]: activo}; render();
+  try { UI.pasosAn = await api('PUT', '/ajustes-analisis', {[clave]: activo}); toast(activo ? 'Paso activado' : 'Paso desactivado: el análisis lo omite'); }
+  catch(e){ UI.pasosAn = antes; toast(e.message); }
+  render();
+}
+function pasosDesactivados(){ return Object.entries(UI.pasosAn || {}).filter(([, v]) => v === false).map(([k]) => PASOS_OPCIONALES[k] ? PASOS_OPCIONALES[k][0] : k); }
+function seccionPasosAnalisis(){
+  if (!UI.pasosAn){ setTimeout(cargarPasosAnalisis, 0); return ''; }
+  const fila = (clave) => { const [nombre, ayuda] = PASOS_OPCIONALES[clave], on = UI.pasosAn[clave] !== false;
+    return `<label class="paso-op"><input type="checkbox" data-paso-analisis="${clave}" ${on ? 'checked' : ''}><span><b>${nombre}</b> ${on ? '' : '<span class="tag warn">desactivado</span>'}<span class="small muted">${ayuda}</span></span></label>`; };
+  const off = pasosDesactivados();
+  return `<div class="panel" style="margin-bottom:20px"><div class="panel-h"><h2>Pasos del análisis de pedidos</h2></div><div class="panel-b">
+    <p style="margin-top:0;max-width:72ch">Si un paso falla en el equipo de un analista (por ejemplo, la exportación de ZSD001_03), puedes desactivarlo por ahora y el análisis pasa al siguiente. Vale para <b>este equipo</b>; el pedido queda marcado como incompleto y dice qué falta.</p>
+    <div class="pasos-op">
+      <label class="paso-op"><input type="checkbox" checked disabled><span><b>Leer el pedido en VL01N</b><span class="small muted">Siempre se hace: sin él no hay análisis.</span></span></label>
+      ${fila('zsd')}${fila('mmbe')}
+    </div>
+    ${off.length ? `<p class="small" style="margin-bottom:0"><span class="tag warn">Atención</span> Los análisis nuevos saltarán: ${off.map(esc).join(' y ')}. Vuelve a activarlo cuando el problema esté resuelto.</p>` : ''}
+  </div></div>`;
+}
+
 function seccionConexion(){
   const cx = UI.conexion;
   if (!cx) { setTimeout(cargarConexion, 0); return ''; }
@@ -657,5 +699,5 @@ function vistaConfiguracion(){
   return `<div class="panel" style="margin-bottom:20px"><div class="panel-b">
       <h2 style="margin:0 0 6px">Configuración</h2>
       <p class="small muted" style="margin:0;max-width:72ch">Los datos que usa el cubicaje y el análisis: las reglas de cada cliente y la Base de Medidas. Se cargan una vez y quedan guardados.</p>
-    </div></div>` + seccionConexion() + seccionCamiones() + seccionClientes() + seccionMedidas() + seccionKits();
+    </div></div>` + seccionConexion() + seccionPasosAnalisis() + seccionCamiones() + seccionClientes() + seccionMedidas() + seccionKits();
 }

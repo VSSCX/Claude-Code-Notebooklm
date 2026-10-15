@@ -1503,3 +1503,38 @@ def test_export_sin_dialogo_de_guardado_se_recupera_si_el_archivo_aparecio(tmp_p
     (trabajo / "vacio.xlsx").write_bytes(b"")                        # un archivo vacío no cuenta
     (trabajo / "foto.png").write_bytes(b"png")                       # ni lo que no es planilla
     assert sap._buscar_export_reciente(ahora, [carpeta, trabajo], espera=0.2) == nuevo
+
+
+def test_se_puede_desactivar_zsd001_03_y_mmbe_y_el_analisis_pasa_de_vl01n_directo(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import base_medidas, bases, sap
+    from app.main import app
+    c = TestClient(app)
+    assert c.get("/api/ajustes-analisis").json() == {"zsd": True, "mmbe": True}
+    llamadas = []
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: llamadas.append("vl01n") or SimpleNamespace(
+        posiciones=[SimpleNamespace(sku="9000", qty_entrega=100, qty_pendiente=20)], aviso=""))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: llamadas.append("zsd") or [])
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: llamadas.append("mmbe") or {})
+    monkeypatch.setattr(sap, "carpeta_export", lambda: llamadas.append("carpeta") or "/no/existe")
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 500, "vendido": 0, "pdte_mes": 0, "tipo": "X"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
+    monkeypatch.setattr(bases, "oc_de", lambda *a: "")
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {"9000": {"desc": "9000 PRODUCTO", "max_camion": 300}})
+    # con todo activo se hacen los tres pasos (hay alerta: se piden 100 y quedan 20 pendientes)
+    t = _esperar(c, c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"}).json()["id"])
+    assert t["estado"] == "ok" and llamadas[:1] == ["carpeta"] and "zsd" in llamadas and t["datos"]["omitidos"] == []
+    # se desactivan los dos pasos opcionales
+    r = c.put("/api/ajustes-analisis", json={"zsd": False, "mmbe": False})
+    assert r.json() == {"zsd": False, "mmbe": False} and c.get("/api/ajustes-analisis").json() == r.json()
+    llamadas.clear()
+    t = _esperar(c, c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"}).json()["id"])
+    assert t["estado"] == "ok", t
+    assert llamadas == ["vl01n"]                           # ni carpeta de exportación, ni ZSD001_03, ni MMBE
+    assert t["datos"]["omitidos"] == ["zsd", "mmbe"]
+    doc = c.get("/api/analisis/4005100000").json()
+    assert doc["omitidos"] == ["zsd", "mmbe"] and doc["resultado"]["filas"][0]["en_entrega"] == 0
+    est = c.get("/api/estado").json()
+    assert est["config"]["flujo:4005100000"]["analisis"]["omitidos"] == ["zsd", "mmbe"]
+    c.put("/api/ajustes-analisis", json={"zsd": True, "mmbe": True})
+    time.sleep(0.2)

@@ -519,6 +519,7 @@ document.addEventListener('change', async ev => {
   else if (el.matches('[data-pdesde]')){ UI.pDesde = el.value || '0000-00-00'; render(); }
   else if (el.matches('[data-phasta]')){ UI.pHasta = el.value; render(); }
   else if (el.matches('[data-pporconf]')){ UI.pPorConf = el.checked; render(); }
+  else if (el.matches('[data-paso-analisis]')){ cambiarPasoAnalisis(el.dataset.pasoAnalisis, el.checked); }
   else if (el.matches('[data-analista]')){ const c = clone(config()); c.analista = el.value.trim(); if (await save('config', 'app', c)) toast('Analista guardado'); }
   else if (el.matches('[data-predistimport]') && el.files[0]){ await importarPredist(el, el.dataset.predistimport); el.value = ''; }
   else if (el.matches('[data-medidas]') && el.files[0]){ await importarMedidas(el); el.value = ''; }

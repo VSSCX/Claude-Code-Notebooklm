@@ -74,6 +74,38 @@ def _causa(e: Exception) -> str:
     return txt[:220] + ("…" if len(txt) > 220 else "")
 
 
+PASOS_OPCIONALES = {"zsd": "Qty en entrega (ZSD001_03)", "mmbe": "Stock (MMBE)"}
+CLAVE_AJUSTES_ANALISIS = "ajustes_analisis"
+
+
+def _ajustes_analisis(s: Session) -> dict:
+    """Qué pasos opcionales del análisis están activos en este equipo. Por defecto, todos."""
+    import json as _json
+
+    from ..models import Config
+    c = s.get(Config, CLAVE_AJUSTES_ANALISIS)
+    guardado = _json.loads(c.valor) if c else {}
+    return {k: bool(guardado.get(k, True)) for k in PASOS_OPCIONALES}
+
+
+@router.get("/ajustes-analisis")
+def get_ajustes_analisis(s: Session = Depends(get_session)):
+    return _ajustes_analisis(s)
+
+
+@router.put("/ajustes-analisis")
+def put_ajustes_analisis(body: dict, s: Session = Depends(get_session)):
+    """Activa o desactiva pasos opcionales del análisis (p. ej. si ZSD001_03 falla en el equipo de un analista).
+    Leer el pedido en VL01N no se puede desactivar: sin él no hay análisis."""
+    actual = _ajustes_analisis(s)
+    for k in PASOS_OPCIONALES:
+        if k in body:
+            actual[k] = bool(body[k])
+    domain.guardar_config(s, CLAVE_AJUSTES_ANALISIS, actual)
+    _commit(s)
+    return actual
+
+
 @router.post("/analisis/{numero}", status_code=202)
 def analizar(numero: str, body: dict):
     import json as _json
@@ -101,8 +133,11 @@ def analizar(numero: str, body: dict):
         # Primero lo que puede fallar sin tocar SAP (cliente, SQL Server, Base de Medidas): antes todo eso se
         # descubría DESPUÉS de leer VL01N y exportar ZSD001_03, y el análisis moría justo al terminar la exportación.
         avance("0/4 Revisando conexiones")
-        carpeta = sap.carpeta_export()                         # la misma de siempre, y comprobada antes de abrir SAP
-        aviso_pub = sap.revisar_publicacion()                  # la ruta fija de publicación, también antes de abrir SAP
+        with SessionLocal() as ses:
+            pasos = _ajustes_analisis(ses)
+        # la carpeta de exportación y la ruta de publicación solo importan si se va a exportar ZSD001_03
+        carpeta = sap.carpeta_export() if pasos["zsd"] else ""     # la misma de siempre, y comprobada antes de abrir SAP
+        aviso_pub = sap.revisar_publicacion() if pasos["zsd"] else ""
         with SessionLocal() as ses:
             grupo, codigo = _sop_de(cliente, ses)
             solicitantes = solicitantes_del_grupo(cliente, ses)
@@ -148,14 +183,18 @@ def analizar(numero: str, body: dict):
 
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
-        avance("2/4 Consultando Qty en entrega en ZSD001_03" + (
-            f" ({len(solicitantes)} solicitantes del grupo {grupo})" if len(solicitantes) > 1 else ""))
         avisos_zsd: list[str] = []
-        # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
-        nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
         publicado: dict = {}
-        filas_zsd = sap.zsd001_03(solicitantes if len(solicitantes) > 1 else codigo, [p["sku"] for p in posiciones],
-                                  str(carpeta), nombre_zsd, avisar=avisos_zsd.append, publicado=publicado)
+        if pasos["zsd"]:
+            avance("2/4 Consultando Qty en entrega en ZSD001_03" + (
+                f" ({len(solicitantes)} solicitantes del grupo {grupo})" if len(solicitantes) > 1 else ""))
+            # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
+            nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
+            filas_zsd = sap.zsd001_03(solicitantes if len(solicitantes) > 1 else codigo, [p["sku"] for p in posiciones],
+                                      str(carpeta), nombre_zsd, avisar=avisos_zsd.append, publicado=publicado)
+        else:
+            avance("2/4 Qty en entrega omitida (desactivada en Configuración)")
+            filas_zsd = []
 
         avance("3/4 Calculando saldos y alertas")
         # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
@@ -170,7 +209,9 @@ def analizar(numero: str, body: dict):
         res = calcular(posiciones, plan, en_ent, med, disp, sin_plan=sin_plan)
 
         stock = {}
-        if res["alertadas"]:
+        if not pasos["mmbe"]:
+            avance("4/4 Stock omitido (MMBE desactivado en Configuración)")
+        elif res["alertadas"]:
             stock = sap.mmbe(res["alertadas"], lambda t: avance("4/4 " + t))
             res = calcular(posiciones, plan, en_ent, med, disp, stock, sin_plan=sin_plan)
         else:
@@ -184,7 +225,7 @@ def analizar(numero: str, body: dict):
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
                "stock": stock, "ajustes": {}, "resultado": res, "oc_sap": oc, "oc_origen": oc_origen,
-               "sin_sql": sin_sql,
+               "sin_sql": sin_sql, "omitidos": [k for k, activo in pasos.items() if not activo],
                "generado": _date.today().isoformat(),
                "generado_hora": datetime.now().astimezone().isoformat(timespec="minutes")}
         with SessionLocal() as ses:
@@ -218,7 +259,7 @@ def analizar(numero: str, body: dict):
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen, "sin_sql": sin_sql,
-                "recubicado": recubicado, "sesion_sap": sap.ultima_sesion,
+                "omitidos": doc["omitidos"], "recubicado": recubicado, "sesion_sap": sap.ultima_sesion,
                 "suministro": doc["suministro"], "suministro_nuevo": suministro_nuevo,
                 "export_ruta": publicado.get("ruta", "") if publicado.get("ok") else "",
                 "export_aviso": aviso_pub or ((publicado.get("copia") or {}).get("motivo", ""))}
