@@ -704,6 +704,21 @@ def test_los_kilos_se_suman_por_camion_por_pallet_y_a_piso():
     assert doc_a["carga_por_camion"][0]["kilos"] == 192.0
 
 
+def test_un_cubicaje_guardado_sin_kilos_toma_el_peso_de_cada_camion_del_visor():
+    import json
+
+    from app.cubicaje.resumen import anotar, completar_kilos
+    doc = {"camiones": [{"numero": 1, "tipo": "Rampla"}, {"numero": 2, "tipo": "Camion 50"}], "filas": [], "filas04": [],
+           "visor_json": json.dumps({"camiones": [{"idx": 1, "pesoTot": 1200.5}, {"idx": 2, "pesoTot": 300}]})}
+    anotar(doc)
+    assert doc["kilos"] == 0
+    completar_kilos(doc)
+    assert [c["kilos"] for c in doc["carga_por_camion"]] == [1200.5, 300.0] and doc["kilos"] == 1500.5
+    otro = {"camiones": [{"numero": 1, "tipo": "R"}], "filas": [], "filas04": [], "visor_json": "no es json"}
+    anotar(otro); completar_kilos(otro)                       # un visor ilegible no rompe nada
+    assert otro["kilos"] == 0
+
+
 def test_un_producto_mas_alto_que_el_pallet_se_coloca_y_se_dibuja():
     """Un refrigerador de 180 cm en un pallet de 150 cm: va igual (uno por pallet). Antes el pallet tenía las unidades en la
     tabla pero ninguna colocada: desaparecían del 3D y de las unidades por camión."""

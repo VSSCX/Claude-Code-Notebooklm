@@ -52,6 +52,7 @@ def get_cubicaje_libre(s: Session = Depends(get_session)):
     doc["visor_vivo"] = _visor_vivo()        # la página abre el visor antes del primer cálculo
     if doc["visor_vivo"] and doc.get("lineas"):
         doc["visor_json"] = _datos_visor("libre_datos")
+        resumen_carga.completar_kilos(doc)
     return doc
 
 

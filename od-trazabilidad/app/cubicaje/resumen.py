@@ -83,3 +83,21 @@ def anotar(doc: dict, placed=None) -> dict:
     doc["bultos"] = sum(x["bultos"] for x in doc["carga_por_camion"])
     doc["kilos"] = round(sum(x["kilos"] for x in doc["carga_por_camion"]), 1)
     return doc
+
+
+def completar_kilos(doc: dict) -> dict:
+    """Cubicajes guardados antes de que existieran los kilos: el peso total de cada camión sale de los datos del visor
+    (que ya lo traían). El peso por pallet solo se conoce al volver a cubicar."""
+    cams = doc.get("carga_por_camion") or []
+    if not cams or doc.get("kilos_pos") or any(c.get("kilos") for c in cams) or not doc.get("visor_json"):
+        return doc
+    import json
+    try:
+        pesos = {int(c.get("idx", i + 1)): float(c.get("pesoTot") or 0)
+                 for i, c in enumerate(json.loads(doc["visor_json"]).get("camiones") or [])}
+    except (ValueError, TypeError, AttributeError):
+        return doc
+    for c in cams:
+        c["kilos"] = round(pesos.get(c["camion"], 0.0), 1)
+    doc["kilos"] = round(sum(c["kilos"] for c in cams), 1)
+    return doc

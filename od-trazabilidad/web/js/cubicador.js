@@ -224,6 +224,9 @@ function bultosDe(l, d, conCaja){
 /* Qué lleva cada camión y cada pallet: unidades y bultos (un bulto es una caja master o un producto suelto).
    Lo comparten el cubicador y la pestaña Cubicaje de un pedido. `abierto` = índice del camión que se despliega. */
 const kgTxt = k => k > 0 ? `${fmt(Math.round(k))} kg` : '';
+/* El peso va junto a la ocupación. Sin peso en la Base de Medidas no hay cómo sumarlo: se dice en vez de ocultarlo. */
+const pesoResumen = (c, total) => c.kilos > 0 ? `<span class="sep"></span>peso${total ? ' total' : ''} <b class="num">${fmt(Math.round(c.kilos))}</b> kg`
+  : `<span class="sep"></span>peso <span class="muted" title="Los productos de esta carga no tienen peso en la Base de Medidas (columna Peso total)">sin dato</span>`;
 function detalleCarga(doc, abierto){
   const cams = (doc && doc.carga_por_camion) || [];
   if (!cams.length) return '';
@@ -506,12 +509,12 @@ function vistaCubicador(){
   const cam = soloPallet ? null : camiones.find(v => v.numero === c.pallet_vehiculo);
   const resumen = soloPallet && c.pallet_visto ? `<div class="resumen">
       <div class="res-linea">Pallet <b class="num">${c.pallet_visto}</b> de <b class="num">${(c.pallets_disponibles || []).length}</b>
-        <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>${c.kilos > 0 ? `<span class="sep"></span><b class="num">${fmt(Math.round(c.kilos))}</b> kg` : ''}
+        <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>${pesoResumen(c)}
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div></div>`
     : camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${soloPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
         <span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b>${(c.unidades || 0) !== totUnidades ? ` de ${fmt(totUnidades)}` : ''} unidades${c.bultos ? `<span class="sep"></span><b class="num">${fmt(c.bultos)}</b> bultos` : ''}
-        <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}${c.kilos > 0 ? `<span class="sep"></span><b class="num">${fmt(Math.round(c.kilos))}</b> kg${camiones.length > 1 ? ' en total' : ''}` : ''}
+        <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}${pesoResumen(c, camiones.length > 1)}
         ${pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
         ${enPallet && c.pallet_visto ? `<span class="sep"></span>pallet <b class="num">${c.pallet_visto}</b> resaltado${cam ? ` · va en el camión <b class="num">${cam.numero}</b>` : ''}` : ''}
         ${aPiso ? `<span class="sep"></span><b class="num">${fmt(aPiso)}</b> a piso` : ''}

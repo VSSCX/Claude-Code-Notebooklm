@@ -55,6 +55,7 @@ def get_cubicaje(numero: str, suministro: int = 0, s: Session = Depends(get_sess
         resumen_carga.anotar(doc)             # cubicajes guardados antes de que existiera el resumen
     if doc.get("visor_vivo"):
         doc["visor_json"] = _datos_visor(f"{_nombre_visor_pedido(numero, suministro if anterior else actual)}_datos")
+        resumen_carga.completar_kilos(doc)
     return doc
 
 
