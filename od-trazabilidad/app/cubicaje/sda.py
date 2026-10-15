@@ -403,7 +403,10 @@ def _cubicar_pallet(items: list[Item], pal_L: float, pal_W: float, pal_H: float,
     acum = {"unid": 0, "vol": 0.0}
     plc: list[Placement] = []
     if items:
-        meter_en_camion(pal_W, pal_L, pal_H, items, 0, len(items) - 1, restric, plc, acum)
+        # Un producto más alto que el pallet (un refrigerador de 180 cm en un pallet de 150) va igual, uno por nivel, como la
+        # capacidad ya lo cuenta: sin esto el pallet quedaba con unidades que no se colocaban ni se dibujaban.
+        alto = max(pal_H, items[0].h) if len(items) == 1 else pal_H
+        meter_en_camion(pal_W, pal_L, alto, items, 0, len(items) - 1, restric, plc, acum)
     return plc, acum["unid"]
 
 

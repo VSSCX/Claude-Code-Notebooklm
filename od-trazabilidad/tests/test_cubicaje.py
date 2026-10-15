@@ -650,3 +650,48 @@ def test_producto_mas_largo_que_el_camion():
     from app.cubicaje.core import pack
     placed = []
     assert pack([item("A", 700, 100, 100, 5)], Box("Camion 50", 620, 244, 230), MDA, placed) == 0
+
+
+def test_resumen_de_carga_unidades_y_bultos_por_camion_y_por_pallet():
+    from app.cubicaje.resumen import anotar
+    doc = {"camiones": [{"numero": 1, "tipo": "Rampla 53"}, {"numero": 2, "tipo": "Camion 50"}],
+           "filas": [],
+           "filas04": [
+               {"vehiculo": 1, "pallet": 1, "sku": "A", "descripcion": "A", "cajas": 2, "bultos": 2, "unidades": 8, "tipo": "Mix"},
+               {"vehiculo": 1, "pallet": 1, "sku": "A", "descripcion": "A", "cajas": 3, "bultos": 3, "unidades": 3, "tipo": "Mix"},
+               {"vehiculo": 1, "pallet": 1, "sku": "B", "descripcion": "B", "cajas": 5, "bultos": 5, "unidades": 5, "tipo": "Mix"},
+               {"vehiculo": 1, "pallet": 2, "sku": "A", "descripcion": "A", "cajas": 1, "bultos": 1, "unidades": 4, "tipo": "Mono"},
+               {"vehiculo": 1, "pallet": 0, "sku": "C", "descripcion": "C", "cajas": 6, "bultos": 6, "unidades": 6, "tipo": "Piso"},
+               {"vehiculo": 2, "pallet": 3, "sku": "B", "descripcion": "B", "cajas": 7, "bultos": 7, "unidades": 7, "tipo": "Mono"}]}
+    anotar(doc)
+    c1, c2 = doc["carga_por_camion"]
+    p1, p2 = c1["pallets"]
+    # el pallet 1 mezcla A (2 cajas de 4 = 8 un. + 3 sueltas: 5 bultos, 11 un.) con B (5 sueltas)
+    assert (p1["pallet"], p1["tipo"], p1["unidades"], p1["bultos"]) == (1, "Mix", 16, 10)
+    assert {x["sku"]: (x["bultos"], x["unidades"]) for x in p1["lineas"]} == {"A": (5, 11), "B": (5, 5)}
+    assert (p2["pallet"], p2["unidades"], p2["bultos"]) == (2, 4, 1)
+    assert c1["piso"] == {"unidades": 6, "bultos": 6, "lineas": c1["piso"]["lineas"]}
+    assert (c1["unidades"], c1["bultos"]) == (26, 17) and (c2["unidades"], c2["bultos"]) == (7, 7)
+    assert doc["bultos"] == 24
+    # a piso (MDA): cada unidad es un bulto, salvo las líneas que ya traen sus bultos (caja master)
+    mda = {"camiones": [{"numero": 1, "tipo": "Rampla"}], "filas04": [],
+           "filas": [{"camion": 1, "sku": "X", "descripcion": "X", "unidades": 12},
+                     {"camion": 1, "sku": "C9", "descripcion": "Caja", "unidades": 40, "bultos": 10}]}
+    anotar(mda)
+    assert (mda["carga_por_camion"][0]["unidades"], mda["carga_por_camion"][0]["bultos"]) == (52, 22)
+    assert mda["carga_por_camion"][0]["pallets"] == [] and mda["carga_por_camion"][0]["piso"] is None
+
+
+def test_un_producto_mas_alto_que_el_pallet_se_coloca_y_se_dibuja():
+    """Un refrigerador de 180 cm en un pallet de 150 cm: va igual (uno por pallet). Antes el pallet tenía las unidades en la
+    tabla pero ninguna colocada: desaparecían del 3D y de las unidades por camión."""
+    from app.cubicaje.datos import Dims
+    from app.cubicaje.mda import Posicion
+    from app.cubicaje.sda import cubicaje_sda_stock
+    cache = {"f": Dims(L=70, w=70, h=180, apilable=False, inclinable=False, rotable=False, piezas=1, desc="FRIGO",
+                       max_camion=0, max_pallet=0, peso=60.0),
+             "b": Dims(L=30, w=30, h=30, apilable=True, inclinable=False, rotable=False, piezas=1, desc="B",
+                       max_camion=0, max_pallet=0, peso=5.0)}
+    r = cubicaje_sda_stock([Posicion("f", "F", 6, "1", 5), Posicion("b", "B", 10, "1", 6)], cache, 120, 100, 150, False, ["1"])
+    assert sum(f.unidades for f in r.filas04) == 16 and sum(p.n for p in r.placed) == 16
+    assert sum(f.unidades for f in r.filas03) == 16

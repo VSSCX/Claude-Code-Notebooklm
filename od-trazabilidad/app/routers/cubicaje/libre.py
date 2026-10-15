@@ -11,6 +11,7 @@ from ...integrations import clientes as cli_mod
 from ...integrations import kits as kits_mod
 from ...integrations import medidas as med_mod
 from ..comun import _aplicar_ajustes, _calefones_de, _clave_analisis, camiones_vista
+from ...cubicaje import resumen as resumen_carga
 from ._comun import (
     _commit,
     caja_master_defecto,
@@ -46,6 +47,8 @@ def get_cubicaje_libre(s: Session = Depends(get_session)):
     c = s.get(Config, "cubicaje_libre")
     doc = _json.loads(c.valor) if c else {"lineas": [], "cliente": "", "modo": "MDA",
                                           "vista": "rampla"}
+    if doc.get("camiones") and "carga_por_camion" not in doc:
+        resumen_carga.anotar(doc)             # cubicajes guardados antes de que existiera el resumen
     doc["visor_vivo"] = _visor_vivo()        # la página abre el visor antes del primer cálculo
     if doc["visor_vivo"] and doc.get("lineas"):
         doc["visor_json"] = _datos_visor("libre_datos")
@@ -309,6 +312,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     f["unidades"] = f["unidades"] * m
         doc["unidades"] = sum(f["unidades"] for f in (doc.get("filas04") or doc.get("filas") or []))
     doc["por_caja_master"] = por_caja
+    resumen_carga.anotar(doc)                                    # unidades y bultos por camión y por pallet
     if "PREDISTRIBUIDO" in modo and pre:
         doc["avisos"] = list(doc.get("avisos") or []) + _avisos_reparto(lineas, pre)
     if por_grupos:

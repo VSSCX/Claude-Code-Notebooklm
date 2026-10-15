@@ -858,3 +858,27 @@ table.tbl.ent-tbl{min-width:0;table-layout:auto}
 .sum-chip.falta{cursor:default;border-style:dashed;background:transparent}
 .sum-chip.falta.ok{opacity:.7}
 @media (hover:hover) and (pointer:fine){.sum-chip:not(.falta):hover{border-color:var(--ink)}}
+
+/* ---------- Qué lleva cada camión y pallet ---------- */
+.carga-det{margin-top:14px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper)}
+.carga-det-h{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--hair)}
+.carga-det-h h3{margin:0;font-size:var(--t-md)}
+.cam-det{border-bottom:1px solid var(--hair)}
+.cam-det:last-child{border-bottom:0}
+.cam-det > summary{display:flex;align-items:baseline;gap:6px 16px;flex-wrap:wrap;padding:10px 14px;cursor:pointer;list-style:none}
+.cam-det > summary::-webkit-details-marker{display:none}
+.cam-det > summary::before{content:"";width:7px;height:7px;border-right:1.75px solid var(--ink-2);border-bottom:1.75px solid var(--ink-2);transform:rotate(-45deg);transition:transform 160ms var(--ease-out);align-self:center}
+.cam-det[open] > summary::before{transform:rotate(45deg)}
+.cam-det > summary .num{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.cam-det > summary b{margin-right:4px}
+.cam-tbl{margin:0 0 6px}
+.cam-tbl tr.pal-h th{background:var(--paper-2);color:var(--ink);font-size:var(--t-sm);padding:6px 14px;border-top:1px solid var(--edge);border-bottom:1px solid var(--hair);position:static}
+.cam-tbl tr.pal-h th span{margin-right:10px}
+.cam-tbl tr.pal-h .pal-tot{float:right;margin:0;font-variant-numeric:tabular-nums}
+.cam-tbl tr.pal-h.piso th{background:var(--warn-soft, var(--paper-3))}
+.cam-tbl td:first-child{width:14px;padding-left:14px}
+@media (prefers-reduced-motion:reduce){.cam-det > summary::before{transition:none}}
+.cam-tbl tr.pal-1 td{border-top:1px solid var(--edge)}
+.cam-tbl td.pal-n{width:auto;padding-left:14px;white-space:nowrap;font-weight:650}
+.cam-tbl td.pal-n .tag{margin-left:6px;font-weight:500}
+.cam-tbl tr.en-grupo td:first-child{padding-left:14px}

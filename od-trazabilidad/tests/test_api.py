@@ -1627,3 +1627,27 @@ def test_suministros_lo_ya_suministrado_queda_registrado_y_lo_liberado_despues_e
     r = c.put("/api/entregas/8999999", json={"entrega": "8999999", "pedido": "4950", "lineas": [{"sku": "900081624", "qty": 1}]})
     assert r.status_code in (200, 201)
     assert next(e for e in _estado(c)["entregas"] if e["entrega"] == "8999999")["suministro"] == 3
+
+
+def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c, tmp_path):
+    from app.config import settings
+    _medidas_con_caja_master(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    # 10 unidades de una caja de 4: 2 cajas + 2 sueltas = 4 bultos y 10 unidades en un pallet
+    d = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "SDA STOCK"}).json()
+    cam = d["carga_por_camion"][0]
+    assert (cam["unidades"], cam["bultos"]) == (10, 4) and d["bultos"] == 4 and d["unidades"] == 10
+    assert len(cam["pallets"]) == 1 and (cam["pallets"][0]["unidades"], cam["pallets"][0]["bultos"]) == (10, 4)
+    assert cam["pallets"][0]["lineas"] == [{"sku": "1001", "descripcion": cam["pallets"][0]["lineas"][0]["descripcion"],
+                                            "sucursal": "", "bultos": 4, "unidades": 10}]
+    # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva
+    r = c.post("/api/cubicaje-libre/reparto", json={"texto": "SUC A\t1001\t10\nSUC B\t1001\t3\n", "modo": "SDA PREDISTRIBUIDO"}).json()
+    pal = {p["sucursal"]: (p["unidades"], p["bultos"]) for p in r["carga_por_camion"][0]["pallets"]}
+    assert pal == {"SUC A": (10, 4), "SUC B": (3, 3)}
+    # a piso: cada unidad es un bulto
+    m = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "MDA"}).json()
+    assert (m["carga_por_camion"][0]["unidades"], m["carga_por_camion"][0]["bultos"]) == (10, 10)
+    # lo guardado también trae el resumen
+    g = c.get("/api/cubicaje-libre").json()
+    assert g["carga_por_camion"] and g["bultos"] == 10

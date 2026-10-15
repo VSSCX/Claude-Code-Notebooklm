@@ -18,6 +18,7 @@ from ..comun import (
     camiones_defecto,
     camiones_vista,
 )
+from ...cubicaje import resumen as resumen_carga
 from ._comun import (
     _commit,
     caja_master_defecto,
@@ -50,6 +51,8 @@ def get_cubicaje(numero: str, suministro: int = 0, s: Session = Depends(get_sess
         raise HTTPException(404, "Este pedido todavía no está cubicado." if not anterior
                             else f"No quedó guardado el cubicaje del suministro {suministro}.")
     doc = _json.loads(c.valor)
+    if doc.get("camiones") and "carga_por_camion" not in doc:
+        resumen_carga.anotar(doc)             # cubicajes guardados antes de que existiera el resumen
     if doc.get("visor_vivo"):
         doc["visor_json"] = _datos_visor(f"{_nombre_visor_pedido(numero, suministro if anterior else actual)}_datos")
     return doc
@@ -184,6 +187,7 @@ def _cubicar(numero, body: dict, s: Session):
            "kits": _resumen_kits(kits, [(f["sku"], f["carga"]) for f in filas if f["carga"] > 0]),
            "faltantes": _faltantes_de(_lineas_sin_kits([(f["sku"], f["carga"]) for f in filas if f["carga"] > 0], kits),
                                       lambda sku, _c=entrada.medidas: _c.get(sku.lower()) is not None)}
+    resumen_carga.anotar(doc)                       # unidades y bultos por camión y por pallet
     nombre_visor = f"conjunto_{cid}" if multi else _nombre_visor_pedido(numero, suministro)
     if not multi:
         domain.guardar_config(s, _clave_cubicaje(numero), doc)
@@ -264,8 +268,10 @@ def _guardar_conjunto(s: Session, doc: dict, numeros: list[str], cid: str) -> No
     for n in numeros:
         mio = por_pedido[n]
         doc_n = {**doc, "pedido": n, "filas": [f for f in doc["filas"] if str(f.get("pedido")) == n],
+                 "filas04": [f for f in doc.get("filas04") or [] if str(f.get("pedido")) == n],
                  "camiones": [c for c in doc["camiones"] if c["numero"] in mio["camiones"]],
                  "unidades": mio["unidades"]}
+        resumen_carga.anotar(doc_n)                 # lo de este pedido en cada camión compartido
         domain.guardar_config(s, _clave_cubicaje(n), doc_n)
         domain.anotar_flujo(s, n, cubicaje=domain.resumen_cubicaje(doc_n))
 

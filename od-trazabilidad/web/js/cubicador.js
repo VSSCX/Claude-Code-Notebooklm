@@ -203,6 +203,31 @@ function bultosDe(l, d, conCaja){
   if (conCaja && d && d.caja > 1) return {bultos: Math.floor(q / d.caja) + q % d.caja, un: q, caja: d.caja};
   return {bultos: q, un: q, caja: 0};
 }
+/* Qué lleva cada camión y cada pallet: unidades y bultos (un bulto es una caja master o un producto suelto).
+   Lo comparten el cubicador y la pestaña Cubicaje de un pedido. `abierto` = índice del camión que se despliega. */
+function detalleCarga(doc, abierto){
+  const cams = (doc && doc.carga_por_camion) || [];
+  if (!cams.length) return '';
+  const conPallets = cams.some(c => c.pallets.length);
+  const sucursales = cams.some(c => c.lineas.some(l => l.sucursal));
+  const cab = `<thead><tr><th>${conPallets ? 'Pallet' : ''}</th>${sucursales ? '<th>Sucursal</th>' : ''}<th>SKU</th><th>Descripción</th><th class="n">Bultos</th><th class="n">Unidades</th></tr></thead>`;
+  const filaL = (l, grupo) => `<tr class="${grupo ? 'en-grupo' : ''}"><td></td>${sucursales ? `<td>${esc(l.sucursal || '')}</td>` : ''}<td class="code">${esc(l.sku)}</td><td>${esc(l.descripcion)}</td><td class="n">${fmt(l.bultos)}</td><td class="n">${fmt(l.unidades)}</td></tr>`;
+  const cuerpo = c => {
+    const n = 5 + (sucursales ? 1 : 0);
+    const unaFila = p => `<tr class="pal-1"><td class="pal-n">Pallet ${p.pallet} <span class="tag ${/Kit/.test(p.tipo) ? 'info' : ''}">${esc(p.tipo)}</span></td>${sucursales ? `<td>${esc(p.sucursal || '')}</td>` : ''}<td class="code">${esc(p.lineas[0].sku)}</td><td>${esc(p.lineas[0].descripcion)}</td><td class="n">${fmt(p.bultos)}</td><td class="n">${fmt(p.unidades)}</td></tr>`;
+    const pallets = c.pallets.map(p => p.lineas.length === 1 ? unaFila(p) : `<tr class="pal-h"><th colspan="${n}" scope="colgroup"><span>Pallet ${p.pallet}</span>
+        <span class="tag ${/Kit/.test(p.tipo) ? 'info' : ''}">${esc(p.tipo)}</span>${p.sucursal ? `<span class="small">${esc(p.sucursal)}</span>` : ''}
+        <span class="pal-tot num">${fmt(p.unidades)} un. · ${fmt(p.bultos)} bultos</span></th></tr>${p.lineas.map(l => filaL(l, true)).join('')}`).join('');
+    const piso = c.piso ? `<tr class="pal-h piso"><th colspan="${n}" scope="colgroup"><span>A piso</span><span class="pal-tot num">${fmt(c.piso.unidades)} un. · ${fmt(c.piso.bultos)} bultos</span></th></tr>${c.piso.lineas.map(l => filaL(l, true)).join('')}` : '';
+    return pallets + piso || c.lineas.map(l => filaL(l, false)).join('');
+  };
+  return `<section class="carga-det" aria-label="Qué lleva cada camión">
+    <div class="carga-det-h"><h3>Qué lleva cada ${conPallets ? 'camión y pallet' : 'camión'}</h3><span class="small muted">Un bulto es una caja master o un producto suelto.</span></div>
+    ${cams.map((c, i) => `<details class="cam-det" data-k="cd-${i}" ${i === (abierto || 0) || cams.length === 1 ? 'open' : ''}>
+      <summary><b>${esc(c.tipo)} · n.º ${c.camion}</b><span class="num">${fmt(c.unidades)} un.</span><span class="num">${fmt(c.bultos)} bultos</span>${c.pallets.length ? `<span class="num">${c.pallets.length} pallet${c.pallets.length === 1 ? '' : 's'}</span>` : ''}${c.piso ? `<span class="num">${fmt(c.piso.unidades)} a piso</span>` : ''}</summary>
+      <div class="scroll"><table class="tbl cam-tbl">${cab}<tbody>${cuerpo(c)}</tbody></table></div></details>`).join('')}
+  </section>`;
+}
 function efectivoCub(inp){
   const base = inp.modo || 'MDA', sda = /SDA/.test(base);
   const grupos = (inp.grupos || []).length > 0 && !(inp.predistribuido || []).length && inp.destino !== 'STOCK';
@@ -365,6 +390,7 @@ function vistaCubicador(){
     unidPorCam[f.camion] = (unidPorCam[f.camion] || 0) + f.unidades;
     ocupPorCam[f.camion] = f.ocup_acum;
   }
+  const bultosPorCam = {}; for (const x of (c.carga_por_camion || [])){ bultosPorCam[x.camion] = x.bultos; unidPorCam[x.camion] = x.unidades; }
   const ocupMax = camiones.length ? Math.max(0, ...Object.values(ocupPorCam)) : 0;
   const pallets = (c.pallets_detalle || []).length;
   const aPiso = (c.filas04 || []).filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0);
@@ -453,7 +479,7 @@ function vistaCubicador(){
     const o = ocupPorCam[v.numero] || 0;
     const tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
     return `<button class="chip-cam" data-cub-cam="${i}" aria-pressed="${i === UI.cubCam}" title="Ver este camión en el 3D">
-      <span class="l1"><b>${soloPallet ? 'Pallet' : esc(v.tipo) + ' ·'} n.º ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.</span></span>
+      <span class="l1"><b>${soloPallet ? 'Pallet' : esc(v.tipo) + ' ·'} n.º ${v.numero}</b><span class="num">${fmt(unidPorCam[v.numero] || 0)} un.${bultosPorCam[v.numero] ? ` · ${fmt(bultosPorCam[v.numero])} bultos` : ''}</span></span>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
       <span class="l2"><span class="num">${pctCub(o)}</span><span class="num">${m3(v.vol_m3)} m³</span></span></button>`;
   }).join('');
@@ -464,7 +490,7 @@ function vistaCubicador(){
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div></div>`
     : camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${soloPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
-        ${(c.unidades || 0) !== totUnidades ? `<span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b> de ${fmt(totUnidades)} unidades` : ''}
+        <span class="sep"></span><b class="num">${fmt(c.unidades || 0)}</b>${(c.unidades || 0) !== totUnidades ? ` de ${fmt(totUnidades)}` : ''} unidades${c.bultos ? `<span class="sep"></span><b class="num">${fmt(c.bultos)}</b> bultos` : ''}
         <span class="sep"></span>ocupación${camiones.length > 1 ? ' máx.' : ''} <b class="num">${pctCub(ocupMax)}</b>${camiones.length === 1 ? ` de <span class="num">${m3(camiones[0].vol_m3)} m³</span>` : ''}
         ${pallets ? `<span class="sep"></span><b class="num">${pallets}</b> pallets` : ''}
         ${enPallet && c.pallet_visto ? `<span class="sep"></span>pallet <b class="num">${c.pallet_visto}</b> resaltado${cam ? ` · va en el camión <b class="num">${cam.numero}</b>` : ''}` : ''}
@@ -516,6 +542,7 @@ function vistaCubicador(){
         ${herramientasVisor()}
         ${UI.cubCalculando || UI.cubOcupado ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
       </div>
+      ${soloPallet ? '' : detalleCarga(c, UI.cubCam)}
     </div>
   </div>`;
 }

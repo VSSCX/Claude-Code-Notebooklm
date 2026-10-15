@@ -559,11 +559,9 @@ function vistaCubicaje(p){
     return `<article class="docket" data-k="cam-${c.numero}">
       <div class="dk-h"><div class="dk-id">Camión ${c.numero} <span class="tag">${esc(c.tipo)}</span>
         <span class="tag ${fs[0] && fs[0].tipo_carga === 'Mono-pedido' ? 'ok' : 'warn'}">${esc(fs[0] ? fs[0].tipo_carga : '')}</span></div>
-        <div class="dk-qty">${fmt(fs.reduce((a, f) => a + f.unidades, 0))} <small>un. · ${pctCub(ocup)} ocupado</small></div></div>
+        <div class="dk-qty">${fmt(fs.reduce((a, f) => a + f.unidades, 0))} <small>un.${(cb.carga_por_camion || []).find(x => x.camion === c.numero) ? ` · ${fmt(cb.carga_por_camion.find(x => x.camion === c.numero).bultos)} bultos` : ''} · ${pctCub(ocup)} ocupado</small></div></div>
       <div class="meta">${m('Medidas', `${fmt(c.L)} × ${fmt(c.w)} × ${fmt(c.h)} cm`)}${m('Capacidad', `${m3(c.vol_m3, 2)} m³`)}${m('Libre', `${m3(fs.length ? fs[fs.length - 1].libre_m3 : c.vol_m3, 2)} m³`)}</div>
-      <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr>${fs.some(f => f.sucursal) ? '<th>Sucursal</th>' : ''}<th>SKU</th><th>Descripción</th><th class="n">Unidades</th></tr></thead><tbody>
-        ${fs.map(f => `<tr>${fs.some(x => x.sucursal) ? `<td>${esc(f.sucursal)}</td>` : ''}<td class="code">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td><td class="n">${fmt(f.unidades)}</td></tr>`).join('')}
-      </tbody></table></div></article>`;
+      </article>`;
   }).join('');
   const problemas = [
     ...(cb.no_encontrados || []).map(x => `<span class="tag err">Sin descripción: ${esc(x)}</span>`),
@@ -581,7 +579,7 @@ function vistaCubicaje(p){
         <button class="btn sm" data-act="verVisorCub" aria-pressed="${!!UI.verVisorCub}">${UI.verVisorCub ? 'Ocultar visor 3D' : 'Ver visor 3D aquí'}</button>` : ''}</div>
     ${cb.camiones.length ? fichasCamion(p, cb) : ''}
     ${cb.visor && UI.verVisorCub ? `<div style="margin:10px 0 14px">${visorPedido(p, cb, 640)}</div>` : ''}
-    <div class="legend" style="margin:12px 0"><span>Camiones <b class="num">${cb.camiones.length}</b></span><span>Unidades <b class="num">${fmt(cb.unidades)}</b></span>
+    <div class="legend" style="margin:12px 0"><span>Camiones <b class="num">${cb.camiones.length}</b></span><span>Unidades <b class="num">${fmt(cb.unidades)}</b></span>${cb.bultos ? `<span>Bultos <b class="num">${fmt(cb.bultos)}</b></span>` : ''}
       <span>SKU <b class="num">${new Set(cb.filas.map(f => f.sku)).size}</b></span>
       ${(cb.pallets_detalle || []).length ? `<span>Pallets <b class="num">${cb.pallets_detalle.length}</b></span>` : ''}
       ${(cb.filas04 || []).some(f => f.tipo === 'Piso') ? `<span>A piso <b class="num">${fmt(cb.filas04.filter(f => f.tipo === 'Piso').reduce((a, f) => a + f.unidades, 0))}</b></span>` : ''}</div>
@@ -592,16 +590,7 @@ function vistaCubicaje(p){
     ${(cb.avisos || []).map(a => `<p class="small"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
     ${(cb.kits || []).length ? `<p class="small muted" style="margin:6px 0"><span class="tag info">Kits</span> ${cb.kits.map(k => `<b>${esc(k.sku)}</b> × ${fmt(k.unidades)} (${k.componentes.map(c => esc(c.sku) + (c.por_kit > 1 ? ' ×' + c.por_kit : '')).join(' + ')})`).join(' · ')} — sus cajas viajan juntas.</p>` : ''}
     <div style="margin-top:12px">${camiones}</div>
-    ${(cb.filas04 || []).length ? `<div class="panel" style="margin-top:14px"><div class="panel-h"><h3>Detalle por pallet</h3></div>
-      <div class="scroll"><table class="tbl"><thead><tr><th class="n">Camión</th><th>Tipo vehículo</th><th class="n">Pallet</th>
-        ${cb.filas04.some(f => f.sucursal) ? '<th>Sucursal</th>' : ''}<th>SKU</th><th>Descripción</th>
-        <th class="n">Cajas</th><th class="n">Bultos</th><th class="n">Unidades</th><th>Tipo</th></tr></thead><tbody>
-        ${cb.filas04.map(f => `<tr><td class="n">${f.vehiculo}</td><td>${esc(f.tipo_vehiculo)}</td>
-          <td class="n">${f.pallet || '—'}</td>${cb.filas04.some(x => x.sucursal) ? `<td>${esc(f.sucursal)}</td>` : ''}
-          <td class="code">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td><td class="n">${fmt(f.cajas)}</td>
-          <td class="n">${fmt(f.bultos)}</td><td class="n">${fmt(f.unidades)}</td>
-          <td><span class="tag ${f.tipo === 'Piso' ? 'warn' : ''}">${esc(f.tipo)}</span></td></tr>`).join('')}
-      </tbody></table></div></div>` : ''}`;
+    ${detalleCarga(cb, UI.pedCam[p.pedido] || 0)}`;
 }
 
 function descDe(ped, sku){ const p = Store.get('pedidos', safeId(ped)); const l = p && (p.lineas || []).find(x => normSku(x.sku) === normSku(sku)); return l ? l.desc : ''; }
