@@ -299,6 +299,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 tr.limitada td{background:var(--warn-soft)}
 .vis-tools{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;align-items:center;gap:8px;padding:3px 3px 3px 10px;background:var(--paper);border:1px solid var(--ink);border-radius:var(--r);font-size:12px;font-weight:650;color:var(--muted)}
 .seg.sm button{min-height:26px;padding:0 9px;font-size:12px}
+.vis-ojo{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:calc(var(--r) - 2px);background:transparent;color:var(--ink);cursor:pointer;touch-action:manipulation;transition:background-color 100ms var(--ease-out),color 100ms var(--ease-out)}
+.vis-ojo[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.vis-ojo:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (hover:hover) and (pointer:fine){.vis-ojo[aria-pressed="false"]:hover{background:var(--paper-3)}}
 .faltantes{flex:none;margin:0 0 12px;border:1px solid var(--err);border-radius:var(--r);background:var(--paper);overflow:hidden;animation:fl-in 200ms var(--ease-out)}
 .fl-cab{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--err-soft)}
 .fl-cab svg{width:22px;height:22px;flex:none;color:var(--err);margin-top:1px}

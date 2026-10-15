@@ -618,13 +618,35 @@ function onResize(){
 let _sucio=true;
 function pedirRender(){_sucio=true;}
 function animate(){requestAnimationFrame(animate);if(!_sucio)return;_sucio=false;applyCam();renderer.render(scene,camera);}
+/* Vista libre (el ojo de la plataforma): la camara gira por completo, tambien por debajo, se mueve con clic derecho o
+   Shift y se acerca hasta quedar dentro del camion. Apagada, el visor se comporta como siempre. */
+let libre=false;
+const HINT_FIJA='arrastrar: rotar<br>rueda: zoom<br>doble clic: reencuadrar';
+const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom<br>doble clic: reencuadrar';
+function limitesCam(){return libre?{elMin:-1.5,elMax:1.5,dMin:120}:{elMin:0.05,elMax:1.45,dMin:700};}
+function setLibre(on){
+  libre=!!on;const l=limitesCam();
+  el=Math.max(l.elMin,Math.min(l.elMax,el));dist=Math.max(l.dMin,Math.min(9000,dist));
+  const h=document.getElementById('viewhint');if(h)h.innerHTML=libre?HINT_LIBRE:HINT_FIJA;
+  if(!libre)buildScene(cur);                                // al apagarla vuelve al encuadre normal del camion
+  else pedirRender();
+}
+function panCam(dx,dy){
+  camera.updateMatrix();
+  const r=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0),u=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+  const k=2*dist*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/Math.max(renderer.domElement.clientHeight,1);
+  ctr.addScaledVector(r,-dx*k).addScaledVector(u,dy*k);
+}
 function bindControls(cv){
-  let drag=false,px,py;
-  cv.addEventListener('mousedown',e=>{drag=true;px=e.clientX;py=e.clientY});
+  let drag=false,mover=false,px,py;
+  cv.addEventListener('mousedown',e=>{drag=true;mover=libre&&(e.button===2||e.button===1||e.shiftKey);px=e.clientX;py=e.clientY;if(mover)e.preventDefault();});
+  cv.addEventListener('contextmenu',e=>{if(libre)e.preventDefault();});
   window.addEventListener('mouseup',()=>drag=false);
-  window.addEventListener('mousemove',e=>{if(!drag)return;az-=(e.clientX-px)*0.008;el+=(e.clientY-py)*0.006;
-    el=Math.max(0.05,Math.min(1.45,el));px=e.clientX;py=e.clientY;pedirRender();});
-  cv.addEventListener('wheel',e=>{e.preventDefault();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(700,Math.min(9000,dist));_zoomUsuario=true;pedirRender();},{passive:false});
+  window.addEventListener('mousemove',e=>{if(!drag)return;
+    if(mover){panCam(e.clientX-px,e.clientY-py);}
+    else{const l=limitesCam();az-=(e.clientX-px)*0.008;el+=(e.clientY-py)*0.006;el=Math.max(l.elMin,Math.min(l.elMax,el));}
+    px=e.clientX;py=e.clientY;pedirRender();});
+  cv.addEventListener('wheel',e=>{e.preventDefault();const l=limitesCam();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(l.dMin,Math.min(9000,dist));_zoomUsuario=true;pedirRender();},{passive:false});
   cv.addEventListener('dblclick',()=>{az=0.85;el=0.28;buildScene(cur)});
 }
 // ---- UI ----
@@ -889,6 +911,7 @@ window.addEventListener('message',function(ev){
   else if(m.tipo==='od-visor-pallet'){palSel=(m.idx==null)?null:+m.idx;dibujarResalte();}
   else if(m.tipo==='od-visor-filtro'){filtroTipo=m.cod?'cod':null;filtroVal=m.cod||null;buildScene(cur);renderLegend();}
   else if(m.tipo==='od-visor-etiqueta'){var l=!!m.letra;if(l!==etiquetaLetra){etiquetaLetra=l;buildScene(cur);renderEtiquetaToggle();}}
+  else if(m.tipo==='od-visor-libre')setLibre(!!m.on);
   else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);
 });
 window.addEventListener('load',init);

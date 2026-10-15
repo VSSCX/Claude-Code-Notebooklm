@@ -1639,6 +1639,8 @@ def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c
     cam = d["carga_por_camion"][0]
     assert (cam["unidades"], cam["bultos"]) == (10, 4) and d["bultos"] == 4 and d["unidades"] == 10
     assert len(cam["pallets"]) == 1 and (cam["pallets"][0]["unidades"], cam["pallets"][0]["bultos"]) == (10, 4)
+    # los kilos salen del peso de la Base de Medidas: 2 cajas master de 20 kg + 2 sueltas de 5 kg
+    assert cam["kilos"] == cam["pallets"][0]["kilos"] == d["kilos"] == 50.0
     assert cam["pallets"][0]["lineas"] == [{"sku": "1001", "descripcion": cam["pallets"][0]["lineas"][0]["descripcion"],
                                             "sucursal": "", "bultos": 4, "unidades": 10}]
     # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva
@@ -1648,6 +1650,7 @@ def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c
     # a piso: cada unidad es un bulto
     m = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "MDA"}).json()
     assert (m["carga_por_camion"][0]["unidades"], m["carga_por_camion"][0]["bultos"]) == (10, 10)
+    assert m["carga_por_camion"][0]["kilos"] == 50.0                                  # a piso: 10 unidades de 5 kg
     # lo guardado también trae el resumen
     g = c.get("/api/cubicaje-libre").json()
     assert g["carga_por_camion"] and g["bultos"] == 10

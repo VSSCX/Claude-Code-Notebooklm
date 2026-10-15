@@ -12,6 +12,9 @@ const Visor = {
     try { localStorage.setItem('od_etiqueta', this.etiqueta); } catch(e){ /* sin almacenamiento: vale para esta sesión */ }
     this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'});
   },
+  /* Vista libre (el ojo): la cámara gira por completo, se mueve y entra al camión. Dura lo que la sesión. */
+  libre: false,
+  verLibre(on){ this.libre = !!on; this.mandar({tipo: 'od-visor-libre', on: this.libre}); },
   listos: new WeakSet(),       // iframes que ya avisaron "listo"
   enviado: new WeakMap(),      // último dato enviado a cada iframe
   palEnv: new WeakMap(),       // último pallet resaltado enviado a cada iframe
@@ -32,6 +35,7 @@ const Visor = {
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
       this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'}, f);
+      if (this.libre) this.mandar({tipo: 'od-visor-libre', on: true}, f);
       const libre = f.dataset.visor === 'libre';
       this.camion(libre ? UI.cubCam : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
       if (libre) this.mandar({tipo: 'od-visor-filtro', cod: UI.cubFiltro || null}, f);       // el visor limpia su filtro al recibir datos
@@ -75,9 +79,11 @@ function herramientasVisor(){
   const e = Visor.etiqueta;
   return `<div class="vis-tools" role="group" aria-label="Texto sobre las cajas"><span>Cajas</span><div class="seg sm">
     <button type="button" data-vis-etiqueta="desc" aria-pressed="${e === 'desc'}">Descripción</button>
-    <button type="button" data-vis-etiqueta="letra" aria-pressed="${e === 'letra'}" title="La letra de cada producto se lee en una impresión en blanco y negro">Letra</button></div></div>`;
+    <button type="button" data-vis-etiqueta="letra" aria-pressed="${e === 'letra'}" title="La letra de cada producto se lee en una impresión en blanco y negro">Letra</button></div>
+    <button type="button" class="vis-ojo" data-vis-libre aria-pressed="${Visor.libre}" aria-label="Vista libre del camión" title="Vista libre: gira por completo, mueve con clic derecho o Shift y acércate hasta entrar al camión">${ICON.ojo}</button></div>`;
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('[data-vis-etiqueta]');
-  if (b){ Visor.etiquetar(b.dataset.visEtiqueta); render(); }
+  if (b){ Visor.etiquetar(b.dataset.visEtiqueta); render(); return; }
+  if (ev.target.closest && ev.target.closest('[data-vis-libre]')){ Visor.verLibre(!Visor.libre); render(); }
 });

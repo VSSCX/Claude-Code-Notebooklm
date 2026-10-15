@@ -187,7 +187,7 @@ def _cubicar(numero, body: dict, s: Session):
            "kits": _resumen_kits(kits, [(f["sku"], f["carga"]) for f in filas if f["carga"] > 0]),
            "faltantes": _faltantes_de(_lineas_sin_kits([(f["sku"], f["carga"]) for f in filas if f["carga"] > 0], kits),
                                       lambda sku, _c=entrada.medidas: _c.get(sku.lower()) is not None)}
-    resumen_carga.anotar(doc)                       # unidades y bultos por camión y por pallet
+    resumen_carga.anotar(doc, r.placed)             # unidades, bultos y kilos por camión y por pallet
     nombre_visor = f"conjunto_{cid}" if multi else _nombre_visor_pedido(numero, suministro)
     if not multi:
         domain.guardar_config(s, _clave_cubicaje(numero), doc)
@@ -270,7 +270,8 @@ def _guardar_conjunto(s: Session, doc: dict, numeros: list[str], cid: str) -> No
         doc_n = {**doc, "pedido": n, "filas": [f for f in doc["filas"] if str(f.get("pedido")) == n],
                  "filas04": [f for f in doc.get("filas04") or [] if str(f.get("pedido")) == n],
                  "camiones": [c for c in doc["camiones"] if c["numero"] in mio["camiones"]],
-                 "unidades": mio["unidades"]}
+                 "unidades": mio["unidades"],
+                 "kilos_pos": [k for k in doc.get("kilos_pos") or [] if k["pedido"] == n]}
         resumen_carga.anotar(doc_n)                 # lo de este pedido en cada camión compartido
         domain.guardar_config(s, _clave_cubicaje(n), doc_n)
         domain.anotar_flujo(s, n, cubicaje=domain.resumen_cubicaje(doc_n))

@@ -141,10 +141,10 @@ function vistaConjunto(){
   </div>
   ${(d.avisos || []).map(a => `<p class="small" style="margin:10px 0 0"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
   <div class="panel" style="margin-top:16px"><div class="panel-h"><h3>Camiones</h3><span class="spacer"></span><span class="small muted">Cada camión puede llevar carga de varios pedidos</span></div>
-    <div class="scroll"><table class="tbl"><thead><tr><th>Camión</th><th>Vehículo</th><th>Pedidos que lleva</th><th class="n">Unidades</th><th class="n">Ocupación</th><th>Entregas</th><th>Grupo</th></tr></thead><tbody>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Camión</th><th>Vehículo</th><th>Pedidos que lleva</th><th class="n">Unidades</th><th class="n">Ocupación</th><th class="n">Kilos</th><th>Entregas</th><th>Grupo</th></tr></thead><tbody>
     ${camiones.map(x => `<tr><td><b>${x.c.numero}</b></td><td>${esc(x.c.tipo)}</td>
       <td>${Object.entries(x.porPed).map(([n, u]) => `<span class="tag ${Object.keys(x.porPed).length > 1 ? 'info' : ''}">${esc(n)} · ${fmt(u)}</span>`).join(' ')}</td>
-      <td class="n">${fmt(x.filas.reduce((a, f) => a + f.unidades, 0))}</td><td class="n">${pctCub(x.ocup)}</td>
+      <td class="n">${fmt(x.filas.reduce((a, f) => a + f.unidades, 0))}</td><td class="n">${pctCub(x.ocup)}</td><td class="n">${kgTxt(((d.carga_por_camion || []).find(y => y.camion === x.c.numero) || {}).kilos) || '—'}</td>
       <td>${x.faltan.length ? `<span class="tag warn">Faltan ${x.faltan.length}</span>` : x.dePed.length ? `<span class="tag ok">${x.dePed.map(e => esc(e.entrega)).join(' · ')}</span>` : ''}</td>
       <td>${x.grupo ? `<span class="tag ok code">${esc(x.grupo)}</span>` : x.dePed.length && !x.faltan.length ? '<span class="tag warn">Por crear</span>' : '—'}</td></tr>`).join('')}
     </tbody></table></div></div>
@@ -329,7 +329,7 @@ function cubicajeDeEntrega(p, e, idx){
   return `<div class="ent-cub">
     <div class="ent-cub-top"><b>${esc(c.tipo)} · camión n.º ${c.numero}</b>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
-      <span class="num">${pctCub(o)} ocupado · ${m3(c.vol_m3)} m³</span>
+      <span class="num">${pctCub(o)} ocupado · ${m3(c.vol_m3)} m³${kgTxt(((cb.carga_por_camion || []).find(x => x.camion === c.numero) || {}).kilos) ? ` · ${kgTxt(cb.carga_por_camion.find(x => x.camion === c.numero).kilos)}` : ''}</span>
       <button class="btn quiet sm" data-act="irCubicaje" data-cam="${idx}">Abrir en Cubicador</button></div>
     ${cb.visor ? visorPedido(p, cb, 420, clave) : '<p class="small muted">Este cubicaje no tiene visor 3D.</p>'}
   </div>`;
@@ -559,7 +559,7 @@ function vistaCubicaje(p){
     return `<article class="docket" data-k="cam-${c.numero}">
       <div class="dk-h"><div class="dk-id">Camión ${c.numero} <span class="tag">${esc(c.tipo)}</span>
         <span class="tag ${fs[0] && fs[0].tipo_carga === 'Mono-pedido' ? 'ok' : 'warn'}">${esc(fs[0] ? fs[0].tipo_carga : '')}</span></div>
-        <div class="dk-qty">${fmt(fs.reduce((a, f) => a + f.unidades, 0))} <small>un.${(cb.carga_por_camion || []).find(x => x.camion === c.numero) ? ` · ${fmt(cb.carga_por_camion.find(x => x.camion === c.numero).bultos)} bultos` : ''} · ${pctCub(ocup)} ocupado</small></div></div>
+        <div class="dk-qty">${fmt(fs.reduce((a, f) => a + f.unidades, 0))} <small>un.${(cb.carga_por_camion || []).find(x => x.camion === c.numero) ? ` · ${fmt(cb.carga_por_camion.find(x => x.camion === c.numero).bultos)} bultos` : ''} · ${pctCub(ocup)} ocupado${kgTxt((cb.carga_por_camion.find(x => x.camion === c.numero) || {}).kilos) ? ` · ${kgTxt(cb.carga_por_camion.find(x => x.camion === c.numero).kilos)}` : ''}</small></div></div>
       <div class="meta">${m('Medidas', `${fmt(c.L)} × ${fmt(c.w)} × ${fmt(c.h)} cm`)}${m('Capacidad', `${m3(c.vol_m3, 2)} m³`)}${m('Libre', `${m3(fs.length ? fs[fs.length - 1].libre_m3 : c.vol_m3, 2)} m³`)}</div>
       </article>`;
   }).join('');

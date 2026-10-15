@@ -24,9 +24,24 @@ def _total(lineas: list[dict]) -> tuple[int, int]:
     return sum(x["unidades"] for x in lineas), sum(x["bultos"] for x in lineas)
 
 
+def kilos_posiciones(placed) -> list[dict]:
+    """Kilos colocados por (camión, pallet, pedido). El peso de cada pieza viene de la Base de Medidas
+    (Peso total); pallet 0 = carga a piso."""
+    agg: dict[tuple, float] = {}
+    for p in placed or []:
+        k = (int(p.container), int(getattr(p, "pallet", 0) or 0), str(getattr(p, "ped", "") or ""))
+        agg[k] = agg.get(k, 0.0) + float(p.peso or 0)
+    return [{"camion": c, "pallet": n, "pedido": ped, "kilos": round(v, 1)} for (c, n, ped), v in sorted(agg.items())]
+
+
+def _kg(pos: list[dict], camion: int, pallet: int | None = None) -> float:
+    return round(sum(k["kilos"] for k in pos if k["camion"] == camion and (pallet is None or k["pallet"] == pallet)), 1)
+
+
 def carga_por_camion(doc: dict) -> list[dict]:
-    """[{camion, tipo, unidades, bultos, pallets: [{pallet, tipo, sucursal, unidades, bultos, lineas}], piso: {...}, lineas}]
+    """[{camion, tipo, unidades, bultos, kilos, pallets: [{pallet, tipo, sucursal, unidades, bultos, kilos, lineas}], piso: {...}, lineas}]
     Usa el detalle por pallet (filas04) cuando existe; si no, las filas por camión (a piso)."""
+    pos = doc.get("kilos_pos") or []
     camiones = doc.get("camiones") or []
     filas03 = doc.get("filas") or []
     filas04 = doc.get("filas04") or []
@@ -34,7 +49,7 @@ def carga_por_camion(doc: dict) -> list[dict]:
     for c in camiones:
         num = c.get("numero")
         f04 = [f for f in filas04 if f.get("vehiculo") == num]
-        item = {"camion": num, "tipo": c.get("tipo", ""), "pallets": [], "piso": None, "lineas": []}
+        item = {"camion": num, "tipo": c.get("tipo", ""), "kilos": _kg(pos, num), "pallets": [], "piso": None, "lineas": []}
         if f04:
             por_pallet: dict[int, list[dict]] = {}
             for f in f04:
@@ -45,11 +60,11 @@ def carga_por_camion(doc: dict) -> list[dict]:
                 lin = _lineas(filas)
                 un, bu = _total(lin)
                 item["pallets"].append({"pallet": n, "tipo": filas[0].get("tipo", ""), "sucursal": filas[0].get("sucursal", ""),
-                                        "unidades": un, "bultos": bu, "lineas": lin})
+                                        "unidades": un, "bultos": bu, "kilos": _kg(pos, num, int(n)), "lineas": lin})
             piso = _lineas([f for f in f04 if not f.get("pallet")])
             if piso:
                 un, bu = _total(piso)
-                item["piso"] = {"unidades": un, "bultos": bu, "lineas": piso}
+                item["piso"] = {"unidades": un, "bultos": bu, "kilos": _kg(pos, num, 0), "lineas": piso}
             todo = _lineas(f04)
         else:
             todo = _lineas([f for f in filas03 if f.get("camion") == num])
@@ -59,8 +74,12 @@ def carga_por_camion(doc: dict) -> list[dict]:
     return out
 
 
-def anotar(doc: dict) -> dict:
-    """Deja `carga_por_camion` y los totales de bultos en el documento de un cubicaje."""
+def anotar(doc: dict, placed=None) -> dict:
+    """Deja `carga_por_camion` y los totales de bultos y kilos en el documento de un cubicaje.
+    Con `placed` (la carga colocada por el motor) se calculan los kilos; sin él se conservan los ya guardados."""
+    if placed is not None:
+        doc["kilos_pos"] = kilos_posiciones(placed)
     doc["carga_por_camion"] = carga_por_camion(doc)
     doc["bultos"] = sum(x["bultos"] for x in doc["carga_por_camion"])
+    doc["kilos"] = round(sum(x["kilos"] for x in doc["carga_por_camion"]), 1)
     return doc

@@ -110,6 +110,8 @@ def _merge_resultados(partes: list, pallet: list) -> dict:
             pallets.append(d)
         for p in r.placed:
             p.container += off_cam
+            if p.pallet:
+                p.pallet += off_pal
             placed.append(p)
         avisos += r.avisos
         sin_medidas += r.sin_medidas
@@ -312,7 +314,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     f["unidades"] = f["unidades"] * m
         doc["unidades"] = sum(f["unidades"] for f in (doc.get("filas04") or doc.get("filas") or []))
     doc["por_caja_master"] = por_caja
-    resumen_carga.anotar(doc)                                    # unidades y bultos por camión y por pallet
+    resumen_carga.anotar(doc, placed)                            # unidades, bultos y kilos por camión y por pallet
     if "PREDISTRIBUIDO" in modo and pre:
         doc["avisos"] = list(doc.get("avisos") or []) + _avisos_reparto(lineas, pre)
     if por_grupos:

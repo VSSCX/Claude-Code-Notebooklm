@@ -670,7 +670,7 @@ def test_resumen_de_carga_unidades_y_bultos_por_camion_y_por_pallet():
     assert (p1["pallet"], p1["tipo"], p1["unidades"], p1["bultos"]) == (1, "Mix", 16, 10)
     assert {x["sku"]: (x["bultos"], x["unidades"]) for x in p1["lineas"]} == {"A": (5, 11), "B": (5, 5)}
     assert (p2["pallet"], p2["unidades"], p2["bultos"]) == (2, 4, 1)
-    assert c1["piso"] == {"unidades": 6, "bultos": 6, "lineas": c1["piso"]["lineas"]}
+    assert (c1["piso"]["unidades"], c1["piso"]["bultos"]) == (6, 6)
     assert (c1["unidades"], c1["bultos"]) == (26, 17) and (c2["unidades"], c2["bultos"]) == (7, 7)
     assert doc["bultos"] == 24
     # a piso (MDA): cada unidad es un bulto, salvo las líneas que ya traen sus bultos (caja master)
@@ -680,6 +680,28 @@ def test_resumen_de_carga_unidades_y_bultos_por_camion_y_por_pallet():
     anotar(mda)
     assert (mda["carga_por_camion"][0]["unidades"], mda["carga_por_camion"][0]["bultos"]) == (52, 22)
     assert mda["carga_por_camion"][0]["pallets"] == [] and mda["carga_por_camion"][0]["piso"] is None
+
+
+def test_los_kilos_se_suman_por_camion_por_pallet_y_a_piso():
+    from types import SimpleNamespace as P
+
+    from app.cubicaje.resumen import anotar
+    placed = [P(container=1, pallet=1, ped="A", peso=100.0), P(container=1, pallet=1, ped="B", peso=50.5),
+              P(container=1, pallet=2, ped="A", peso=80.0), P(container=1, pallet=0, ped="A", peso=12.0),
+              P(container=2, pallet=3, ped="A", peso=300.0)]
+    doc = {"camiones": [{"numero": 1, "tipo": "Rampla"}, {"numero": 2, "tipo": "Camion 50"}], "filas": [],
+           "filas04": [{"vehiculo": 1, "pallet": 1, "sku": "A", "unidades": 1, "tipo": "Mix"},
+                       {"vehiculo": 1, "pallet": 2, "sku": "A", "unidades": 1, "tipo": "Mono"},
+                       {"vehiculo": 1, "pallet": 0, "sku": "C", "unidades": 1, "tipo": "Piso"},
+                       {"vehiculo": 2, "pallet": 3, "sku": "A", "unidades": 1, "tipo": "Mono"}]}
+    anotar(doc, placed)
+    c1, c2 = doc["carga_por_camion"]
+    assert (c1["kilos"], c2["kilos"], doc["kilos"]) == (242.5, 300.0, 542.5)
+    assert [p["kilos"] for p in c1["pallets"]] == [150.5, 80.0] and c1["piso"]["kilos"] == 12.0
+    # sin las posiciones colocadas se conservan las ya guardadas; la parte de un pedido suma solo lo suyo
+    doc_a = {**doc, "kilos_pos": [k for k in doc["kilos_pos"] if k["pedido"] == "A"]}
+    anotar(doc_a)
+    assert doc_a["carga_por_camion"][0]["kilos"] == 192.0
 
 
 def test_un_producto_mas_alto_que_el_pallet_se_coloca_y_se_dibuja():
