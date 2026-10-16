@@ -1,0 +1,139 @@
+/* panel.css: rediseño interactivo (v4). Todo gráfico filtra todo; los filtros activos se ven como fichas; las tablas largas pasan a un listado emergente.
+   Usa los tokens de app.css (colores, radios, sombras) para seguir el tema claro, oscuro y el modo TV. */
+
+/* ---------- distribución de las tres pantallas ---------- */
+.screen.pedidos{
+  grid-template-columns:clamp(12.5rem,17%,17rem) minmax(0,1fr);
+  grid-template-rows:auto minmax(0,2.3fr) minmax(0,1fr) minmax(0,1.6fr);
+  grid-template-areas:"qf qf" "rail tabla" "graf graf" "ent ent"}
+.screen.resumen{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-rows:auto auto minmax(0,1.08fr) minmax(0,1fr);
+  grid-template-areas:"qf qf qf qf" "kpi kpi kpi kpi" "comp comp comp cla" "crit canal cierre cierre"}
+.screen.diag{
+  grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) minmax(0,1.15fr);
+  grid-template-areas:"qf qf" "c2 c1" "mx det"}
+.a-qf{grid-area:qf}.a-ent{grid-area:ent}.a-cla{grid-area:cla}.a-c1{grid-area:c1}.a-c2{grid-area:c2}
+
+/* ---------- barra rápida: botones de alerta, conteo y fichas de filtros activos ---------- */
+.qf{display:flex;flex-direction:column;gap:.5rem;min-width:0}
+.qf-r{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;min-width:0}
+.qf-r .ctx{margin-left:auto;display:flex;align-items:center;gap:.5rem;color:var(--text-3);white-space:nowrap}
+.qf-r .ctx b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+.qf-r .ctx .ibtn{width:2rem;height:2rem;border:1px solid var(--line-2);background:var(--surface)}
+.chips{display:flex;align-items:center;gap:.375rem;flex-wrap:wrap;min-width:0;animation:chipIn 180ms var(--ease-out)}
+.chips .cap{margin-right:.125rem}
+.chip{display:inline-flex;align-items:center;gap:.375rem;height:1.75rem;padding:0 .25rem 0 .625rem;border-radius:999px;background:var(--primary-soft);color:var(--primary-strong);border:1px solid var(--primary-line);font-weight:600;font-size:.8125rem;white-space:nowrap;max-width:22rem;transition:background-color 120ms var(--ease-out),transform 120ms var(--ease-out)}
+.chip span{overflow:hidden;text-overflow:ellipsis}
+.chip small{font-weight:500;opacity:.75}
+.chip .x{display:grid;place-items:center;width:1.25rem;height:1.25rem;border-radius:50%;color:inherit;transition:background-color 120ms var(--ease-out)}
+@media (hover:hover) and (pointer:fine){.chip .x:hover{background:var(--primary-strong);color:var(--on-strong)}}
+.chip:active{transform:scale(.97)}
+.chip.limpiar{background:transparent;border-style:dashed;color:var(--text-2);border-color:var(--line-2);padding:0 .75rem;font-weight:500}
+@media (hover:hover) and (pointer:fine){.chip.limpiar:hover{color:var(--text);border-color:var(--text-3)}}
+@keyframes chipIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+
+/* ---------- tarjetas con gráfico: pista de que se puede filtrar ---------- */
+.card.vivo .card-h h2::after{content:"";display:inline-block;width:.375rem;height:.375rem;margin-left:.5rem;border-radius:50%;background:var(--primary);opacity:.55;vertical-align:middle}
+.card.tiene-sel{border-color:var(--primary-line);box-shadow:0 0 0 1px var(--primary-line)}
+.card-h .sub .bt{display:inline-flex;align-items:center;gap:.375rem;height:1.5rem;padding:0 .5rem;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--text-2);font-size:.75rem;font-weight:600;transition:background-color 120ms var(--ease-out),color 120ms var(--ease-out),border-color 120ms var(--ease-out)}
+.card-h .sub .bt b{font-variant-numeric:tabular-nums;color:var(--text)}
+.card-h .sub .bt.v{color:var(--err-strong);border-color:color-mix(in srgb,var(--err) 40%,transparent)}
+.card-h .sub .bt.h{color:var(--warn)}
+@media (hover:hover) and (pointer:fine){.card-h .sub .bt:hover{background:var(--surface-3);color:var(--text)}}
+.card-h .sub .bt[aria-pressed="true"]{background:var(--primary-strong);border-color:var(--primary-strong);color:var(--on-strong)}
+.card-h .sub .bt[aria-pressed="true"] b{color:var(--on-strong)}
+.ent-b{display:flex;flex-direction:column;gap:.375rem;padding-bottom:.5rem}
+.ent-b .chart-wrap{flex:1 1 0;min-height:0}
+.lgd{display:flex;gap:.375rem;flex-wrap:wrap;justify-content:center;flex:none;padding:0 .5rem}
+.lg2{display:inline-flex;align-items:center;gap:.375rem;height:1.625rem;padding:0 .75rem;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);font-size:.75rem;color:var(--text-2);font-weight:500;transition:background-color 120ms var(--ease-out),border-color 120ms var(--ease-out)}
+.lg2 i{display:inline-block;width:.625rem;height:.625rem;border-radius:2px;background:var(--c)}
+@media (hover:hover) and (pointer:fine){.lg2:hover{background:var(--surface-3)}}
+.lg2[aria-pressed="true"]{background:var(--primary-soft);border-color:var(--primary-line);color:var(--primary-strong);font-weight:600}
+.chart-box canvas{cursor:pointer}
+
+/* ---------- listado emergente (todos los pedidos / críticos / matriz por día) ---------- */
+.lst-scrim{position:fixed;inset:0;background:rgba(17,24,39,.35);z-index:90;animation:vela 160ms var(--ease-out)}
+.lst-d{position:fixed;inset:4rem 2.5rem 1.5rem;z-index:100;display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-pop);animation:panel 160ms var(--ease-out)}
+.lst-d:focus{outline:none}
+.lst-h{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.875rem 1rem;background:var(--surface);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0}
+.lst-h h2{font-size:1rem;font-weight:700}.lst-h p{font-size:.75rem;color:var(--text-3)}
+.lst-b{flex:1 1 0;min-height:0;overflow:auto;padding:.5rem}
+.lst-b .t{background:var(--surface)}
+.lst-b thead th{position:sticky;top:0;z-index:1;background:var(--surface-2)}
+@media (max-width:899px){.lst-d{inset:.5rem}}
+
+/* ---------- ajustes de pantallas ---------- */
+.screen .card{transition:border-color 160ms var(--ease-out),box-shadow 160ms var(--ease-out)}
+.screen .a-crit .card-b{display:flex;flex-direction:column}
+.crit-f{margin-top:auto;padding:.375rem .5rem .5rem;display:flex}
+.crit-f .btn{width:100%}
+.rc{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.5rem;align-items:center;width:100%;text-align:left;padding:.4375rem 1rem;border-top:1px solid var(--line)}
+.rc:first-child{border-top:0}
+@media (hover:hover) and (pointer:fine){.rc:hover{background:var(--surface-2)}}
+.rc .rs{font-family:var(--f-code);font-weight:600;font-size:.8125rem}
+.rc .rd{color:var(--text-3);font-size:.75rem}
+.rc .rm{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.rc .down{color:var(--err);font-weight:700}
+
+@media (prefers-reduced-motion:reduce){.chips,.card,.cd{animation:none!important;transition:none!important}}
+@media (max-width:899px){
+  .screen.pedidos,.screen.resumen,.screen.diag{grid-template-areas:none}
+  .screen>.card,.screen>.charts3>.card{min-height:16rem}
+}
+.tv .qf-r .ibtn,.tv .chips .x,.tv .crit-f,.tv [data-ver-lista]{display:none}
+
+.dr{z-index:110}.dr-scrim{z-index:105}
+
+#sub-cClas{display:none}
+
+/* ---------- causa pendiente: filas clicables con su barra (como siempre) ---------- */
+button.crow{width:100%;text-align:left;font:inherit;color:inherit;background:transparent;transition:background-color 120ms var(--ease-out)}
+@media (hover:hover) and (pointer:fine){button.crow:hover{background:var(--surface-2)}}
+button.crow[aria-pressed="true"]{background:var(--primary-soft);box-shadow:inset 3px 0 0 var(--primary)}
+.trow[data-ent]{cursor:pointer}
+
+/* ---------- detalle de pedidos rehecho: celdas de dos líneas, entrega con su estado ---------- */
+table.t2 td{padding-top:.4375rem;padding-bottom:.4375rem;vertical-align:middle}
+table.t2 td.pd{white-space:nowrap}
+table.t2 td.pd b{font-size:.875rem}
+table.t2 td.cl b{display:block;font-weight:600;line-height:1.25}
+table.t2 td.cl small{display:block;color:var(--text-3);font-size:.75rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.t2 tr.clic{cursor:pointer}
+.en-f{font-variant-numeric:tabular-nums}
+.en{display:inline-block;margin-left:.375rem;padding:.0625rem .4375rem;border-radius:999px;font-size:.6875rem;font-weight:700;background:var(--surface-3);color:var(--text-2);white-space:nowrap}
+.en.v{background:var(--err-soft);color:var(--err-strong)}
+.en.h{background:var(--warn-soft);color:var(--warn)}
+.en-n{color:var(--text-3)}
+
+/* ---------- calendario de creación (Diagnóstico) ---------- */
+.cal{display:flex;flex-direction:column;gap:.25rem;height:100%;padding:.25rem .75rem .5rem}
+.cal-h,.cal-w{display:grid;grid-template-columns:3.25rem repeat(7,minmax(0,1fr));gap:.25rem;align-items:stretch}
+.cal-h{font-size:.75rem;color:var(--text-3);font-weight:600;text-align:center}
+.cal-w{flex:1 1 0;min-height:0}
+.cal-e{font-size:.75rem;color:var(--text-3);align-self:center;white-space:nowrap}
+.cd{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;border-radius:var(--r-sm);border:1px solid transparent;
+  background:color-mix(in srgb,var(--primary-strong) calc(var(--i,0)*100%),var(--surface-3));color:var(--text);min-width:0;min-height:0;
+  transition:transform 120ms var(--ease-out),box-shadow 120ms var(--ease-out)}
+.cd.vacio{background:transparent}
+.cd .dn{font-size:.6875rem;opacity:.7;line-height:1.1}
+.cd b{font-size:.8125rem;font-variant-numeric:tabular-nums;line-height:1.15}
+.cd.hi{color:#fff;background:color-mix(in srgb,var(--primary-strong) calc(60% + var(--i,0)*40%),#001a4d 68%)}.cd.hi .dn{opacity:1}
+@media (hover:hover) and (pointer:fine){button.cd:hover{transform:scale(1.06);box-shadow:0 2px 8px rgba(17,24,39,.2);z-index:1}}
+button.cd.sel{border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--primary-strong)}
+.cal-l{display:flex;align-items:center;gap:.375rem;justify-content:flex-end;font-size:.6875rem;color:var(--text-3);flex:none}
+.cal-l i{width:.875rem;height:.875rem;border-radius:3px;background:color-mix(in srgb,var(--primary-strong) calc(var(--i)*100%),var(--surface-3))}
+
+table.t th.ord .thw span:first-child{white-space:nowrap}
+
+/* la columna de la izquierda de Pedidos VTEX, más compacta para que quepan la tarjeta y la causa completas */
+.screen.pedidos .rail-col{grid-template-rows:auto minmax(0,1fr);align-content:stretch}
+.screen.pedidos .rail-col .card:last-child .card-b{overflow:auto;min-height:0}
+.screen.pedidos .rail-col .tl-head{padding:.5rem 1rem .125rem}
+.screen.pedidos .rail-col .trow{padding:.25rem .5rem}
+.screen.pedidos .rail-col .trow .tv{font-size:1.125rem}
+.screen.pedidos .rail-col .card-h{padding:.5rem 1rem .125rem}
+.screen.pedidos .rail-col .card-h h2{font-size:.9375rem}
+.screen.pedidos .rail-col .crow{padding:.3125rem 1rem .4375rem}
+table.t2 td{padding-top:.3125rem;padding-bottom:.3125rem}

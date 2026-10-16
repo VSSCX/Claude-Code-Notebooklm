@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acceso - Cruce VTEX y SAP</title>
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<script src="/js/tema.js"></script>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/login.css">
+</head>
+<body class="acceso">
+<main class="acceso-caja">
+  <img src="/img/logo.png" alt="Logo de la empresa" width="95" height="22">
+  <h1 translate="no">Cruce VTEX y SAP</h1>
+  <p class="muted">Ingresa con tu usuario para ver los datos.</p>
+  <form id="f" autocomplete="on" novalidate>
+    <label for="u">Correo</label>
+    <input id="u" name="usuario" type="email" autocomplete="username" required autofocus>
+    <label for="c">Clave</label>
+    <input id="c" name="clave" type="password" autocomplete="current-password" required>
+    <p id="err" role="alert" class="acceso-err" hidden></p>
+    <button class="btn primary" id="ok" type="submit">Entrar</button>
+  </form>
+  <p class="muted pie">Tu acceso queda registrado en la bitácora de auditoría.</p>
+</main>
+<script src="/js/login.js"></script>
+</body>
+</html>
