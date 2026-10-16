@@ -19,7 +19,7 @@ async function cargarVentas(){
       else{S.vt.sel=null;S.vt.prods=null;}
     }
   }catch(e){if(id!==S.vt.req)return;S.vt.estado='error';S.vt.data={motivo:'No se pudieron calcular las ventas.'};}
-  if(S.view==='pedidos'){render();}
+  if(S.data)render();
   if(S.vt.zoom)renderZoom();
 }
 function mensajeVentas(){
@@ -28,12 +28,12 @@ function mensajeVentas(){
   const d=v.data||{},tablas=(d.tablas||[]).length?`<p class="vt-t">Tablas parecidas en el servidor: ${d.tablas.map(esc).join(', ')}</p>`:'';
   return `<div class="empty"><div><h3>Ventas por clasificación no disponibles</h3>${esc(d.motivo||'Sin datos')}${tablas}</div></div>`;
 }
-function cardVentas(){
+function cardVentas(cls=''){
   const v=S.vt,ok=v.estado==='ok'&&v.data&&v.data.clasif.length;
   const total=ok?`<span class="vt-tot" title="Venta total de lo filtrado, sin cancelados">${ventaTxt(v.data.total)}</span>`:'';
   const zoom=`<button class="ibtn" data-zoom aria-haspopup="dialog" aria-label="Zoom: ver las ventas por producto de cada clasificación" title="Zoom: ver las ventas por producto de cada clasificación"${ok?'':' disabled'}>${ico('zoom',16)}</button>`;
   const cuerpo=ok?`<div class="chart-wrap">${chartBox('cClas','Ventas por clasificación 2')}</div>`:`<div class="chart-wrap">${mensajeVentas()}</div>`;
-  return card('','Ventas por Clasif2',`<span id="sub-cClas">${esc(S.subs.cClas||'')}</span>${total}${zoom}`,cuerpo);
+  return card(cls,'Ventas por Clasif2',`<span id="sub-cClas">${esc(S.subs.cClas||'')}</span>${total}${zoom}`,cuerpo,'','vivo'+(seleccion('clasif2').length?' tiene-sel':''));
 }
 function pintarVentas(intento=0){
   const v=S.vt;if(v.estado!=='ok'||!v.data)return;

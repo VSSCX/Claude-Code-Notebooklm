@@ -10,6 +10,9 @@ Como usarlo (no necesita permisos de administrador):
 Este mismo archivo sirve para ACTUALIZAR: vuelve a ejecutarlo y se reemplaza el
 codigo, pero tu archivo .env (credenciales) NO se toca.
 
+Novedades v4.0: tablero rediseñado e interactivo. Todo grafico filtra toda la pestaña (clasificacion, cliente, SLA, causa, dia de
+entrega); las fichas de filtros activos se quitan con una x; grafico de entrega estimada con los estados Integrado - En proceso (On time),
+Integrado - Atrasado (Out time) y No Integrado - Pendiente; calendario de pedidos por dia; alertas con nombres claros.
 Novedades v3.10: el asistente se probo con una simulacion de analistas (948 preguntas); corrige errores de tipeo en modelos (med65b), formas coloquiales
 ("cuanta plata entro", "que se nos esta agotando") y filtros por cantidad.
 Novedades v3.9: el asistente entiende fechas escritas ("del 5 de agosto"), rankings ("el mejor dia"), clasificaciones, porcentajes,
@@ -59,7 +62,7 @@ import webbrowser
 import zlib
 from pathlib import Path
 
-VERSION = "3.10"
+VERSION = "4.0"
 NOMBRE = "POC Dashboard D2C"
 SHA256 = "38674ec08467969b85fe4d5c0727a1fe30cd2d4577bc0a2b5b9419a53a984914"
 

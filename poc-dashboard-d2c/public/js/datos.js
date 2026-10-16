@@ -12,7 +12,7 @@ const VISTAS=['pedidos','resumen','diagnostico'];
 const S={fa:false,u:1,orden:{det:null,crit:null,canal:null},data:null,version:'',view:VISTAS.includes(location.hash.slice(1))?location.hash.slice(1):(VISTAS.includes(leer('vista'))?leer('vista'):'pedidos'),poll:5,opts:null,req:0,err:null,mon:null,revisadoAt:null,
   vistos:new Set(),vistosInit:false,prevTarj:null,filtros:null,
   tema:['light','dark'].includes(leer('tema'))?leer('tema'):'auto',tv:leer('tv')==='1',subs:{},pintada:null,per:'auto',mas:false,dr:null};
-const VACIO=()=>({canal:[],cliente:[],clasif2:[],status:[],sla:[],buscar:'',fecha_ini:null,fecha_fin:null,...INICIAL()});
+const VACIO=()=>({canal:[],cliente:[],clasif2:[],entrega:[],causa:[],estado_ped:[],estado_ent:[],status:[],sla:[],buscar:'',fecha_ini:null,fecha_fin:null,...INICIAL()});
 S.filtros=VACIO();
 
 /* ============ período: al abrir, Pedidos VTEX muestra solo el mes en curso (se puede mirar hacia atrás) ============
@@ -71,7 +71,7 @@ async function cargar(){
     S.prevTarj=S.data?S.data.tarjetas:null;
     S.data=j;S.version=j.version;S.err=j.error||null;
     render();
-    if(S.view==='pedidos')cargarVentas();
+    cargarVentas();
   }catch(e){
     if(id!==S.req)return; $('#shell').classList.remove('loading');
     S.err='No hay conexión con el servidor. ¿Está corriendo el dashboard (run.bat)?';render();

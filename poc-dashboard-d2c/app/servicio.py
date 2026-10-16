@@ -38,6 +38,11 @@ _PRIMERA_VEZ: dict = {}        # Sequence -> instante en que se vio por primera 
 ORDEN_ESTADO = ["Integrado · Pendiente", "No integrado · Pendiente",
                 "No integrado · Facturado", "Integrado · Facturado", "Cancelado"]
 ABIERTOS = ["Integrado · Pendiente", "No integrado · Pendiente", "No integrado · Facturado"]
+# Estados del grafico de entrega estimada (pedidos abiertos):
+#  - En proceso (On time): integrado en SAP y todavia dentro del plazo (entrega estimada de hoy en adelante)
+#  - Atrasado (Out time):  integrado en SAP y con la entrega estimada ya vencida
+#  - No integrado:         todavia sin pedido en SAP (sea cual sea su status en VTEX), pendiente de integrar
+ENT_ESTADOS = ["Integrado · En proceso (On time)", "Integrado · Atrasado (Out time)", "No integrado · Pendiente"]
 COLOR_ESTADO = {
     "Integrado · Facturado": "#2F9E6B", "Integrado · Pendiente": "#3B7DD8",
     "No integrado · Facturado": "#D0483A", "No integrado · Pendiente": "#E09A22",
@@ -349,6 +354,42 @@ def secuencias_clasif2(nombres) -> set:
     return _CLAS_SEQ["d"][claves]
 
 
+def mascara_entrega(d: pd.DataFrame, claves, hoy: pd.Timestamp) -> pd.Series:
+    """Pedidos ABIERTOS cuya entrega estimada cae en alguna de las claves: 'vencido' (antes de hoy), 'hoy', '<' (antes de la ventana),
+    '>' (despues de la ventana) o una fecha AAAA-MM-DD. Es la misma ventana que dibuja el grafico de entrega estimada."""
+    sed = d["Shipping_Estimate_Date"]
+    base = d["Estado Pedido"].isin(ABIERTOS) & sed.notna() & (sed.dt.year >= 2000)
+    dia = sed.dt.normalize()
+    m = pd.Series(False, index=d.index)
+    for k in (claves if isinstance(claves, (list, tuple, set)) else [claves]):
+        k = str(k)
+        if k == "vencido":
+            m |= dia < hoy
+        elif k == "hoy":
+            m |= dia == hoy
+        elif k == "<":
+            m |= dia < hoy - pd.Timedelta(days=6)
+        elif k == ">":
+            m |= dia > hoy + pd.Timedelta(days=14)
+        elif len(k) == 10:
+            try:
+                m |= dia == pd.Timestamp(k)
+            except ValueError:
+                pass
+    return base & m
+
+
+def estado_entrega(d: pd.DataFrame, hoy: pd.Timestamp) -> pd.Series:
+    """Estado de entrega de cada pedido abierto (ver ENT_ESTADOS); vacio para los que no estan abiertos."""
+    sed = d["Shipping_Estimate_Date"].dt.normalize()
+    ip = d["Estado Pedido"] == "Integrado · Pendiente"
+    out = pd.Series(np.nan, index=d.index, dtype=object)
+    out[ip & (sed < hoy)] = ENT_ESTADOS[1]
+    out[ip & ~(sed < hoy)] = ENT_ESTADOS[0]
+    out[d["Estado Pedido"].isin(["No integrado · Pendiente", "No integrado · Facturado"])] = ENT_ESTADOS[2]
+    return out
+
+
 def _aplicar_filtros(dim: pd.DataFrame, f: dict) -> pd.DataFrame:
     d = dim
     if f.get("alcance") == "abiertos":                       # = filtro de pagina Trazabilidad "En seguimiento"
@@ -367,6 +408,14 @@ def _aplicar_filtros(dim: pd.DataFrame, f: dict) -> pd.DataFrame:
         d = d[d["SLA_Type"].isin(f["sla"])]
     if f.get("clasif2"):                                     # clic en una barra de "Ventas por Clasif2": pedidos que traen productos de esa clasificacion
         d = d[d["Sequence"].isin(secuencias_clasif2(f["clasif2"]))]
+    if f.get("entrega"):                                     # clic en una barra del grafico de entrega estimada
+        d = d[mascara_entrega(d, f["entrega"], _CACHE["hoy"])]
+    if f.get("causa"):                                       # clic en una causa de pendiente
+        d = d[d["Causa Pendiente"].isin(f["causa"])]
+    if f.get("estado_ent"):                                  # clic en un estado de la leyenda del grafico de entrega estimada
+        d = d[estado_entrega(d, _CACHE["hoy"]).isin(f["estado_ent"])]
+    if f.get("estado_ped"):                                  # clic en un estado del pedido (leyenda de los graficos)
+        d = d[d["Estado Pedido"].isin(f["estado_ped"])]
     q = str(f.get("buscar") or "").strip()
     if q:
         m = (d["Sequence"].astype(str).str.contains(q, case=False, regex=False, na=False)
@@ -424,17 +473,17 @@ def _matriz(dim):
 
 
 def _matriz_entrega(dim, hoy):
-    """Pedidos ABIERTOS por dia de ENTREGA ESTIMADA x estado (la matriz de la pagina Pedidos del Power BI)."""
+    """Pedidos ABIERTOS por dia de ENTREGA ESTIMADA x estado de entrega (En proceso / Atrasado / No integrado)."""
     d = dim[dim["Estado Pedido"].isin(ABIERTOS) & dim["Shipping_Estimate_Date"].notna()
             & (dim["Shipping_Estimate_Date"].dt.year >= 2000)]
-    vacio = {"cols": [], "estados": ABIERTOS, "filas": [[] for _ in ABIERTOS], "totales": [], "total": 0}
+    vacio = {"cols": [], "estados": ENT_ESTADOS, "filas": [[] for _ in ENT_ESTADOS], "totales": [], "total": 0}
     if not len(d):
         return vacio
     ini, fin = hoy - pd.Timedelta(days=6), hoy + pd.Timedelta(days=14)
-    clave = d["Shipping_Estimate_Date"].map(
-        lambda x: "<" if x < ini else (">" if x > fin else x.strftime("%Y-%m-%d")))
-    piv = d.assign(_k=clave).pivot_table(index="Estado Pedido", columns="_k", values="Sequence",
-                                         aggfunc="count", fill_value=0).reindex(ABIERTOS, fill_value=0)
+    sed = d["Shipping_Estimate_Date"].dt.normalize()
+    clave = sed.map(lambda x: "<" if x < ini else (">" if x > fin else x.strftime("%Y-%m-%d")))
+    piv = d.assign(_k=clave, _e=estado_entrega(d, hoy)).pivot_table(index="_e", columns="_k", values="Sequence", aggfunc="count",
+                                                                      fill_value=0).reindex(ENT_ESTADOS, fill_value=0)
     fechas = sorted(c for c in piv.columns if c not in ("<", ">"))
     orden = (["<"] if "<" in piv.columns else []) + fechas + ([">"] if ">" in piv.columns else [])
     cols = []
@@ -445,9 +494,9 @@ def _matriz_entrega(dim, hoy):
             cols.append({"k": k, "etq": "Posteriores", "rel": 1})
         else:
             f = pd.Timestamp(k)
-            cols.append({"k": k, "etq": f.strftime("%d-%m"), "rel": -1 if f < hoy else (0 if f == hoy else 1)})
+            cols.append({"k": k, "etq": f.strftime("%d-%m"), "dow": "LMXJVSD"[f.weekday()], "rel": -1 if f < hoy else (0 if f == hoy else 1)})
     piv = piv[orden]
-    return {"cols": cols, "estados": ABIERTOS, "filas": piv.values.tolist(),
+    return {"cols": cols, "estados": ENT_ESTADOS, "filas": piv.values.tolist(),
             "totales": piv.sum(axis=0).tolist(), "total": int(piv.values.sum())}
 
 
@@ -504,7 +553,7 @@ def _top(dim, col, n=12):
 
 
 # Columnas por las que se puede ordenar cada tabla (clave del navegador -> columna del modelo)
-ORDEN_DET = {"sequence": "Sequence", "pedido_sap": "Pedido SAP", "estado": "Estado Pedido", "canal": "Canal",
+ORDEN_DET = {"sequence": "Sequence", "pedido_sap": "Pedido SAP", "estado": "Estado Pedido", "canal": "Canal", "cliente": "SalesChannelName",
              "sla": "SLA_Type", "fecha": "Creation_Date", "sed": "Shipping_Estimate_Date", "monto": "Total_Value"}
 ORDEN_CRIT = {"sequence": "Sequence", "canal": "Canal", "dias": "Dias Facturado Pendiente", "monto": "Total_Value"}
 
@@ -538,7 +587,7 @@ def _criticos(dim, orden=None):
 
 
 COLS_DET = ["Sequence", "Creation_Date", "Estado Pedido", "Canal", "SLA_Type", "warehouse", "Status", "Total_Value",
-            "Pedido SAP", "Shipping_Estimate_Date", "Antigüedad Días"]
+            "Pedido SAP", "Shipping_Estimate_Date", "Antigüedad Días", "SalesChannelName"]
 
 
 def _fecha(serie):
@@ -556,9 +605,9 @@ def _detalle(dim, recientes, orden=None):
         det = det.sort_values(["_nuevo", "_ord", "Antigüedad Días"], ascending=[False, True, False]).head(500)
     cols = zip(det["Sequence"], _fecha(det["Creation_Date"]), det["Estado Pedido"], det["Canal"], det["SLA_Type"],
                det["warehouse"], det["Status"], det["Total_Value"].fillna(0).astype(float), det["Pedido SAP"],
-               det["_nuevo"], _fecha(det["Shipping_Estimate_Date"]))
+               det["_nuevo"], _fecha(det["Shipping_Estimate_Date"]), det["SalesChannelName"])
     return [{"sequence": sq, "fecha": f, "estado": e, "canal": c, "sla": sla, "warehouse": w, "status": st, "monto": m,
-             "pedido_sap": ps, "nuevo": bool(n), "sed": sed} for sq, f, e, c, sla, w, st, m, ps, n, sed in cols]
+             "pedido_sap": ps, "nuevo": bool(n), "sed": sed, "cliente": cl} for sq, f, e, c, sla, w, st, m, ps, n, sed, cl in cols]
 
 
 def construir(filtros: dict) -> dict:
@@ -597,8 +646,11 @@ def construir(filtros: dict) -> dict:
         d2 = _aplicar_filtros(dim_full, {**f, "alerta": None, "tarjeta": None, "alcance": "todos", **cfg["ov"]})
         alertas[k] = int((d2[cfg["col"]] == cfg["val"]).sum())
 
-    pend = dim[(dim["Status"] == "ready-for-handling") & (dim["Estado Ingreso"] == "Ingresado")]
+    dim_causa = _aplicar_filtros(dim_full, {**f, "causa": None})
+    pend = dim_causa[(dim_causa["Status"] == "ready-for-handling") & (dim_causa["Estado Ingreso"] == "Ingresado")]
     causa = pend["Causa Pendiente"].value_counts().to_dict() if len(pend) else {}
+    dim_ent = _aplicar_filtros(dim_full, {**f, "entrega": None})
+    venc = dim_ent[mascara_entrega(dim_ent, ["vencido"], hoy)]
 
     ahora = time.time()
     recientes = {s for s, t in _PRIMERA_VEZ.items() if ahora - t <= settings.nuevo_segundos}
@@ -624,7 +676,8 @@ def construir(filtros: dict) -> dict:
         "hoy": hoy.strftime("%Y-%m-%d"), "generado": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
         "version": _CACHE["version"], "consulta": _CACHE["consulta"], "ultimo_pedido": _CACHE["ultimo_pedido"],
         "kpi": kpi, "ejecutivo": ejecutivo, "tarjetas": tarjetas, "alertas": alertas, "causa": causa,
-        "matriz_entrega": _matriz_entrega(dim, hoy), "matriz_dia": _matriz(dim_dia),
+        "matriz_entrega": _matriz_entrega(dim_ent, hoy),
+        "vencidos": {"n": int(len(venc)), "monto": float(venc["Total_Value"].sum() or 0)}, "monto_filtrado": float(dim["Total_Value"].sum() or 0), "matriz_dia": _matriz(dim_dia),
         "composicion": _composicion(dim_mes), "canal": _canal(dim, sin_fecha, hoy),
         "cierre": _cierre(base, hoy),
         "g_sla": _top(dim_sla, "SLA_Type"), "g_cli": _top(dim_cli, "SalesChannelName"),

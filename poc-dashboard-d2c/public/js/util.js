@@ -28,7 +28,7 @@ const ALIAS={up:'sube',down:'baja',flat:'plano',x:'x',plus:'mas',check:'ok',sun:
 const ico=(k,s=16)=>`<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[ALIAS[k]||k]||''}</svg>`;
 
 /* los cinco estados de un pedido: el color vive en los tokens (--st-*), así sigue al tema */
-const ST={"Integrado · Facturado":'--st-if',"Integrado · Pendiente":'--st-ip',"No integrado · Facturado":'--st-nf',"No integrado · Pendiente":'--st-np',"Cancelado":'--st-ca'};
+const ST={"Integrado · Facturado":'--st-if',"Integrado · Pendiente":'--st-ip',"No integrado · Facturado":'--st-nf',"No integrado · Pendiente":'--st-np',"Cancelado":'--st-ca',"Integrado · En proceso (On time)":'--st-if',"Integrado · Atrasado (Out time)":'--st-nf'};
 const stVar=e=>`var(${ST[e]||'--edge'})`, stClr=e=>css(ST[e]||'--edge');
 const PILL={"Integrado · Facturado":"g","Integrado · Pendiente":"b","No integrado · Facturado":"r","No integrado · Pendiente":"a","Cancelado":"n"};
 const pill=e=>`<span class="tag ${PILL[e]||'n'}">${esc(e)}</span>`;

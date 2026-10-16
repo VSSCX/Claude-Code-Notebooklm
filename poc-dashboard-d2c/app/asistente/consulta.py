@@ -12,7 +12,7 @@ from .texto import lista_es
 
 ESTADO_ETQ = {"no_integrado": "No integrados", "integrado": "Integrados", "cancelado": "Cancelados", "pendiente": "Pendientes",
               "facturado": "Facturados", "vencido": "Con entrega vencida", "sin_despacho": "Facturados sin despacho",
-              "alerta_bws": "Alerta BWS", "alerta_post": "Alerta POST Fechado", "alerta_mkp": "Alerta MKP",
+              "alerta_bws": "BWS atrasados", "alerta_post": "Post fechados por preparar", "alerta_mkp": "Marketplace con 5+ días sin preparar",
               "quiebre": "Pendientes por quiebre de stock"}
 STATUS_ES = {"ready-for-handling": "Pendiente (ready-for-handling)", "invoiced": "Facturado (invoiced)",
              "canceled": "Cancelado (canceled)"}

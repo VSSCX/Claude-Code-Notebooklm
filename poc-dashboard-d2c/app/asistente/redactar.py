@@ -5,7 +5,7 @@ from .texto import lista_es, sa
 
 ADJ = {"no_integrado": "no integrados", "integrado": "integrados", "cancelado": "cancelados", "pendiente": "pendientes",
        "facturado": "facturados", "vencido": "con entrega vencida", "sin_despacho": "facturados sin despacho",
-       "alerta_bws": "con alerta BWS", "alerta_post": "con alerta POST Fechado", "alerta_mkp": "con alerta MKP",
+       "alerta_bws": "BWS atrasados", "alerta_post": "post fechados por preparar", "alerta_mkp": "de marketplace con 5+ días sin preparar",
        "quiebre": "pendientes por quiebre de stock"}
 EJEMPLOS = ["¿Cuál es la venta de los últimos 7 días del MED165B?",
             "¿Cuántos pedidos se cancelaron el último mes?",
