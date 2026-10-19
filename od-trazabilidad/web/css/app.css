@@ -921,3 +921,15 @@ table.tbl.ent-tbl{min-width:0;table-layout:auto}
 .paso-op input:disabled + span{color:var(--muted)}
 
 .alertas{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+
+/* Análisis: de dónde salen los datos y cuándo se actualizaron */
+.fuentes{display:flex;flex-direction:column;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper);margin:0 0 12px}
+.fuente{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;flex-wrap:wrap}
+.fuente + .fuente{border-top:1px solid var(--hair)}
+.fuente > span:nth-child(2){flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:1px;font-size:var(--t-sm)}
+.fuente .tag{margin-top:1px;min-width:34px;justify-content:center}
+.fuente small{font-size:var(--t-xs)}
+.ya-ent{display:block;font-size:11px;color:var(--muted);white-space:nowrap}
+.completos{margin-top:6px}
+.completos summary{cursor:pointer}
+.completos .tbl{margin-top:6px;max-width:640px}

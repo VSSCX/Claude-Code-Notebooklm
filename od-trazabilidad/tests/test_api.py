@@ -1590,7 +1590,7 @@ def test_suministros_lo_ya_suministrado_queda_registrado_y_lo_liberado_despues_e
 
     def analizar(unidades):
         monkeypatch.setattr(sap, "leer_pedido", lambda p, pu, f: sap.Lectura(pedido=p, posiciones=[
-            sap.Posicion("900081624", unidades, unidades)]))
+            sap.Posicion("900081624", unidades, unidades + 100)]))       # lo liberado ahora, sobre un pedido más grande
         tid = c.post("/api/analisis/4950", json={"puesto": "PN01", "cliente": "PARIS"}).json()["id"]
         return _esperar_job(c, tid)
 

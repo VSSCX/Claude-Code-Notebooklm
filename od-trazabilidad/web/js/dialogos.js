@@ -455,6 +455,7 @@ document.addEventListener('click', ev => {
       break; }
     case 'abrirLecturaSap': abrirLecturaSap(); break;
     case 'abrirAnalisis': abrirLecturaSap('analizar'); break;
+    case 'actualizarSql': actualizarSql(t.dataset.ped, true); break;
     case 'cambiarUsuario': pedirSesion(true); break;
     case 'guardarCamiones': guardarCamiones(false); break;
     case 'juntarModo': UI.juntar = !UI.juntar; if (!UI.juntar){ UI.juntarSel.clear(); } render(); break;

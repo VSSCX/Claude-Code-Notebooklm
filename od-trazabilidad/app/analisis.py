@@ -210,6 +210,7 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
         filas.append({
             "sku": sku, "descripcion": desc, "qty_entrega": j, "pendiente": k, "cruce_zsd": cruce.get(sku, ""),
             "plan": m, "real": n, "en_entrega": o, "saldo": t, "sin_plan": sin_plan,
+            "pedida": float(p.get("pedida") if p.get("pedida") is not None else k), "ya_entregado": float(p.get("ya_entregado") or 0),
             "carga_calculada": carga_calc, "carga": carga, "ajustada": sku in ajustes,
             "ocupacion": ocup, "alerta": al, "alertas": alertas(j, k, t), "orden": ORDEN[al],
             "control_calidad": int(calidad.get(sku, 0) or 0),

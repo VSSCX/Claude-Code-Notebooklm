@@ -158,6 +158,8 @@ PESADAS = ("analisis:%", "cubicaje:%")
 def resumen_analisis(doc: dict) -> dict:
     filas = (doc.get("resultado") or {}).get("filas", [])
     return {"generado": doc.get("generado", ""), "generado_hora": doc.get("generado_hora", ""),
+            "completos": len(doc.get("completos") or []), "sql_actualizado": doc.get("sql_actualizado", ""),
+            "ya_entregado": sum(f.get("ya_entregado") or 0 for f in filas),
             "omitidos": list(doc.get("omitidos") or []), "sin_sql": bool(doc.get("sin_sql")), "sin_plan": bool((doc.get("sin_sql") or {}).get("plan")),
             "suministro": doc.get("suministro", 1), "cliente": doc.get("cliente", ""), "grupo_sop": doc.get("grupo_sop", ""), "filas": len(filas),
             "limitadas": sum(1 for f in filas if f["carga_calculada"] < f["qty_entrega"]),
@@ -431,6 +433,42 @@ def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[d
     p.actualizado = ahora()
     return {"pedido": pedido, "nuevo": nuevo, "agregadas": agregadas, "actualizadas": actualizadas,
             "posiciones": len(posiciones)}
+
+
+def netear_posiciones(s: Session, pedido: str, crudas: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Lo que falta de verdad: a lo que SAP dice pendiente se le restan las entregas ya registradas de este pedido.
+
+    VL01N no siempre refleja una entrega recién creada. Se toma el MENOR entre lo pendiente de SAP y (pedido − ya en
+    entrega), así no se resta dos veces cuando SAP ya la descontó. Devuelve (posiciones con lo que falta, productos que
+    ya quedaron completos en entregas). Cada posición lleva `pedida` (total del pedido) y `ya_entregado`."""
+    p = _get_pedido(s, pedido)
+    if p is None:
+        return [dict(x) for x in crudas], []
+    lineas = {l.sku: l for l in p.lineas}
+    ya: dict[str, int] = {}
+    for e in p.entregas:
+        if e.anulada:
+            continue
+        for l in e.lineas:
+            ya[l.sku] = ya.get(l.sku, 0) + l.qty
+    netas, completos = [], []
+    for pos in crudas:
+        sku = norm_sku(pos["sku"])
+        pend, ent = float(pos.get("qty_pendiente") or 0), float(pos.get("qty_entrega") or 0)
+        linea = lineas.get(sku)
+        hecho = ya.get(sku, 0) + (linea.externa if linea else 0)
+        if hecho <= 0 or linea is None:
+            netas.append({**pos, "pedida": pend, "ya_entregado": 0})
+            continue
+        total = max(float(linea.qty), pend)
+        falta = max(0.0, min(pend, total - hecho))
+        if falta <= 0:
+            completos.append({"sku": sku, "pedida": total, "ya_entregado": hecho,
+                              "descripcion": linea.descripcion or ""})
+            continue
+        netas.append({**pos, "qty_pendiente": falta, "qty_entrega": min(ent, falta), "pedida": total,
+                      "ya_entregado": hecho})
+    return netas, completos
 
 
 def completar_oc(p: Pedido, oc: str) -> bool:

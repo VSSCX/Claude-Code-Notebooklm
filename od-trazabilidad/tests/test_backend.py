@@ -1108,14 +1108,20 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     from app.main import app
     c = TestClient(app)
     with SessionLocal() as s:
+        from app.analisis import calcular
         doc = _analisis_de_prueba()
         doc["oc_sap"] = "OC-77"
         doc["generado_hora"] = "2026-10-01T09:30"
-        fila = next(f for f in doc["resultado"]["filas"] if f["sku"] == "9000")
-        fila["sku"] = "90000"                                  # el SKU que tiene el pedido de la prueba
-        fila["stock"] = {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}
-        fila["disponibilidad"] = "300 - 2026-10-15"           # lo que se sabía al analizar
-        fila["control_calidad"] = 12                          # y lo que había en control de calidad
+        for pos in doc["posiciones"]:
+            if pos["sku"] == "9000":
+                pos["sku"] = "90000"                          # el SKU que tiene el pedido de la prueba
+        doc["plan"]["90000"] = doc["plan"].pop("9000")
+        doc["medidas"]["90000"] = doc["medidas"].pop("9000")
+        doc["stock"] = {"90000": {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}}
+        doc["disponibilidad"] = {"90000": {"cantidad": 300, "fecha": "2026-10-15"}}      # lo que se sabía al analizar
+        doc["control_calidad"] = {"90000": 12}                                         # y lo que había en control de calidad
+        doc["resultado"] = calcular(doc["posiciones"], doc["plan"], {}, doc["medidas"], doc["disponibilidad"], doc["stock"],
+                                    control_calidad=doc["control_calidad"])
         domain.guardar_config(s, "analisis:4005100000", doc)
         s.commit()
     consultas = []
@@ -1593,4 +1599,89 @@ def test_el_analisis_trae_las_unidades_en_control_de_calidad_y_el_excel_kam_mues
     assert "Control de calidad" in [x.value for x in ws[cab]]
     f = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "9000")
     assert f[6] == "Stock parcial + Limitado SOP" and f[11] == 14
+    time.sleep(0.2)
+
+
+def _preparar_analisis_neteo(monkeypatch, vl01n, plan):
+    from app.integrations import base_medidas, bases, sap
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(posiciones=[
+        SimpleNamespace(sku=k, qty_entrega=v[0], qty_pendiente=v[1]) for k, v in vl01n.items()], aviso=""))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: [])
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: plan)
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
+    monkeypatch.setattr(bases, "oc_de", lambda *a: "")
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {k: {"desc": f"{k} PRODUCTO {k}", "max_camion": 300} for k in vl01n})
+
+
+def test_el_analisis_resta_las_entregas_y_marca_solo_lo_que_falta(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import bases
+    from app.main import app
+    c = TestClient(app)
+    plan = {"9000": {"plan": 500, "vendido": 0, "pdte_mes": 0, "tipo": "X"}, "9001": {"plan": 500, "vendido": 0, "pdte_mes": 0, "tipo": "X"}}
+    _preparar_analisis_neteo(monkeypatch, {"9000": (100, 100), "9001": (20, 20)}, plan)
+    cuerpo = {"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"}
+    t = _esperar(c, c.post("/api/analisis/4009990001", json=cuerpo).json()["id"])
+    assert t["estado"] == "ok" and t["datos"]["completos"] == 0
+    # se crean entregas de 40 de 9000 y las 20 de 9001
+    for n, lineas in (("8800001", [{"sku": "9000", "qty": 40}]), ("8800002", [{"sku": "9001", "qty": 20}])):
+        r = c.put(f"/api/entregas/{n}", json={"entrega": n, "pedido": "4009990001", "lineas": lineas})
+        assert r.status_code in (200, 201), r.text
+    # SAP todavía dice 100 y 20 pendientes (no descuenta la entrega): el análisis nuevo marca solo lo que falta
+    t = _esperar(c, c.post("/api/analisis/4009990001", json=cuerpo).json()["id"])
+    assert t["estado"] == "ok" and t["datos"]["completos"] == 1
+    doc = c.get("/api/analisis/4009990001").json()
+    filas = {f["sku"]: f for f in doc["resultado"]["filas"]}
+    assert list(filas) == ["9000"]                                         # 9001 ya está completo en entregas
+    assert filas["9000"]["pendiente"] == 60 and filas["9000"]["qty_entrega"] == 60 and filas["9000"]["carga"] == 60
+    assert filas["9000"]["pedida"] == 100 and filas["9000"]["ya_entregado"] == 40
+    assert doc["completos"] == [{"sku": "9001", "pedida": 20, "ya_entregado": 20, "descripcion": doc["completos"][0]["descripcion"]}]
+    assert [p["qty_pendiente"] for p in doc["posiciones_sap"]] == [100, 20]            # lo crudo de SAP queda guardado
+    # si SAP ya descontó la entrega (pendiente 60) no se resta dos veces
+    _preparar_analisis_neteo(monkeypatch, {"9000": (60, 60), "9001": (0, 0)}, plan)
+    t = _esperar(c, c.post("/api/analisis/4009990001", json=cuerpo).json()["id"])
+    f = c.get("/api/analisis/4009990001").json()["resultado"]["filas"][0]
+    assert t["estado"] == "ok" and f["pendiente"] == 60 and f["carga"] == 60
+    # el pedido de la plataforma conserva el total (100): lo que falta se calcula, el total no baja
+    est = c.get("/api/estado").json()
+    assert next(l for p in est["pedidos"] if p["pedido"] == "4009990001" for l in p["lineas"] if l["sku"] == "9000")["qty"] == 100
+    time.sleep(0.2)
+
+
+def test_el_plan_el_control_de_calidad_y_las_entregas_se_actualizan_sin_volver_a_sap(monkeypatch, datos):
+    from fastapi.testclient import TestClient
+    from app.integrations import bases, sap
+    from app.main import app
+    c = TestClient(app)
+    plan = {"9000": {"plan": 130, "vendido": 0, "pdte_mes": 0, "tipo": "X"}}
+    _preparar_analisis_neteo(monkeypatch, {"9000": (100, 100)}, plan)
+    monkeypatch.setattr(bases, "control_calidad", lambda fresco=False: {"9000": 5})
+    t = _esperar(c, c.post("/api/analisis/4009990002", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"}).json()["id"])
+    assert t["estado"] == "ok"
+    antes = c.get("/api/analisis/4009990002").json()
+    assert antes["resultado"]["filas"][0]["saldo"] == 130 and antes["resultado"]["filas"][0]["control_calidad"] == 5
+    sap_llamado = []
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: sap_llamado.append(1))
+    # el plan baja a 90 y entran 25 a control de calidad: se ve sin volver a analizar
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 90, "vendido": 0, "pdte_mes": 0, "tipo": "X"}})
+    monkeypatch.setattr(bases, "control_calidad", lambda fresco=False: {"9000": 25})
+    doc = c.post("/api/analisis/4009990002/actualizar").json()
+    f = doc["resultado"]["filas"][0]
+    assert f["saldo"] == 90 and f["carga"] == 90 and f["control_calidad"] == 25 and f["alertas"] == ["Limitado SOP"]
+    assert doc["sql_estado"]["ok"] is True and doc["sql_actualizado"] and sap_llamado == []
+    assert c.get("/api/analisis/4009990002").json()["resultado"]["filas"][0]["saldo"] == 90          # queda guardado
+    # una entrega nueva baja lo que falta sin tocar SAP
+    r = c.put("/api/entregas/8800010", json={"entrega": "8800010", "pedido": "4009990002", "lineas": [{"sku": "9000", "qty": 30}]})
+    assert r.status_code in (200, 201), r.text
+    f = c.post("/api/analisis/4009990002/actualizar").json()["resultado"]["filas"][0]
+    assert f["pendiente"] == 70 and f["ya_entregado"] == 30 and f["carga"] == 70
+    # sin conexión se conservan los datos de antes y se avisa
+    def sin_red(*a, **k):
+        raise RuntimeError("sin red")
+    monkeypatch.setattr(bases, "plan_sop", sin_red)
+    doc = c.post("/api/analisis/4009990002/actualizar").json()
+    assert doc["sql_estado"]["ok"] is False and "sin red" in doc["sql_estado"]["motivo"]
+    assert doc["resultado"]["filas"][0]["saldo"] == 90 and not doc["resultado"]["sin_plan"]
+    assert c.post("/api/analisis/4009990999/actualizar").status_code == 404
     time.sleep(0.2)

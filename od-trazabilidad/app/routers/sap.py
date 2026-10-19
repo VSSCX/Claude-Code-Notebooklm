@@ -106,6 +106,64 @@ def put_ajustes_analisis(body: dict, s: Session = Depends(get_session)):
     return actual
 
 
+def refrescar_analisis(s: Session, numero: str):
+    """Actualiza lo que se mueve solo y no necesita SAP: plan SOP, disponibilidad y control de calidad (SQL Server), y lo que
+    ya tiene entrega en la plataforma. El stock (MMBE) y la Qty en entrega de SAP quedan como estaban en el análisis.
+    Devuelve (doc, ok, motivo) o None si el pedido no tiene análisis. Si SQL no responde, se conservan los datos anteriores."""
+    import json as _json
+    from datetime import datetime
+
+    from ..analisis import calcular
+    from ..models import Config
+    c = s.get(Config, _clave_analisis(numero))
+    if c is None:
+        return None
+    doc = _json.loads(c.valor)
+    crudas = doc.get("posiciones_sap") or doc["posiciones"]
+    skus = {domain.norm_sku(p["sku"]) for p in crudas}
+    sin_sql = dict(doc.get("sin_sql") or {})
+    ok, motivo = True, ""
+    try:
+        plan = bases.plan_sop(doc["grupo_sop"], fresco=True)
+        doc["plan"] = {k: plan[k] for k in skus if k in plan}
+        sin_sql.pop("plan", None)
+        doc["sql_actualizado"] = datetime.now().astimezone().isoformat(timespec="minutes")
+        try:
+            doc["disponibilidad"] = {k: v for k, v in bases.disponibilidad(fresco=True).items() if k in skus}
+            sin_sql.pop("disponibilidad", None)
+        except Exception as e:  # noqa: BLE001
+            ok, motivo = False, _causa(e)
+        try:
+            cc = bases.control_calidad(fresco=True)
+            doc["control_calidad"] = {k: cc[k] for k in skus if k in cc}
+            sin_sql.pop("control_calidad", None)
+        except Exception as e:  # noqa: BLE001
+            ok, motivo = False, motivo or _causa(e)
+    except Exception as e:  # noqa: BLE001 - sin conexión: se siguen mostrando los datos de antes
+        ok, motivo = False, _causa(e)
+    # lo que falta de verdad según las entregas de hoy (el pedido pudo tener entregas nuevas desde el análisis)
+    doc["posiciones_sap"] = crudas
+    doc["posiciones"], doc["completos"] = domain.netear_posiciones(s, numero, crudas)
+    doc["sin_sql"] = sin_sql
+    doc["sql_estado"] = {"ok": ok, "motivo": motivo, "intento": datetime.now().astimezone().isoformat(timespec="minutes")}
+    doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
+                                doc["disponibilidad"], doc["stock"], doc["ajustes"],
+                                sin_plan=bool(sin_sql.get("plan")), control_calidad=doc.get("control_calidad"))
+    domain.guardar_config(s, _clave_analisis(numero), doc)
+    domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
+    _commit(s)
+    return doc, ok, motivo
+
+
+@router.post("/analisis/{numero}/actualizar")
+def actualizar_analisis(numero: str, s: Session = Depends(get_session)):
+    """Pone al día el plan SOP, la disponibilidad, el control de calidad y las entregas sin volver a entrar a SAP."""
+    r = refrescar_analisis(s, numero)
+    if r is None:
+        raise HTTPException(404, "Este pedido todavía no tiene análisis.")
+    return r[0]
+
+
 @router.post("/analisis/{numero}", status_code=202)
 def analizar(numero: str, body: dict):
     import json as _json
@@ -187,8 +245,11 @@ def analizar(numero: str, body: dict):
         lectura = sap.leer_pedido(numero, puesto, f.strftime("%d.%m.%Y"))
         if not lectura.posiciones:
             raise RuntimeError(lectura.aviso or "El pedido no devolvió posiciones.")
-        posiciones = [{"sku": domain.norm_sku(x.sku), "qty_entrega": x.qty_entrega,
-                       "qty_pendiente": x.qty_pendiente} for x in lectura.posiciones]
+        posiciones_sap = [{"sku": domain.norm_sku(x.sku), "qty_entrega": x.qty_entrega,
+                           "qty_pendiente": x.qty_pendiente} for x in lectura.posiciones]
+        # lo que ya tiene entrega en la plataforma se resta: el análisis marca solo lo que falta
+        with SessionLocal() as ses:
+            posiciones, completos = domain.netear_posiciones(ses, numero, posiciones_sap)
 
         if lectura.aviso:
             avance("Aviso de SAP: " + lectura.aviso[:80])
@@ -199,7 +260,7 @@ def analizar(numero: str, body: dict):
                 f" ({len(solicitantes)} solicitantes del grupo {grupo})" if len(solicitantes) > 1 else ""))
             # un archivo distinto por análisis: no choca con uno abierto en Excel ni con otro analista
             nombre_zsd = f"Qty En Entrega {numero} {datetime.now():%Y%m%d-%H%M%S}.xlsx"
-            filas_zsd = sap.zsd001_03(solicitantes if len(solicitantes) > 1 else codigo, [p["sku"] for p in posiciones],
+            filas_zsd = sap.zsd001_03(solicitantes if len(solicitantes) > 1 else codigo, [p["sku"] for p in posiciones_sap],
                                       str(carpeta), nombre_zsd, avisar=avisos_zsd.append, publicado=publicado)
         else:
             avance("2/4 Qty en entrega omitida (desactivada en Configuración)")
@@ -226,10 +287,12 @@ def analizar(numero: str, body: dict):
         else:
             avance("4/4 Sin alertas: no se consulta MMBE")
 
-        skus = [p["sku"] for p in posiciones]
+        skus = [p["sku"] for p in posiciones_sap]
         # Se guardan los datos usados, para recalcular ajustes sin volver a SAP
         doc = {"pedido": numero, "cliente": cliente, "grupo_sop": grupo, "puesto": puesto,
-               "fecha": f.isoformat(), "posiciones": posiciones, "en_entrega": en_ent, "solicitantes": solicitantes,
+               "fecha": f.isoformat(), "posiciones": posiciones, "posiciones_sap": posiciones_sap, "completos": completos,
+               "sql_actualizado": "" if sin_sql.get("plan") else datetime.now().astimezone().isoformat(timespec="minutes"),
+               "en_entrega": en_ent, "solicitantes": solicitantes,
                "plan": {k: plan[k] for k in skus if k in plan},
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
@@ -240,8 +303,8 @@ def analizar(numero: str, body: dict):
                "generado_hora": datetime.now().astimezone().isoformat(timespec="minutes")}
         with SessionLocal() as ses:
             nombres = {sku: _re.sub(r"^\S+\s+", "", m["desc"]).strip() or m["desc"] for sku, m in med.items()
-                       if sku in {x["sku"] for x in posiciones}}
-            domain.cargar_lectura_sap(ses, numero, cliente, posiciones, nombres)
+                       if sku in {x["sku"] for x in posiciones_sap}}
+            domain.cargar_lectura_sap(ses, numero, cliente, posiciones_sap, nombres)       # el total del pedido, no lo que falta
             p_ped = domain._get_pedido(ses, numero)
             if p_ped is not None and p_ped.cliente != cliente:
                 p_ped.cliente = cliente                  # el análisis manda: el pedido queda con el cliente analizado
@@ -265,7 +328,7 @@ def analizar(numero: str, body: dict):
                     recubicado = True
                 except HTTPException as e:
                     recubicado = str(e.detail)
-        return {"pedido": numero, "posiciones": len(posiciones), "alertadas": len(res["alertadas"]),
+        return {"pedido": numero, "posiciones": len(posiciones), "completos": len(completos), "alertadas": len(res["alertadas"]),
                 "limitadas": domain.resumen_analisis(doc)["limitadas"],
                 "aviso_sap": " ".join(x for x in [lectura.aviso, *avisos_zsd] if x),
                 "sin_cruce": res.get("zsd_sin_cruce", []), "oc": oc, "oc_origen": oc_origen, "sin_sql": sin_sql,
@@ -312,6 +375,11 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
         raise HTTPException(404, "El pedido no existe.")
     c = s.get(Config, _clave_analisis(numero))
     doc = _json.loads(c.valor) if c else None
+    refrescado = None                                  # ¿el plan SOP, la liberación y el control de calidad son de ahora?
+    if doc:
+        r = refrescar_analisis(s, numero)              # lo que se mueve (SQL) y las entregas de hoy: el Excel sale al día
+        if r:
+            doc, refrescado = r[0], r[1]
     oc = (ped.oc or (doc or {}).get("oc_sap") or "").strip()
     activas = [e for e in ped.entregas if not e.anulada]
     filas_an = {f["sku"]: f for f in (doc["resultado"]["filas"] if doc else [])}
@@ -340,7 +408,7 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     disp, disp_fresca = {}, False
     if pendientes:
         try:
-            disp, disp_fresca = bases.disponibilidad(fresco=True), True
+            disp, disp_fresca = bases.disponibilidad(fresco=not refrescado), True
         except Exception:  # noqa: BLE001 - el Excel sale igual, con lo último que se sabía
             disp = {}
 
@@ -348,7 +416,7 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     calidad, calidad_fresca = {}, False
     if disp_fresca:
         try:
-            calidad, calidad_fresca = bases.control_calidad(fresco=True), True
+            calidad, calidad_fresca = bases.control_calidad(fresco=not refrescado), True
         except Exception:  # noqa: BLE001
             calidad = {}
 

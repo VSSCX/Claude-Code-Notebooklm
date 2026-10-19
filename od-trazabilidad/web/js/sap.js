@@ -154,7 +154,7 @@ document.addEventListener('click', ev => {
   if (!e || !e.vieja) return;                                  // datos de hace poco: baja el archivo directamente
   ev.preventDefault();
   abrirDlg('Los datos de SAP tienen horas', `<p class="prose">El análisis de este pedido es de <b>${esc(e.cuando)}</b> (${esc(e.hace)}). El <b>stock</b> y lo que está <b>en entrega en SAP</b> pueden haber cambiado desde entonces.
-      Las entregas de la plataforma y la próxima liberación se actualizan solas al exportar.</p>`,
+      El plan SOP, la próxima liberación, el control de calidad y las entregas de la plataforma se actualizan solos al exportar.</p>`,
     `<button class="btn" data-act="exportarKam" data-ped="${esc(p.pedido)}">Exportar así</button>
      <button class="btn primary" data-act="actualizarYExportar" data-ped="${esc(p.pedido)}">Actualizar desde SAP y exportar</button>`);
 });
@@ -166,7 +166,7 @@ function cierreAnalisis(){
   if (j.estado === 'ok' && j.datos){
     const d = j.datos;
     const sinPlan = !!(d.sin_sql && d.sin_sql.plan);
-    j.resultado = `${d.posiciones} productos analizados · ${sinPlan ? 'SIN cruce con el plan SOP (sin conexión a SQL Server)' : d.limitadas + ' limitados por el plan'} · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
+    j.resultado = `${d.posiciones} productos analizados${d.completos ? ` (${d.completos} ya completos en entregas)` : ''} · ${sinPlan ? 'SIN cruce con el plan SOP (sin conexión a SQL Server)' : d.limitadas + ' limitados por el plan'} · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
     if ((d.omitidos || []).length) Avisos.agregar('warn', `Pedido ${d.pedido} analizado sin ${d.omitidos.map(k => PASOS_OPCIONALES[k] ? PASOS_OPCIONALES[k][0] : k).join(' ni ')}`,
       'Esos pasos están desactivados en Configuración → Pasos del análisis, así que el análisis quedó incompleto.', []);
     if (d.sin_sql && (d.sin_sql.plan || d.sin_sql.disponibilidad)) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
@@ -194,6 +194,28 @@ async function cargarAnalisis(pedido){
   try { UI.analisis[pedido] = await api('GET', `/analisis/${encodeURIComponent(pedido)}`); }
   catch(e){ UI.analisis[pedido] = {error:e.message}; }
   render();
+}
+/* Lo que se mueve solo (plan SOP, disponibilidad, control de calidad) y las entregas se actualizan sin entrar a SAP.
+   Solo el stock (MMBE) y la Qty en entrega de SAP piden «Volver a analizar». */
+UI.sqlIntento = {}; UI.sqlCargando = {};
+const MIN_ACTUALIZAR_SQL = 2;
+async function actualizarSql(pedido, manual){
+  if (UI.sqlCargando[pedido]) return;
+  UI.sqlCargando[pedido] = true; UI.sqlIntento[pedido] = Date.now(); render();
+  try {
+    UI.analisis[pedido] = await api('POST', `/analisis/${encodeURIComponent(pedido)}/actualizar`);
+    delete UI.cubicaje[pedido];                              // el cubicaje se vuelve a pedir: la carga pudo cambiar
+    Store.refresh();
+    if (manual){ const e = UI.analisis[pedido].sql_estado || {}; toast(e.ok ? 'Plan SOP, control de calidad y entregas al día' : 'Sin conexión a SQL Server: se muestran los datos de antes'); }
+  } catch(e){ if (manual) toast(e.message); }
+  UI.sqlCargando[pedido] = false; render();
+}
+/* Al mirar el análisis se pone al día solo (cada pocos minutos), salvo que la persona esté escribiendo */
+function sqlVencido(pedido, a){
+  if (UI.sqlCargando[pedido] || (UI.job && UI.job.estado === 'en_curso') || dlg.open) return false;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.tbl input')) return false;
+  const ult = Math.max(UI.sqlIntento[pedido] || 0, a.sql_actualizado ? new Date(a.sql_actualizado).getTime() || 0 : 0);
+  return Date.now() - ult > MIN_ACTUALIZAR_SQL * 60000;
 }
 async function ajustarCarga(pedido, sku, valor){ return ajustarLote(pedido, {[sku]: valor === '' ? null : valor}); }
 async function ajustarLote(pedido, ajustes){
@@ -267,6 +289,7 @@ function vistaAnalisis(p){
     <p>El análisis hace en un clic lo del botón 01 del Excel: VL01N, Qty en entrega, saldo SOP, alertas y stock MMBE.</p>
     <button class="btn primary" data-act="abrirAnalisis">Analizar pedido</button></div>`;
   const r = a.resultado, pct = x => x == null ? '—' : (100 * x).toFixed(1) + '%';
+  if (sqlVencido(p.pedido, a)) setTimeout(() => actualizarSql(p.pedido), 0);
   let prev = '';
   const filas = r.filas.map(f => {
     const corte = f.alerta !== prev; prev = f.alerta;
@@ -275,7 +298,7 @@ function vistaAnalisis(p){
     return `<tr class="${corte ? 'corte' : ''} ${limitada ? 'limitada' : ''}">
       <td><div class="alertas">${(f.alertas || [f.alerta]).map(x => `<span class="tag ${TAG_ALERTA[x]}">${ICONO_ALERTA[x]} ${esc(x)}</span>`).join('')}</div></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
-      <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
+      <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}${f.ya_entregado > 0 ? `<small class="ya-ent" title="El pedido tiene ${fmt(f.pedida)} un. y ${fmt(f.ya_entregado)} ya están en entregas: aquí queda lo que falta">de ${fmt(f.pedida)} · ${fmt(f.ya_entregado)} ya en entrega</small>` : ''}</td>
       <td class="n">${f.sin_plan ? '—' : fmt(f.plan)}</td><td class="n">${f.sin_plan ? '—' : fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
       <td class="n">${f.sin_plan ? '—' : `<b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b>`}</td>
       <td class="n"><input class="qty" type="number" min="0" step="1" value="${Math.round(f.carga)}" data-carga="${esc(f.sku)}" aria-label="Carga ${esc(f.sku)}" style="width:80px${f.ajustada ? ';border-color:var(--accent);font-weight:600' : ''}">
@@ -289,9 +312,26 @@ function vistaAnalisis(p){
       <td class="n">${f.control_calidad ? `<b>${fmt(f.control_calidad)}</b>` : ''}</td></tr>`;
   }).join('');
   const cuenta = k => r.filas.filter(f => (f.alertas || [f.alerta]).includes(k)).length;
-  return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">${(() => { const e = edadAnalisis(a.generado_hora); return e ? `Datos de SAP de ${e.cuando} (${e.hace})${e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}` : `Análisis del ${fmtFecha(a.generado)}`; })()} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
-      <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
+  const e = edadAnalisis(a.generado_hora), q = a.sql_actualizado ? edadAnalisis(a.sql_actualizado) : null, st = a.sql_estado || {};
+  const cargandoSql = !!UI.sqlCargando[p.pedido];
+  const completos = a.completos || [], yaEnt = r.filas.reduce((x, f) => x + (f.ya_entregado || 0), 0);
+  const aviso = (yaEnt > 0 || completos.length) ? `<div class="aviso info"><div class="aviso-cuerpo"><b>Aquí solo se muestra lo que falta.</b>
+      <div class="small">Este pedido ya tiene entregas${yaEnt + completos.reduce((x, c) => x + c.ya_entregado, 0) ? ` (${fmt(yaEnt + completos.reduce((x, c) => x + c.ya_entregado, 0))} un. en total)` : ''}: se restan de lo pendiente, y las líneas ya completas no se listan.
+      La carga que se calcula es solo para lo que falta.</div>
+      ${completos.length ? `<details class="completos"><summary class="small">${completos.length} producto${completos.length === 1 ? '' : 's'} ya completo${completos.length === 1 ? '' : 's'} en entregas</summary>
+        <table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Pedido</th><th class="n">En entregas</th></tr></thead><tbody>
+        ${completos.map(c => `<tr><td class="num">${esc(c.sku)}</td><td>${esc(c.descripcion || '')}</td><td class="n">${fmt(c.pedida)}</td><td class="n">${fmt(c.ya_entregado)}</td></tr>`).join('')}</tbody></table></details>` : ''}</div></div>` : '';
+  return `${avisosAnalisis(p, a, r)}${aviso}<div class="fuentes" aria-label="De dónde salen los datos">
+      <div class="fuente"><span class="tag ink">SAP</span><span><span><b>Pedido, Qty en entrega y stock</b> <span class="muted">${e ? `${e.cuando} (${e.hace})` : `análisis del ${fmtFecha(a.generado)}`}</span>${e && e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}</span>
+        <small class="muted">Solo el stock y lo que hay en entrega en SAP piden «Volver a analizar».</small></span>
+        <button class="btn sm" data-act="abrirAnalisis">Volver a analizar</button></div>
+      <div class="fuente"><span class="tag ink">SQL</span><span><span><b>Plan SOP, disponibilidad, control de calidad y entregas</b> <span class="muted">${cargandoSql ? 'actualizando…' : q ? `actualizado ${q.cuando} (${q.hace})` : 'sin actualizar'}</span></span>
+        ${st.ok === false && !cargandoSql ? `<small class="warn-t">No se pudo consultar SQL Server (${esc(st.motivo || 'sin conexión')}): se muestran los datos de antes.</small>` : '<small class="muted">Se actualiza solo al mirar este análisis; los cambios de saldo SOP y de control de calidad se ven sin volver a SAP.</small>'}</span>
+        <button class="btn sm" data-act="actualizarSql" data-ped="${esc(p.pedido)}" ${cargandoSql ? 'disabled' : ''}>${cargandoSql ? 'Actualizando…' : 'Actualizar'}</button></div>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div class="small muted">cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+      <div class="row tight">
         <a class="btn" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo que falta, el stock y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
