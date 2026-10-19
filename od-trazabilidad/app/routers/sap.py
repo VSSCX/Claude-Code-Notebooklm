@@ -372,8 +372,11 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
                + ("; próxima liberación consultada ahora." if disp_fresca else
                   ("." if not pendientes else "; próxima liberación del análisis (no hubo conexión para actualizarla)."))
                + (f" Stock y cantidades de SAP: análisis del {hora_an_txt}." if doc else " Sin análisis de SAP: stock no disponible.")])
-    ws.append([])
-    CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado"] + [f"Suministro {k}" for k in sums]
+    sin_plan = bool(((doc or {}).get("sin_sql") or {}).get("plan"))
+    ws.append(["Alerta (del análisis de SAP): Sin stock · Stock parcial · Limitado SOP = el plan SOP deja menos de lo pedido · Completo."
+               + (" Este análisis se hizo sin conexión a SQL Server: no se cruzó con el plan SOP." if sin_plan else "")]
+              if doc else [])
+    CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Alerta"] + [f"Suministro {k}" for k in sums]
            + ["Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Próx. liberación (fecha)",
               "Próx. liberación (cant.)"])
     ws.append(CAB)
@@ -381,7 +384,8 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     for f in filas:
         st = (filas_an.get(f["sku"]) or {}).get("stock") or {}
         fecha, cant = liberacion(f["sku"]) if f["falta"] > 0 else ("", "")
-        ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f)]
+        alerta = (filas_an.get(f["sku"]) or {}).get("alerta", "") if f["falta"] > 0 else ""    # solo de lo que aún falta
+        ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f), alerta]
                   + [por_sum[k].get(f["sku"], 0) for k in sums]
                   + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01")] if f["falta"] > 0 else [None] * 4)
                   + [fecha_corta(fecha) if fecha else "", cant])
@@ -393,19 +397,23 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
             we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
 
     wa = wb.create_sheet("Análisis SAP")
-    wa.append(["OC", "SKU", "Descripción", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
+    wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
                "Stock EC01", "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
     for f in (doc["resultado"]["filas"] if doc else []):
         st = f.get("stock") or {}
         cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
-        wa.append([oc, f["sku"], f["descripcion"], f["pendiente"], f["qty_entrega"],
+        wa.append([oc, f["sku"], f["descripcion"], f.get("alerta", ""), f["pendiente"], f["qty_entrega"],
                    st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), fecha.strip(), cant.strip()])
 
     cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")
     tonos = {"Pendiente": "FDE2E2", "Parcial": "FFF1CC", "En entrega": "E3F4E8"}
+    tonos_alerta = {"Sin stock": "FADDD9", "Stock parcial": "FBEBCD", "Limitado SOP": "DDE8F3", "Completo": "DDF0E5"}
+    tinta_alerta = {"Sin stock": "B3261E", "Stock parcial": "8F5200", "Limitado SOP": "3F6A99", "Completo": "17724A"}
     ws["A1"].font = Font(bold=True, size=13)
     ws["A2"].font = Font(bold=True)
     ws["A3"].font = Font(italic=True, color="555555")
+    if doc:
+        ws["A4"].font = Font(italic=True, color="555555")
     for hoja in wb.worksheets:
         fc = fila_cab if hoja is ws else 1
         for celda in hoja[fc]:
@@ -418,6 +426,10 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
         hoja.auto_filter.ref = f"A{fc}:{hoja.cell(row=hoja.max_row, column=hoja.max_column).coordinate}"
     for r in range(fila_cab + 1, ws.max_row + 1):                   # el estado se lee de un vistazo
         ws.cell(row=r, column=6).fill = PatternFill("solid", fgColor=tonos[ws.cell(row=r, column=6).value])
+        al = ws.cell(row=r, column=7)                                   # la alerta, con los mismos tonos de la plataforma
+        if al.value in tonos_alerta:
+            al.fill = PatternFill("solid", fgColor=tonos_alerta[al.value])
+            al.font = Font(bold=True, color=tinta_alerta[al.value])
     ws.column_dimensions["A"].width = 16
     buf = BytesIO()
     wb.save(buf)

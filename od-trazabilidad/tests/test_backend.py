@@ -1134,17 +1134,20 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     assert "Pedido:" in textos[1] and "Falta:" in textos[1]
     assert "Generado el" in textos[2] and "01-10-2026 09:30" in textos[2] and "consultada ahora" in textos[2]
     cab = next(n for n in range(1, 10) if ws.cell(row=n, column=1).value == "SKU")
-    assert [x.value for x in ws[cab]][:6] == ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado"]
+    assert [x.value for x in ws[cab]][:7] == ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Alerta"]
+    assert "Alerta (del análisis de SAP)" in ws.cell(row=4, column=1).value
     filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
     f9000 = filas["90000"]
     # pedido 10, dos entregas de 3 = 6 en entrega, faltan 4: sale con el stock del análisis y la liberación fresca
-    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[6:10] == (5, 1, 2, 0) and f9000[10:12] == ("20-10-2026", 450)
+    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[7:11] == (5, 1, 2, 0) and f9000[11:13] == ("20-10-2026", 450)
+    assert f9000[6] == "Limitado SOP"                                    # la alerta del análisis, como en la plataforma
+    assert next(x for x in ws.iter_rows(min_row=cab + 1) if x[0].value == "90000")[6].fill.fgColor.rgb.endswith("DDE8F3")
     # lo que ya está completo en entrega no lleva stock ni liberación
     completo = next(x for x in filas.values() if x[4] == 0)
-    assert completo[5] == "En entrega" and completo[6:12] == (None,) * 6
+    assert completo[5] == "En entrega" and not completo[6] and completo[7:13] == (None,) * 6
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
     assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 5 for x in ent)
-    assert wb["Análisis SAP"][1][3].value == "Qty pendiente"
+    assert wb["Análisis SAP"][1][3].value == "Alerta" and wb["Análisis SAP"][1][4].value == "Qty pendiente"
     assert c.get("/api/analisis/9999999999/excel").status_code == 404
 
     # sin conexión a SQL el Excel sale igual, con la liberación del análisis y avisándolo
@@ -1155,7 +1158,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     ws = load_workbook(BytesIO(r.content))["Estatus"]
     assert "no hubo conexión" in ws.cell(row=3, column=1).value
     fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
-    assert fila[10:12] == ("15-10-2026", 300)
+    assert fila[11:13] == ("15-10-2026", 300)
 
 
 def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
