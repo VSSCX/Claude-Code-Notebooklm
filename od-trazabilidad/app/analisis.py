@@ -167,14 +167,27 @@ def alerta(j: float, k: float, t: float) -> str:
     return PARCIAL
 
 
+def alertas(j: float, k: float, t: float) -> list[str]:
+    """Todas las alertas de una fila (una fila puede tener a la vez la de stock y la del plan):
+    Sin stock / Stock parcial según lo que SAP puede entregar, y Limitado SOP cuando el saldo del plan es el tope."""
+    out = []
+    if j == 0:
+        out.append(SIN_STOCK)
+    elif j < k:
+        out.append(PARCIAL)
+    if t < k and t <= j:
+        out.append(LIMITADO)
+    return out or [COMPLETO]
+
+
 def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
              medidas: dict, disponibilidad: dict, stock: dict | None = None,
-             ajustes: dict | None = None, sin_plan: bool = False) -> dict:
+             ajustes: dict | None = None, sin_plan: bool = False, control_calidad: dict | None = None) -> dict:
     """posiciones: [{sku, qty_entrega, qty_pendiente}] tal como las lee VL01N.
 
     sin_plan: no hubo conexión con SQL Server y el plan SOP es desconocido. Entonces no se puede limitar la carga por el
     plan: se carga lo que pide el pedido (el saldo se toma como no limitante) y cada fila queda marcada `sin_plan`."""
-    stock, ajustes = stock or {}, ajustes or {}
+    stock, ajustes, calidad = stock or {}, ajustes or {}, control_calidad or {}
     en_ent_sku, cruce, sin_cruce = cruzar_en_entrega(
         {str(p["sku"]): modelo(medidas[str(p["sku"])]["desc"]) for p in posiciones if str(p["sku"]) in medidas},
         en_entrega)
@@ -198,7 +211,8 @@ def calcular(posiciones: list[dict], plan: dict, en_entrega: dict[str, float],
             "sku": sku, "descripcion": desc, "qty_entrega": j, "pendiente": k, "cruce_zsd": cruce.get(sku, ""),
             "plan": m, "real": n, "en_entrega": o, "saldo": t, "sin_plan": sin_plan,
             "carga_calculada": carga_calc, "carga": carga, "ajustada": sku in ajustes,
-            "ocupacion": ocup, "alerta": al, "orden": ORDEN[al],
+            "ocupacion": ocup, "alerta": al, "alertas": alertas(j, k, t), "orden": ORDEN[al],
+            "control_calidad": int(calidad.get(sku, 0) or 0),
             "disponibilidad": "" if al == COMPLETO or not d else f"{d['cantidad']} - {d['fecha']}",
             "stock": stock.get(sku),
         })

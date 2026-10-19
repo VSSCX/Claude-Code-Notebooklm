@@ -236,6 +236,24 @@ def disponibilidad(fresco: bool = False) -> dict:
     return _cache("disp", cargar, fresco)
 
 
+SQL_CONTROL_CALIDAD = """
+SET NOCOUNT ON;
+SELECT codigoSap, controlCalidad FROM bi_stock_sap
+WHERE FECHA = (SELECT MAX(FECHA) FROM bi_stock_sap)
+AND controlCalidad > 0;
+"""
+
+
+def control_calidad(fresco: bool = False) -> dict:
+    """{sku: unidades en control de calidad} según el último stock cargado en bi_stock_sap."""
+    def cargar():
+        out: dict = {}
+        for c, q in _filas(SQL_CONTROL_CALIDAD):
+            out[_sku(c)] = out.get(_sku(c), 0) + int(q or 0)
+        return out
+    return _cache("cc", cargar, fresco)
+
+
 SQL_CALEFONES = """
 SET NOCOUNT ON;
 SELECT codigoSap

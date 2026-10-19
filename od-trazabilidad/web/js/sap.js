@@ -169,7 +169,7 @@ function cierreAnalisis(){
     j.resultado = `${d.posiciones} productos analizados · ${sinPlan ? 'SIN cruce con el plan SOP (sin conexión a SQL Server)' : d.limitadas + ' limitados por el plan'} · ${d.alertadas} con alerta` + (d.export_ruta ? ` · Qty en entrega guardada en ${d.export_ruta}` : '') + (d.sesion_sap ? ` · SAP ${d.sesion_sap}` : '');
     if ((d.omitidos || []).length) Avisos.agregar('warn', `Pedido ${d.pedido} analizado sin ${d.omitidos.map(k => PASOS_OPCIONALES[k] ? PASOS_OPCIONALES[k][0] : k).join(' ni ')}`,
       'Esos pasos están desactivados en Configuración → Pasos del análisis, así que el análisis quedó incompleto.', []);
-    if (d.sin_sql && Object.keys(d.sin_sql).length) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
+    if (d.sin_sql && (d.sin_sql.plan || d.sin_sql.disponibilidad)) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
       (sinPlan ? 'No se cruzó con el plan SOP: la carga no está limitada por el plan. ' : '') + (d.sin_sql.disponibilidad ? 'Faltan la primera disponibilidad y, si no venía en ZSD001_03, la OC. ' : '') + 'Lo de SAP sí se leyó.',
       ['Revisa la VPN o la red y la conexión en Configuración, y vuelve a analizar antes de crear entregas.']);
     if (d.suministro_nuevo) Avisos.agregar('info', `Se abrió el suministro ${d.suministro} de este pedido`,
@@ -219,7 +219,10 @@ function avisosAnalisis(p, a, r){
       <div class="small">Estaba desactivado en Configuración → Pasos del análisis. ${efecto}</div></div>
       <button class="btn primary sm" data-act="abrirAnalisis">Volver a analizar</button></div>`);
   }
-  if (a.sin_sql && Object.keys(a.sin_sql).length){
+  if (a.sin_sql && a.sin_sql.control_calidad && !a.sin_sql.plan && !a.sin_sql.disponibilidad)
+    out.push(`<div class="aviso warn"><div class="aviso-cuerpo"><b>No se pudo consultar el control de calidad en SQL Server.</b>
+      <div class="small">La columna Control de calidad quedó vacía; el resto del análisis está completo. Vuelve a analizar cuando haya conexión.</div></div></div>`);
+  if (a.sin_sql && (a.sin_sql.plan || a.sin_sql.disponibilidad)){
     const s = a.sin_sql;
     out.push(`<div class="aviso error" role="alert"><div class="aviso-cuerpo"><b>No hubo conexión con SQL Server: este análisis no se cruzó con el plan SOP.</b>
       <div class="small">${s.plan ? 'No hay <b>plan SOP, real ni saldo SOP</b>, así que la carga <b>no está limitada por el plan</b>: se toma lo que pide el pedido y puede exceder lo que el plan permite. ' : ''}${s.disponibilidad ? 'Tampoco hay la <b>primera disponibilidad</b> de los productos' + (s.plan ? ' ni la OC de Pedidos Ingresados (si venía en ZSD001_03, se usó esa). ' : '. ') : ''}Lo de SAP (pedido, Qty en entrega y stock) sí está al día.
@@ -270,7 +273,7 @@ function vistaAnalisis(p){
     const st = f.stock || {};
     const aut = (a.autorizaciones || {})[f.sku], limitada = f.carga_calculada < f.qty_entrega && !aut && f.carga < f.qty_entrega;
     return `<tr class="${corte ? 'corte' : ''} ${limitada ? 'limitada' : ''}">
-      <td><span class="tag ${TAG_ALERTA[f.alerta]}">${ICONO_ALERTA[f.alerta]} ${esc(f.alerta)}</span></td>
+      <td><div class="alertas">${(f.alertas || [f.alerta]).map(x => `<span class="tag ${TAG_ALERTA[x]}">${ICONO_ALERTA[x]} ${esc(x)}</span>`).join('')}</div></td>
       <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}</td>
       <td class="n">${f.sin_plan ? '—' : fmt(f.plan)}</td><td class="n">${f.sin_plan ? '—' : fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
@@ -282,9 +285,10 @@ function vistaAnalisis(p){
       <td class="n">${pct(f.ocupacion)}</td><td class="n">${pct(f.acumulado)}</td>
       <td class="small">${esc(f.disponibilidad)}</td>
       <td class="n">${f.stock ? fmt(st.cd30) : ''}</td><td class="n">${f.stock ? fmt(st.reserva_cd30) : ''}</td>
-      <td class="n">${f.stock ? fmt(st.ec01) : ''}</td><td class="n">${f.stock ? fmt(st.tp01) : ''}</td></tr>`;
+      <td class="n">${f.stock ? fmt(st.ec01) : ''}</td><td class="n">${f.stock ? fmt(st.tp01) : ''}</td>
+      <td class="n">${f.control_calidad ? `<b>${fmt(f.control_calidad)}</b>` : ''}</td></tr>`;
   }).join('');
-  const cuenta = k => r.filas.filter(f => f.alerta === k).length;
+  const cuenta = k => r.filas.filter(f => (f.alertas || [f.alerta]).includes(k)).length;
   return `${avisosAnalisis(p, a, r)}<div class="row" style="justify-content:space-between;margin-bottom:10px">
       <div class="small muted">${(() => { const e = edadAnalisis(a.generado_hora); return e ? `Datos de SAP de ${e.cuando} (${e.hace})${e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}` : `Análisis del ${fmtFecha(a.generado)}`; })()} · cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight"><button class="btn" data-act="abrirAnalisis">Volver a analizar</button>
@@ -300,6 +304,7 @@ function vistaAnalisis(p){
       <th class="n">Plan SOP</th><th class="n">Real</th><th class="n">En entrega</th><th class="n">Saldo SOP</th>
       <th class="n">Carga</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
       <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
+      <th class="n" title="Unidades en control de calidad (último stock cargado en SQL Server)">Control de calidad</th>
     </tr></thead><tbody>${filas}</tbody></table></div>
     <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado. Subirla por sobre el plan SOP queda registrado a tu nombre.</p>`;
 }

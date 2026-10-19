@@ -1115,6 +1115,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
         fila["sku"] = "90000"                                  # el SKU que tiene el pedido de la prueba
         fila["stock"] = {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}
         fila["disponibilidad"] = "300 - 2026-10-15"           # lo que se sabía al analizar
+        fila["control_calidad"] = 12                          # y lo que había en control de calidad
         domain.guardar_config(s, "analisis:4005100000", doc)
         s.commit()
     consultas = []
@@ -1123,6 +1124,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
         consultas.append(fresco)
         return {"90000": {"cantidad": 450, "fecha": "2026-10-20"}}
     monkeypatch.setattr(bases, "disponibilidad", fresca)
+    monkeypatch.setattr(bases, "control_calidad", lambda fresco=False: {"90000": 20})
     r = c.get("/api/analisis/4005100000/excel")
     assert r.status_code == 200 and "Estatus_4005100000" in r.headers["content-disposition"]
     assert consultas == [True]                                          # la liberación se pregunta de nuevo al exportar
@@ -1139,12 +1141,12 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
     f9000 = filas["90000"]
     # pedido 10, dos entregas de 3 = 6 en entrega, faltan 4: sale con el stock del análisis y la liberación fresca
-    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[7:11] == (5, 1, 2, 0) and f9000[11:13] == ("20-10-2026", 450)
+    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[7:11] == (5, 1, 2, 0) and f9000[11:14] == (20, "20-10-2026", 450)
     assert f9000[6] == "Limitado SOP"                                    # la alerta del análisis, como en la plataforma
     assert next(x for x in ws.iter_rows(min_row=cab + 1) if x[0].value == "90000")[6].fill.fgColor.rgb.endswith("DDE8F3")
     # lo que ya está completo en entrega no lleva stock ni liberación
     completo = next(x for x in filas.values() if x[4] == 0)
-    assert completo[5] == "En entrega" and not completo[6] and completo[7:13] == (None,) * 6
+    assert completo[5] == "En entrega" and not completo[6] and completo[7:14] == (None,) * 7
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
     assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 5 for x in ent)
     assert wb["Análisis SAP"][1][3].value == "Alerta" and wb["Análisis SAP"][1][4].value == "Qty pendiente"
@@ -1158,7 +1160,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     ws = load_workbook(BytesIO(r.content))["Estatus"]
     assert "no hubo conexión" in ws.cell(row=3, column=1).value
     fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
-    assert fila[11:13] == ("15-10-2026", 300)
+    assert fila[11:14] == (12, "15-10-2026", 300)       # sin conexión: control de calidad y liberación del análisis
 
 
 def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
@@ -1540,4 +1542,55 @@ def test_se_puede_desactivar_zsd001_03_y_mmbe_y_el_analisis_pasa_de_vl01n_direct
     est = c.get("/api/estado").json()
     assert est["config"]["flujo:4005100000"]["analisis"]["omitidos"] == ["zsd", "mmbe"]
     c.put("/api/ajustes-analisis", json={"zsd": True, "mmbe": True})
+    time.sleep(0.2)
+
+
+def test_una_fila_puede_tener_dos_alertas_y_se_ven_las_dos():
+    from app.analisis import calcular
+    pos = [{"sku": "A", "qty_entrega": 0, "qty_pendiente": 20},      # sin stock y el saldo del plan tampoco alcanza
+           {"sku": "B", "qty_entrega": 5, "qty_pendiente": 20},      # stock parcial y el plan lo limita a 3
+           {"sku": "C", "qty_entrega": 0, "qty_pendiente": 20},      # solo sin stock (el plan sobra)
+           {"sku": "D", "qty_entrega": 10, "qty_pendiente": 20},     # stock parcial; el plan deja 15: el tope es el stock
+           {"sku": "E", "qty_entrega": 50, "qty_pendiente": 50}]     # todo bien
+    plan = {"A": {"plan": 10, "vendido": 10}, "B": {"plan": 10, "vendido": 7}, "C": {"plan": 100, "vendido": 0},
+            "D": {"plan": 15, "vendido": 0}, "E": {"plan": 100, "vendido": 0}}
+    med = {k: {"desc": f"{k} PRODUCTO", "max_camion": 100} for k in "ABCDE"}
+    filas = {f["sku"]: f for f in calcular(pos, plan, {}, med, {}, control_calidad={"A": 30})["filas"]}
+    assert filas["A"]["alertas"] == ["Sin stock", "Limitado SOP"] and filas["A"]["alerta"] == "Sin stock"
+    assert filas["B"]["alertas"] == ["Stock parcial", "Limitado SOP"] and filas["B"]["alerta"] == "Limitado SOP"
+    assert filas["C"]["alertas"] == ["Sin stock"]
+    assert filas["D"]["alertas"] == ["Stock parcial"] and filas["E"]["alertas"] == ["Completo"]
+    assert filas["A"]["control_calidad"] == 30 and filas["E"]["control_calidad"] == 0
+    # sin plan (sin conexión a SQL) no hay «Limitado SOP» posible
+    sin = {f["sku"]: f for f in calcular(pos, {}, {}, med, {}, sin_plan=True)["filas"]}
+    assert sin["A"]["alertas"] == ["Sin stock"] and sin["B"]["alertas"] == ["Stock parcial"]
+
+
+def test_el_analisis_trae_las_unidades_en_control_de_calidad_y_el_excel_kam_muestra_las_dos_alertas(monkeypatch, datos):
+    from io import BytesIO
+    from fastapi.testclient import TestClient
+    from openpyxl import load_workbook
+    from app.integrations import base_medidas, bases, sap
+    from app.main import app
+    c = TestClient(app)
+    monkeypatch.setattr(sap, "leer_pedido", lambda *a: SimpleNamespace(
+        posiciones=[SimpleNamespace(sku="9000", qty_entrega=5, qty_pendiente=20)], aviso=""))
+    monkeypatch.setattr(sap, "zsd001_03", lambda *a, **k: [])
+    monkeypatch.setattr(sap, "mmbe", lambda skus, cb: {})
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 10, "vendido": 7, "pdte_mes": 0, "tipo": "X"}})
+    monkeypatch.setattr(bases, "disponibilidad", lambda fresco=False: {})
+    monkeypatch.setattr(bases, "control_calidad", lambda fresco=False: {"9000": 14, "9999": 3})
+    monkeypatch.setattr(bases, "oc_de", lambda *a: "")
+    monkeypatch.setattr(base_medidas, "medidas", lambda: {"9000": {"desc": "9000 PRODUCTO", "max_camion": 300}})
+    t = _esperar(c, c.post("/api/analisis/4005100000", json={"puesto": "PN01", "cliente": "PARIS", "fecha": "2026-10-01"}).json()["id"])
+    assert t["estado"] == "ok", t
+    doc = c.get("/api/analisis/4005100000").json()
+    fila = doc["resultado"]["filas"][0]
+    assert fila["control_calidad"] == 14 and doc["control_calidad"] == {"9000": 14}      # solo los SKU del pedido
+    assert fila["alertas"] == ["Stock parcial", "Limitado SOP"]
+    ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel").content))["Estatus"]
+    cab = next(n for n in range(1, 10) if ws.cell(row=n, column=1).value == "SKU")
+    assert "Control de calidad" in [x.value for x in ws[cab]]
+    f = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "9000")
+    assert f[6] == "Stock parcial + Limitado SOP" and f[11] == 14
     time.sleep(0.2)

@@ -160,7 +160,16 @@ def analizar(numero: str, body: dict):
             disp = {}
             sin_sql["disponibilidad"] = True
             sin_sql.setdefault("motivo", _causa(e))
-        if sin_sql:
+        calidad: dict = {}
+        if sin_sql.get("plan") and sin_sql.get("disponibilidad"):
+            sin_sql["control_calidad"] = True                    # el servidor no responde: no se espera otra vez
+        else:
+            try:
+                calidad = bases.control_calidad(fresco=True)
+            except Exception as e:  # noqa: BLE001
+                sin_sql["control_calidad"] = True
+                sin_sql.setdefault("motivo", _causa(e))
+        if sin_sql.get("plan") or sin_sql.get("disponibilidad"):
             avance("Sin conexión con SQL Server: se sigue con SAP, sin el plan SOP")
         if filas_med:
             med = {sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
@@ -206,14 +215,14 @@ def analizar(numero: str, body: dict):
         en_ent = en_entrega_por_modelo(filas_zsd)
         sin_plan = plan is None
         plan = plan or {}
-        res = calcular(posiciones, plan, en_ent, med, disp, sin_plan=sin_plan)
+        res = calcular(posiciones, plan, en_ent, med, disp, sin_plan=sin_plan, control_calidad=calidad)
 
         stock = {}
         if not pasos["mmbe"]:
             avance("4/4 Stock omitido (MMBE desactivado en Configuración)")
         elif res["alertadas"]:
             stock = sap.mmbe(res["alertadas"], lambda t: avance("4/4 " + t))
-            res = calcular(posiciones, plan, en_ent, med, disp, stock, sin_plan=sin_plan)
+            res = calcular(posiciones, plan, en_ent, med, disp, stock, sin_plan=sin_plan, control_calidad=calidad)
         else:
             avance("4/4 Sin alertas: no se consulta MMBE")
 
@@ -224,6 +233,7 @@ def analizar(numero: str, body: dict):
                "plan": {k: plan[k] for k in skus if k in plan},
                "medidas": {k: med[k] for k in skus if k in med},
                "disponibilidad": {k: disp[k] for k in skus if k in disp},
+               "control_calidad": {k: calidad[k] for k in skus if k in calidad},
                "stock": stock, "ajustes": {}, "resultado": res, "oc_sap": oc, "oc_origen": oc_origen,
                "sin_sql": sin_sql, "omitidos": [k for k, activo in pasos.items() if not activo],
                "generado": _date.today().isoformat(),
@@ -334,6 +344,19 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
         except Exception:  # noqa: BLE001 - el Excel sale igual, con lo último que se sabía
             disp = {}
 
+    # Control de calidad: también se pregunta de nuevo al exportar (si SQL respondió para la liberación)
+    calidad, calidad_fresca = {}, False
+    if disp_fresca:
+        try:
+            calidad, calidad_fresca = bases.control_calidad(fresco=True), True
+        except Exception:  # noqa: BLE001
+            calidad = {}
+
+    def en_calidad(sku: str):
+        if calidad_fresca:
+            return calidad.get(sku, 0)
+        return (filas_an.get(sku) or {}).get("control_calidad")
+
     def liberacion(sku: str):
         d = disp.get(sku) if disp_fresca else None
         if d and d.get("cantidad"):
@@ -377,17 +400,20 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
                + (" Este análisis se hizo sin conexión a SQL Server: no se cruzó con el plan SOP." if sin_plan else "")]
               if doc else [])
     CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Alerta"] + [f"Suministro {k}" for k in sums]
-           + ["Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Próx. liberación (fecha)",
+           + ["Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)",
               "Próx. liberación (cant.)"])
     ws.append(CAB)
     fila_cab = ws.max_row
     for f in filas:
         st = (filas_an.get(f["sku"]) or {}).get("stock") or {}
         fecha, cant = liberacion(f["sku"]) if f["falta"] > 0 else ("", "")
-        alerta = (filas_an.get(f["sku"]) or {}).get("alerta", "") if f["falta"] > 0 else ""    # solo de lo que aún falta
+        fa = filas_an.get(f["sku"]) or {}
+        # solo de lo que aún falta; una fila puede tener dos alertas (p. ej. Sin stock y Limitado SOP)
+        alerta = " + ".join(fa.get("alertas") or ([fa["alerta"]] if fa.get("alerta") else [])) if f["falta"] > 0 else ""
         ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f), alerta]
                   + [por_sum[k].get(f["sku"], 0) for k in sums]
-                  + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01")] if f["falta"] > 0 else [None] * 4)
+                  + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), en_calidad(f["sku"])]
+                     if f["falta"] > 0 else [None] * 5)
                   + [fecha_corta(fecha) if fecha else "", cant])
 
     we = wb.create_sheet("Entregas")
@@ -398,12 +424,13 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
 
     wa = wb.create_sheet("Análisis SAP")
     wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
-               "Stock EC01", "Stock TP01", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+               "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
     for f in (doc["resultado"]["filas"] if doc else []):
         st = f.get("stock") or {}
         cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
-        wa.append([oc, f["sku"], f["descripcion"], f.get("alerta", ""), f["pendiente"], f["qty_entrega"],
-                   st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), fecha.strip(), cant.strip()])
+        wa.append([oc, f["sku"], f["descripcion"], " + ".join(f.get("alertas") or [f.get("alerta", "")]), f["pendiente"],
+                   f["qty_entrega"], st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
+                   f.get("control_calidad"), fecha.strip(), cant.strip()])
 
     cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")
     tonos = {"Pendiente": "FDE2E2", "Parcial": "FFF1CC", "En entrega": "E3F4E8"}
@@ -427,9 +454,10 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     for r in range(fila_cab + 1, ws.max_row + 1):                   # el estado se lee de un vistazo
         ws.cell(row=r, column=6).fill = PatternFill("solid", fgColor=tonos[ws.cell(row=r, column=6).value])
         al = ws.cell(row=r, column=7)                                   # la alerta, con los mismos tonos de la plataforma
-        if al.value in tonos_alerta:
-            al.fill = PatternFill("solid", fgColor=tonos_alerta[al.value])
-            al.font = Font(bold=True, color=tinta_alerta[al.value])
+        primera = str(al.value or "").split(" + ")[0]                  # con dos alertas manda el color de la primera
+        if primera in tonos_alerta:
+            al.fill = PatternFill("solid", fgColor=tonos_alerta[primera])
+            al.font = Font(bold=True, color=tinta_alerta[primera])
     ws.column_dimensions["A"].width = 16
     buf = BytesIO()
     wb.save(buf)
@@ -486,7 +514,8 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
     # Recalcula con los mismos datos guardados (no vuelve a consultar SAP)
     doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
                                 doc["disponibilidad"], doc["stock"], doc["ajustes"],
-                                sin_plan=bool((doc.get("sin_sql") or {}).get("plan")))
+                                sin_plan=bool((doc.get("sin_sql") or {}).get("plan")),
+                                control_calidad=doc.get("control_calidad"))
     domain.guardar_config(s, _clave_analisis(numero), doc)
     domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
     _commit(s)
