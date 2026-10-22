@@ -59,7 +59,9 @@ def carga_por_camion(doc: dict) -> list[dict]:
                 filas = por_pallet[n]
                 lin = _lineas(filas)
                 un, bu = _total(lin)
-                item["pallets"].append({"pallet": n, "tipo": filas[0].get("tipo", ""), "sucursal": filas[0].get("sucursal", ""),
+                sucs = sorted({f.get("sucursal", "") for f in filas if f.get("sucursal")})
+                item["pallets"].append({"pallet": n, "tipo": filas[0].get("tipo", ""),
+                                        "sucursal": sucs[0] if len(sucs) == 1 else (f"{len(sucs)} sucursales" if sucs else ""),
                                         "unidades": un, "bultos": bu, "kilos": _kg(pos, num, int(n)), "lineas": lin})
             piso = _lineas([f for f in f04 if not f.get("pallet")])
             if piso:

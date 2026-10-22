@@ -45,10 +45,10 @@ notepad .env
 .venv\Scripts\alembic upgrade head
 
 :: 4. Probar a mano
-servidor.bat
+servidor_proxy.bat
 ```
 
-`servidor.bat` levanta la aplicación en `127.0.0.1:8000` **sin abrir el navegador**, con los encabezados del proxy
+`servidor_proxy.bat` levanta la aplicación en `127.0.0.1:8000` **sin abrir el navegador**, con los encabezados del proxy
 (`--proxy-headers`) para que el registro guarde la IP real de cada analista.
 
 ### Dejarla como servicio de Windows (arranca sola y se reinicia si cae)
@@ -56,7 +56,7 @@ servidor.bat
 Con [NSSM](https://nssm.cc) (o el Programador de tareas):
 
 ```bat
-nssm install OrderDesk D:\OrderDesk\servidor.bat
+nssm install OrderDesk D:\OrderDesk\servidor_proxy.bat
 nssm set OrderDesk AppDirectory D:\OrderDesk
 nssm set OrderDesk ObjectName EMPRESA\svc-orderdesk *clave*
 nssm set OrderDesk AppStdout D:\OrderDesk\data\logs\servicio.out.log

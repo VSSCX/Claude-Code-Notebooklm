@@ -525,6 +525,39 @@ def test_sda_predist_concho_va_al_pool():
     assert any(p.tipo in ("Mono-SKU", "Mix") for p in pallets)      # los conchos se reagruparon
 
 
+def test_sda_predist_las_cajas_que_quedan_solas_se_juntan_en_un_pallet_compartido():
+    """Seis sucursales con una sola caja cada una: antes eran seis pallets casi vacíos; ahora van juntas en un pallet mix y cada
+    fila sigue diciendo de qué sucursal es."""
+    pre = [FilaPredist(f"SUC-0{i}", "S135000785", 1) for i in range(1, 7)]
+    r = segmentar(_entrada_sda_pd(posiciones=[Posicion("S135000785", "ASPIRADORA STK15", 400, "4001", 5)], predistribuido=pre))
+    assert sum(f.unidades for f in r.filas04) == 6
+    assert len(r.pallets) == 1 and r.pallets[0]["tipo"] == "Mix"
+    assert sorted(f.sucursal for f in r.filas04 if f.pallet) == [f"SUC-0{i}" for i in range(1, 7)]
+    assert any("pallets compartidos" in a for a in r.avisos)
+    # una sucursal con carga de sobra conserva su pallet propio; las cajas sueltas de las demás se juntan
+    pre = [FilaPredist("SUC-01", "S135000785", 300)] + [FilaPredist(f"SUC-0{i}", "S135000785", 1) for i in range(2, 6)]
+    r = segmentar(_entrada_sda_pd(predistribuido=pre))
+    assert sum(f.unidades for f in r.filas04) == 304
+    monos = [p for p in r.pallets if p["tipo"] == "Mono-Suc"]
+    assert monos and all(p["sucursal"] == "SUC-01" for p in monos)
+    assert sum(1 for p in r.pallets if p["tipo"] == "Mix") == 1
+    por_suc = {}
+    for f in r.filas04:
+        por_suc[f.sucursal] = por_suc.get(f.sucursal, 0) + f.unidades
+    assert por_suc == {"SUC-01": 300, "SUC-02": 1, "SUC-03": 1, "SUC-04": 1, "SUC-05": 1}
+
+
+def test_un_producto_que_no_entra_en_el_pallet_va_a_piso_y_se_avisa_con_sus_medidas():
+    filas = FILAS_SDA + [["CGRANDE", "CAJA GRANDE", 1, 180, 53, 48, 10, "Y", "N", "N", 20, 5],
+                         ["GRANDE", "PRODUCTO GRANDE", 1, 30, 30, 30, 2, "Y", "N", "N", 20, 5]]
+    r = segmentar(_entrada_sda_pd(medidas=cargar_cache_dims(filas),
+                                  posiciones=[Posicion("GRANDE", "PRODUCTO GRANDE", 12, "4001", 5)],
+                                  predistribuido=[FilaPredist("SUC-01", "GRANDE", 6, 6), FilaPredist("SUC-02", "GRANDE", 6, 6)],
+                                  caja_master="CON CAJA MASTER"))
+    assert any("No entran en el pallet" in a and "CGRANDE" in a and "180 × 53 × 48" in a for a in r.avisos)
+    assert all(f.sucursal in ("SUC-01", "SUC-02") for f in r.filas04)             # también en piso: de qué sucursal es
+
+
 def test_cliente_hibrido_manda_conchos_a_piso():
     assert es_cliente_hibrido("SODIMAC") and es_cliente_hibrido("Ripley S.A.")
     assert not es_cliente_hibrido("PARIS")

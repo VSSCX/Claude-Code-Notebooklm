@@ -15,12 +15,13 @@ from __future__ import annotations
 from .datos import Dims, get_dims_for
 from .mda import Camion, Fila03, NO_ENCONTRADO, Posicion, Resultado
 from .mda_predist import FilaPredist
-from .sda import (EPS_SDA, U_SDA, Bloque, Pallet, asignar_vehiculos,
-                  calcular_capacidades, cargar_piso, restricciones_piso, restricciones_sda,
+from .sda import (EPS_SDA, U_SDA, Bloque, Pallet, _cubicar_pallet, _items_de_pallet, asignar_vehiculos,
+                  avisos_no_caben, calcular_capacidades, cargar_piso, restricciones_piso, restricciones_sda,
                   ubicar_pallets, validar_pallets)
 from .vb import clng, vb_int, vb_round
 
 HIBRIDOS = ("SODIMAC", "RIPLEY")
+UMBRAL_CONCHO = 0.25            # un pallet de una sucursal con menos de esto del volumen del pallet es un «concho»
 MAX_BLOQUES_PALLET_PD = 14      # este modo permite más bloques por pallet que SDA Stock
 
 
@@ -223,6 +224,112 @@ def armar_pallets_por_sucursal(bloques: list[Bloque], hibrido: bool) -> tuple[li
     return pallets, pool, piso
 
 
+def _volumen_pallet(p: Pallet, bloques: list[Bloque], vol_pallet: float) -> float:
+    """Qué parte del volumen del pallet ocupan sus cajas (0..1), por volumen real y no por la fracción de capacidad."""
+    if vol_pallet <= 0:
+        return 1.0
+    return sum(n * bloques[bi].L * bloques[bi].w * bloques[bi].h for bi, n in p.contenido) / vol_pallet
+
+
+def consolidar_conchos(pallets: list[Pallet], placements: dict, bloques: list[Bloque], pal_L: float, pal_W: float,
+                       pal_H: float, restric) -> tuple[list[Pallet], dict, int]:
+    """Junta en pallets compartidos lo que quedó casi solo en un pallet de su sucursal (una caja, dos cajas…).
+
+    Un pallet con una caja ocupa lo mismo en el camión que uno lleno. Los pallets de una sucursal que quedaron con poco
+    volumen se deshacen y sus cajas se reparten, de las más grandes a las más chicas, en pallets mix compartidos entre
+    sucursales (cada fila sigue diciendo de qué sucursal es). Cada pallet nuevo se comprueba con el motor: solo entra lo
+    que de verdad cabe. Devuelve (pallets, colocaciones, cuántos pallets se ahorraron)."""
+    vol_pallet = pal_L * pal_W * pal_H
+    conchos = [i for i, p in enumerate(pallets) if p.tipo == "Mono-Suc" and _volumen_pallet(p, bloques, vol_pallet) < UMBRAL_CONCHO]
+    if len(conchos) < 2:
+        return pallets, placements, 0
+    sueltos = set(conchos)
+    pool: list[list] = []                                   # [bloque, unidades]
+    for i in conchos:
+        pool += [[bi, n] for bi, n in pallets[i].contenido if n > 0]
+    pool.sort(key=lambda x: -(bloques[x[0]].L * bloques[x[0]].w * bloques[x[0]].h))
+
+    mix = [(i, p) for i, p in enumerate(pallets) if p.tipo == "Mix"]          # los mix que ya había también reciben
+    nuevos: list[tuple[Pallet, list]] = []
+    existentes = {i: (p, placements.get(i, [])) for i, p in mix}
+
+    def cabe(contenido: list[tuple[int, int]]):
+        items = _items_de_pallet(Pallet(contenido=list(contenido)), bloques)
+        plc, puestas = _cubicar_pallet(items, pal_L, pal_W, pal_H, restric)
+        return puestas >= sum(n for _, n in contenido), plc
+
+    def meter(p: Pallet, bi: int, n: int):
+        """Cuántas unidades del bloque entran en el pallet p (búsqueda binaria); devuelve (k, colocaciones)."""
+        if p.k >= MAX_BLOQUES_PALLET_PD and not any(b == bi for b, _ in p.contenido):
+            return 0, None
+        base = [(b, q) for b, q in p.contenido if b != bi]
+        previo = next((q for b, q in p.contenido if b == bi), 0)
+        lo, hi, mejor = 0, n, (0, None)
+        ok, plc = cabe(base + [(bi, previo + n)])
+        if ok:
+            return n, plc
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            ok, plc = cabe(base + [(bi, previo + mid)])
+            if ok:
+                lo, mejor = mid, (mid, plc)
+            else:
+                hi = mid - 1
+        return mejor
+
+    def poner(p: Pallet, bi: int, k: int):
+        for j, (b, q) in enumerate(p.contenido):
+            if b == bi:
+                p.contenido[j] = (b, q + k)
+                return
+        p.contenido.append((bi, k))
+
+    for bi, pend in pool:
+        while pend > 0:
+            colocado = False
+            candidatos = [(p, None, idx) for idx, (p, _) in existentes.items()] + [(p, plc, None) for p, plc in nuevos]
+            for p, _plc, idx in candidatos:
+                k, plc = meter(p, bi, pend)
+                if k > 0:
+                    poner(p, bi, k)
+                    p.frac += k / bloques[bi].cap_pallet
+                    if idx is not None:
+                        existentes[idx] = (p, plc)
+                    else:
+                        for j, (q, _) in enumerate(nuevos):
+                            if q is p:
+                                nuevos[j] = (p, plc)
+                    pend -= k
+                    colocado = True
+                    break
+            if not colocado:
+                p = Pallet()
+                p.tipo, p.sucursal = "Mix", "~"
+                k, plc = meter(p, bi, pend)
+                if k <= 0:                                     # ni solo entra: queda como estaba
+                    return pallets, placements, 0
+                poner(p, bi, k)
+                p.frac = k / bloques[bi].cap_pallet
+                nuevos.append((p, plc))
+                pend -= k
+
+    finales: list[Pallet] = []
+    plc_finales: dict = {}
+    for i, p in enumerate(pallets):
+        if i in sueltos:
+            continue
+        if i in existentes:
+            p, plc = existentes[i]
+        else:
+            plc = placements.get(i, [])
+        plc_finales[len(finales)] = plc
+        finales.append(p)
+    for p, plc in nuevos:
+        plc_finales[len(finales)] = plc
+        finales.append(p)
+    return finales, plc_finales, len(pallets) - len(finales)
+
+
 def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPredist],
                                 cache: dict[str, Dims], pal_L: float, pal_W: float, pal_H: float,
                                 usa_caja_master: bool, cliente: str, pasa_filtro=None,
@@ -249,6 +356,7 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     # La orientación acomoda las cajas dentro del pallet; la estiba en el camión no cambia
     pack_L, pack_W = orientar_pallet(pal_L, pal_W, orientacion, bloques, restric, pal_H)
     calcular_capacidades(bloques, pack_L, pack_W, pal_H, restric, cache, tabla)
+    res.avisos += avisos_no_caben(bloques, pal_L, pal_W)
     hibrido = es_cliente_hibrido(cliente) if hibrido is None else bool(hibrido)
     if hibrido:
         res.avisos.append(f"{cliente}: cliente híbrido, los conchos van a piso (sin pallets mix).")
@@ -260,6 +368,11 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     else:
         pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric,
                                               misma_sucursal=True)
+    if not hibrido and not tabla:       # las cajas que quedaron solas en un pallet se juntan entre sucursales
+        pallets, placements, ahorrados = consolidar_conchos(pallets, placements, bloques, pack_L, pack_W, pal_H, restric)
+        if ahorrados > 0:
+            res.avisos.append(f"Se juntaron en pallets compartidos las cajas que quedaban casi solas en su pallet "
+                              f"({ahorrados} pallets menos). Cada fila del detalle indica de qué sucursal es cada caja.")
     if lineas_kit:                      # kits completos en pallets propios, por sucursal
         kp, kplc, kpiso, kav, ksm = armar_pallets_kit(lineas_kit, cache, bloques, pack_L, pack_W, pal_H, restric,
                                                       mezclar=kits_mezclar)
@@ -276,13 +389,12 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     vehiculos = asignar_vehiculos(len(pallets))
     colocados, filas04, geo = ubicar_pallets(pallets, placements, bloques, vehiculos, pal_L, pal_W,
                                              girar=(pack_L, pack_W) != (pal_L, pal_W))
-    for f, p in zip(filas04, [p for p in pallets for _ in p.contenido if _[1] > 0]):
-        f.sucursal = getattr(p, "sucursal", "")
+    for f, (p, bi) in zip(filas04, [(p, bi) for p in pallets for bi, n in p.contenido if n > 0]):
+        if not f.sucursal:               # los kits traen la sucursal en su pallet; el resto, en su bloque
+            suc = getattr(p, "sucursal", "")
+            f.sucursal = getattr(bloques[bi], "sucursal", "") or ("" if suc == "~" else suc)
     piso_pl, piso_filas, vehiculos = cargar_piso(piso, bloques, vehiculos, geo, pal_W,
                                                  restricciones_piso())
-    for f in piso_filas:
-        bi = next((i for i, b in enumerate(bloques) if b.cod == f.sku), None)
-        f.sucursal = bloques[bi].sucursal if bi is not None else ""
     res.placed = colocados + piso_pl
     res.filas04 = filas04 + piso_filas
     res.pallets = [{"numero": i + 1, "tipo": getattr(p, "tipo", "Mono-Suc"),

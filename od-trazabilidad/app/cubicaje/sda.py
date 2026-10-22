@@ -126,6 +126,22 @@ def construir_bloques(posiciones: list[Posicion], cache: dict[str, Dims], usa_ca
     return bloques, sin_medidas, sin_caja
 
 
+def avisos_no_caben(bloques: list[Bloque], pal_L: float, pal_W: float) -> list[str]:
+    """Un producto o caja más grande que el pallet no se puede estibar: va a piso. Se dice cuál y con qué medidas, porque casi
+    siempre es una medida mal ingresada en la Base de Medidas y manda un camión entero a cargar unas pocas cajas."""
+    vistos: dict[tuple, int] = {}
+    for b in bloques:
+        if b.no_cabe:
+            clave = (("C" if b.tipo == "Caja" else "") + b.cod, b.L, b.w, b.h)
+            vistos[clave] = vistos.get(clave, 0) + b.n
+    if not vistos:
+        return []
+    items = [f"{cod} ({L:g} × {w:g} × {h:g} cm) ×{n}" for (cod, L, w, h), n in vistos.items()]
+    return ["No entran en el pallet de " + f"{pal_L:g} × {pal_W:g} cm y van a piso: " + ", ".join(items[:6])
+            + (f" y {len(items) - 6} más" if len(items) > 6 else "")
+            + ". Si la medida está bien, no hay nada que hacer; si no, corrígela en la Base de Medidas."]
+
+
 def avisos_sueltas(bloques: list[Bloque], cache: dict[str, Dims]) -> list[str]:
     """Con caja master activa, lo que no completa una caja (por ejemplo 3 unidades de una caja de 4) viaja suelto:
     se informa para que no parezca un error. Por sucursal, el aviso dice de cuál."""
@@ -551,7 +567,7 @@ def ubicar_pallets(pallets: list[Pallet], placements: dict[int, list[Placement]]
                 filas.append(FilaSDA(vehiculo=veh.numero, tipo_vehiculo=veh.tipo, pallet=n_pal,
                                      sku=b.cod, descripcion=b.desc, cajas=n,
                                      bultos=n, unidades=n * max(b.cm_por_caja, 1),
-                                     tipo=tipo_pal, pedido=b.pedido))
+                                     tipo=tipo_pal, pedido=b.pedido, sucursal=b.sucursal))
         for pl in placements.get(i, []):
             b = bloques[pl.fila] if 0 <= pl.fila < len(bloques) else None
             px, py, poL, poW = (pl.y, pl.x, pl.oW, pl.oL) if girar else (pl.x, pl.y, pl.oL, pl.oW)
@@ -588,7 +604,7 @@ def cargar_piso(piso: list[tuple[int, int]], bloques: list[Bloque], vehiculos: l
                 filas.append(FilaSDA(vehiculo=v.numero, tipo_vehiculo=v.tipo, pallet=0, sku=b.cod,
                                      descripcion=b.desc, cajas=pl.n, bultos=pl.n,
                                      unidades=pl.n * max(b.cm_por_caja, 1), tipo="Piso",
-                                     pedido=b.pedido))
+                                     pedido=b.pedido, sucursal=b.sucursal))
 
     for v in list(vehiculos):                       # 1) detrás de los pallets ya cargados
         if sum(it.qty for it in items) <= 0:
@@ -652,6 +668,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
     # pallets en el camión no cambia: 120 cm a lo ancho (2 columnas) y 100 a lo largo.
     pack_L, pack_W = orientar_pallet(pal_L, pal_W, orientacion, bloques, restric, pal_H)
     calcular_capacidades(bloques, pack_L, pack_W, pal_H, restric, cache, tabla)
+    res.avisos += avisos_no_caben(bloques, pal_L, pal_W)
     ordenar_por_volumen(bloques)
     if por_producto:                    # restricción del cliente: cada producto en sus pallets, sin remezclar
         pallets, piso = armar_pallets_por_producto(bloques)

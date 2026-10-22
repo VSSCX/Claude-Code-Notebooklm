@@ -136,3 +136,6 @@ cabe en el pallet y uno de HITES con segregación de calefones.
 - `TrazWeb.bas` no se probó dentro de Excel, solo se simuló su salida con el libro real. Pruébalo con un pedido antes de usarlo a diario.
 - `ActualizarFechaYReferencia` cuenta un grupo como exitoso aunque falle la escritura de la fecha, porque esa parte usa `On Error Resume Next`.
 - Sin autenticación: el servidor escucha solo en `127.0.0.1`, así que no es accesible desde otros equipos.
+  Para compartir la plataforma con otras personas desde este mismo equipo está `servidor.bat`: publica en la red (`0.0.0.0:8000`),
+  abre el puerto en el firewall, **exige cuenta para entrar** y se reinicia solo si cae. La primera cuenta (administrador) se crea desde
+  `http://localhost:8000` en ese mismo equipo; las acciones de SAP se ejecutan con el SAP GUI de ese equipo.

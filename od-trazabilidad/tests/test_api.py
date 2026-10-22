@@ -1643,10 +1643,14 @@ def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c
     assert cam["kilos"] == cam["pallets"][0]["kilos"] == d["kilos"] == 50.0
     assert cam["pallets"][0]["lineas"] == [{"sku": "1001", "descripcion": cam["pallets"][0]["lineas"][0]["descripcion"],
                                             "sucursal": "", "bultos": 4, "unidades": 10}]
-    # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva
+    # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva. Dos sucursales con muy poca carga comparten pallet
     r = c.post("/api/cubicaje-libre/reparto", json={"texto": "SUC A\t1001\t10\nSUC B\t1001\t3\n", "modo": "SDA PREDISTRIBUIDO"}).json()
     pal = {p["sucursal"]: (p["unidades"], p["bultos"]) for p in r["carga_por_camion"][0]["pallets"]}
-    assert pal == {"SUC A": (10, 4), "SUC B": (3, 3)}
+    assert pal == {"2 sucursales": (13, 7)}
+    por_suc = {}
+    for f in r["filas04"]:                                                                          # cada fila conserva su sucursal
+        por_suc[f["sucursal"]] = por_suc.get(f["sucursal"], 0) + f["unidades"]
+    assert por_suc == {"SUC A": 10, "SUC B": 3}
     # a piso: cada unidad es un bulto
     m = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1001", "qty": 10}], "modo": "MDA"}).json()
     assert (m["carga_por_camion"][0]["unidades"], m["carga_por_camion"][0]["bultos"]) == (10, 10)

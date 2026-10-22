@@ -8,7 +8,7 @@ a SQL Server y la lógica de instalación, y reemplaza solo los archivos incluid
 archivos de texto van en ARCHIVOS y los binarios (fuentes) en BINARIOS, en base64.
 Solo usa la biblioteca estándar.
 
-Con --sin-cuentas el instalador sale sin los archivos de servidor y cuentas (docs\\SERVIDOR.md, servidor.bat,
+Con --sin-cuentas el instalador sale sin los archivos de servidor y cuentas (docs\\SERVIDOR.md, servidor_proxy.bat,
 herramientas\\restablecer_clave.py): es el que se reparte a los analistas que usan la plataforma en su propio PC.
 """
 import base64
@@ -20,7 +20,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 EXCLUIR_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "data", "node_modules", ".impeccable"}
 EXCLUIR_ARCHIVOS = {".env", "xlsx.full.min.js", "crear_proyecto.py"}
-SOLO_SERVIDOR = {"docs/SERVIDOR.md", "docs/PENDIENTES.md", "servidor.bat", "herramientas/restablecer_clave.py"}   # PENDIENTES: notas del equipo
+SOLO_SERVIDOR = {"docs/SERVIDOR.md", "docs/PENDIENTES.md", "servidor_proxy.bat", "herramientas/restablecer_clave.py"}   # PENDIENTES: notas del equipo
 # Archivos que ya no existen en el proyecto: al reinstalar encima se borran, para que no queden sombras de versiones viejas
 OBSOLETOS = ["app/routers/cubicaje.py"]          # ahora es el paquete app/routers/cubicaje/
 CONSERVAR_VACIOS = {".gitkeep"}          # data/.gitkeep y casos/.gitkeep crean las carpetas
