@@ -422,14 +422,15 @@ function init(){
 const _skuCache={};
 function skuMat(color,txt){
   txt=String(txt==null?'':txt).trim();
-  const ckey=color+'|'+txt;
+  if(MODO_BN){const gr=grisBN(color);color='rgb('+gr[0]+','+gr[1]+','+gr[2]+')';}
+  const ckey=color+'|'+txt+(MODO_BN?'|bn':'');
   if(_skuCache[ckey]) return _skuCache[ckey];              // 1 textura por producto+color (no por caja)
   const S=512, pad=22, maxW=S-2*pad, maxH=S-2*pad;         // mayor resolucion = mas nitido
   const cc=document.createElement('canvas');cc.width=cc.height=S;const g=cc.getContext('2d');
   g.fillStyle=color;g.fillRect(0,0,S,S);
-  g.strokeStyle='rgba(0,0,0,.22)';g.lineWidth=16;g.strokeRect(0,0,S,S);
-  if(txt.length<=2){ g.fillStyle='#fff';g.beginPath();g.arc(S/2,S/2,S*0.36,0,Math.PI*2);g.fill();
-    g.lineWidth=12;g.strokeStyle='#000';g.stroke(); }
+  g.strokeStyle=MODO_BN?'rgba(0,0,0,.9)':'rgba(0,0,0,.22)';g.lineWidth=MODO_BN?26:16;g.strokeRect(0,0,S,S);
+  if(txt.length<=2){ g.fillStyle='#fff';g.beginPath();g.arc(S/2,S/2,S*(MODO_BN?0.38:0.36),0,Math.PI*2);g.fill();
+    g.lineWidth=MODO_BN?22:12;g.strokeStyle='#000';g.stroke(); }
   g.fillStyle='rgba(0,0,0,.98)';g.textAlign='center';g.textBaseline='middle';
   function wrap(fs){                                        // parte el texto en lineas que quepan a lo ancho
     g.font='800 '+fs+'px Segoe UI,Arial';
@@ -438,7 +439,7 @@ function skuMat(color,txt){
       if(g.measureText(t).width<=maxW || !cur){cur=t;} else {lines.push(cur);cur=w;} }
     if(cur)lines.push(cur); return lines;
   }
-  let fs=(txt.length<=2)?230:72, lines=wrap(fs);            // la letra sola va grande: se lee impresa            // reduce fuente hasta que entre en alto y ancho
+  let fs=(txt.length<=2)?(MODO_BN?290:230):72, lines=wrap(fs);            // la letra sola va grande: se lee impresa            // reduce fuente hasta que entre en alto y ancho
   while(fs>12){
     lines=wrap(fs); g.font='800 '+fs+'px Segoe UI,Arial';
     let wOk=true; for(const ln of lines){ if(g.measureText(ln).width>maxW){wOk=false;break;} }
@@ -726,7 +727,11 @@ function fmt(n){return (Math.round((n||0)*10)/10).toLocaleString('es-CL');}
 
 // ---- PDF para operaciones: A4 vertical, un archivo por camion (sus dos vistas, cada una en su hoja con el detalle de carga).
 // Se lee tambien en blanco y negro: cada producto lleva su letra en un recuadro y las cajas del 3D van rotuladas.
-const PDF={W:210,H:297,M:12,INK:[20,30,45],GRIS:[90,100,115],TENUE:[225,229,234],AZUL:[37,99,214]};
+const PDF={W:210,H:297,M:12,INK:[0,0,0],GRIS:[55,60,70],TENUE:[205,208,213],AZUL:[0,0,0]};
+/* Modo impresion en blanco y negro (el PDF es para operaciones, que imprime en baja calidad): las cajas van en grises claros,
+   cada producto se reconoce por su LETRA grande, las lineas se engrosan y la foto sale en escala de grises. */
+let MODO_BN=false; const BN_NIVEL=new Map(); const BN_GRISES=[[240,240,240],[205,205,205],[165,165,165]];
+function grisBN(color){if(!BN_NIVEL.has(color))BN_NIVEL.set(color,BN_GRISES[BN_NIVEL.size%BN_GRISES.length]);return BN_NIVEL.get(color);}
 function pdfPausa(ms){return new Promise(r=>setTimeout(r,ms));}
 function pdfNombre(c,i,total){
   var san=function(t){return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'');};
@@ -756,16 +761,26 @@ function pdfAspectoVista(azv,elv){
   az=sav.az;el=sav.el;dist=sav.dist;ctr.copy(sav.ctr);camera.aspect=sav.asp;camera.updateProjectionMatrix();
   return (x1-x0)/(y1-y0);
 }
+// Escala de grises con mas contraste y lineas oscuras engrosadas (el minimo de los vecinos): una arista de 1 px se pierde en una
+// impresora de baja calidad; asi queda de unos 0,3 mm.
+function pdfGrises(src){
+  var a=document.createElement('canvas');a.width=src.width;a.height=src.height;var g=a.getContext('2d');
+  g.filter='grayscale(1) contrast(1.3)';g.drawImage(src,0,0);g.filter='none';
+  var b=document.createElement('canvas');b.width=a.width;b.height=a.height;var q=b.getContext('2d');
+  q.drawImage(a,0,0);q.globalCompositeOperation='darken';
+  [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]].forEach(function(o){q.drawImage(a,o[0],o[1]);});
+  return b.toDataURL('image/jpeg',0.95);
+}
 function shotWhite(azv,elv,w,h){
   var oldBg=scene.background, pr=renderer.getPixelRatio(), oldFloor=floorMesh.material;
   var sav={az:az,el:el,dist:dist,ctr:ctr.clone()};
-  scene.background=new THREE.Color(0xffffff); floorMesh.material=new THREE.ShadowMaterial({opacity:0.16});
+  scene.background=new THREE.Color(0xffffff); floorMesh.material=new THREE.ShadowMaterial({opacity:MODO_BN?0:0.16});
   // Para imprimir: aristas oscuras y marcadas, para separar una caja de la otra y de la hoja
   var arOp=_MAT_ARISTA.opacity, arCol=_MAT_ARISTA.color.getHex();
   _MAT_ARISTA.opacity=0.95; _MAT_ARISTA.color.setHex(0x0b1522);
-  renderer.setPixelRatio(1.5); renderer.setSize(w,h,false);
+  renderer.setPixelRatio(MODO_BN?1:1.5); renderer.setSize(w,h,false);
   pdfEncuadrar(azv,elv,w/h); renderer.render(scene,camera);
-  var url=renderer.domElement.toDataURL('image/jpeg',0.92);
+  var url=MODO_BN?pdfGrises(renderer.domElement):renderer.domElement.toDataURL('image/jpeg',0.92);
   _MAT_ARISTA.opacity=arOp; _MAT_ARISTA.color.setHex(arCol);
   scene.background=oldBg; floorMesh.material=oldFloor; az=sav.az; el=sav.el; dist=sav.dist; ctr.copy(sav.ctr);
   renderer.setPixelRatio(pr); onResize();
@@ -777,6 +792,7 @@ async function exportPDF(soloActual){
   var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;}), cur0=cur;
   var pS=palSel; palSel=null;                                           // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
+  var eL=etiquetaLetra; etiquetaLetra=true; MODO_BN=true;                // blanco y negro: cajas rotuladas siempre con su letra
   // La planta (desde arriba) va primero: es la que deja ver todos los productos, sin que una caja tape a otra.
   // La camara no puede mirar exactamente en vertical (queda paralela al «arriba»): 1.53 rad es casi 88 grados.
   var VISTAS=[['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
@@ -784,6 +800,7 @@ async function exportPDF(soloActual){
     var i=idxs[k], c=CAM[i];
     busy.textContent='Generando PDF '+(k+1)+' de '+idxs.length+'...';
     await pdfPausa(60);
+    BN_NIVEL.clear();(c.items||[]).forEach(function(it,k){BN_NIVEL.set(it.color,BN_GRISES[k%BN_GRISES.length]);});   // el mismo gris en la tabla y en las cajas
     buildScene(i);
     var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     var lay=pdfDisposicion(c,VISTAS);
@@ -794,14 +811,14 @@ async function exportPDF(soloActual){
     doc.save(pdfNombre(c,i,CAM.length));                                   // un archivo por camion, con su numero en el nombre
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
   }
-  palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
+  MODO_BN=false;etiquetaLetra=eL;palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
   busy.classList.remove('on');
 }
 // Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja.
 // Si caben las dos vistas en la misma hoja van juntas; si no, cada una en su hoja con el detalle de carga.
 function pdfDisposicion(c,vistas){
   var n=(c.items||[]).length, dos=n>26, filas=dos?Math.ceil(n/2):n;
-  var rh=dos?4.6:(n<=10?6:(n<=18?5.3:4.7)), yTabla=51, altoTabla=6.5+filas*rh+8;
+  var rh=dos?4.8:(n<=10?6.4:(n<=18?5.6:4.9)), yTabla=51, altoTabla=6.5+filas*rh+8;
   var yFoto=yTabla+altoTabla+3, pie=PDF.H-16, iw=PDF.W-2*PDF.M, rot=6;
   // alto natural de cada vista a todo el ancho (v[3] = alto minimo; la planta es una franja baja y ancha)
   var altos=vistas.map(function(v){return Math.max(v[3]||50,iw/pdfAspectoVista(v[1],v[2])*1.04);});
@@ -831,12 +848,12 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay,esc){
   doc.setFont('helvetica','bold');doc.setFontSize(11.5);doc.setTextColor.apply(doc,INK);
   doc.text((c.tipo||'CAMIÓN')+'  ('+Math.round(c.L*10)+' x '+Math.round(c.W*10)+' x '+Math.round(c.H*10)+' mm)',M,36);
   var libres=Math.max(0,(c.L-(c.maxX||0))/100), uni=(c.items||[]).reduce(function(a,it){return a+(it.n||0)*(it.m||1);},0), oc=Math.max(0,Math.min(100,c.ocupVol||0));
-  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(70,80,95);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(0,0,0);
   doc.text('Peso total: '+fmt(c.pesoTot)+' kg',M,42.4);
   doc.text('Volumen total: '+fmt(c.volTot)+' m3  ('+oc.toFixed(0)+' %)',M+52,42.4);
   doc.text('Unidades: '+fmt(uni),M+112,42.4);
   doc.text('Metros libres: '+libres.toFixed(2).replace('.',',')+' m',W-M,42.4,{align:'right'});
-  doc.setDrawColor.apply(doc,AZUL);doc.setLineWidth(0.6);doc.line(M,46,W-M,46);
+  doc.setDrawColor.apply(doc,AZUL);doc.setLineWidth(0.9);doc.line(M,46,W-M,46);
   // --- detalle de carga
   pdfTabla(doc,c,lay);
   // --- fotos del camion a todo el ancho; cada una toma la forma del camion (sin hoja en blanco arriba y abajo)
@@ -846,25 +863,25 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay,esc){
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor.apply(doc,AZUL);
     doc.text('Vista '+(k+1)+'  ·  '+vista[0],M,yf+3.2);
     doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor.apply(doc,GRIS);
-    if(etiquetaLetra)doc.text('Cajas rotuladas con la letra de su producto',W-M,yf+3.2,{align:'right'});
+    doc.text('Cada caja lleva la letra de su producto',W-M,yf+3.2,{align:'right'});
     var img=shotWhite(vista[1],vista[2],2000,Math.round(2000*ih/iw));
     doc.addImage(img,'JPEG',M,yf+lay.rot-1,iw,ih,undefined,'FAST');
     yf+=lay.rot+ih+3;
   });
   // --- pie
   var fy=PDF.H-10;
-  doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(150);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(55);
   doc.text('Order Desk - Electrolux Chile   |   generado '+new Date().toLocaleDateString('es-CL')+'   |   '+nombre,M,fy);
-  doc.setFontSize(6);doc.setTextColor(180);doc.text('Modelo 3D cabina: "Scania S730 2-Axle 2016"',M,fy+4);
+  doc.setFontSize(6.5);doc.setTextColor(100);doc.text('Modelo 3D cabina: "Scania S730 2-Axle 2016"',M,fy+4);
 }
 function pdfTabla(doc,c,lay){
   var M=PDF.M,INK=PDF.INK,items=c.items||[],W=PDF.W,rh=lay.rh,y0=lay.yTabla;
   var cw=lay.dos?(W-2*M-6)/2:W-2*M, grupos=lay.dos?[items.slice(0,Math.ceil(items.length/2)),items.slice(Math.ceil(items.length/2))]:[items];
   grupos.forEach(function(g,gi){
     var x=M+gi*(cw+6), y=y0;
-    doc.setFillColor(240,243,247);doc.rect(x,y,cw,6,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(60,70,85);
-    var cx=lay.dos?{desc:x+1.5,uni:x+cw-2}:{desc:x+1.5,uni:x+cw-82,L:x+cw-62,A:x+cw-44,H:x+cw-26,peso:x+cw-2};
+    doc.setFillColor(222,224,228);doc.rect(x,y,cw,6,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(8.6);doc.setTextColor(0,0,0);
+    var cx=lay.dos?{desc:x+1.5,uni:x+cw-2}:{desc:x+1.5,uni:x+cw-74,L:x+cw-56,A:x+cw-40,H:x+cw-24,peso:x+cw-2};
     doc.text('Descripción',cx.desc,y+4.1);
     doc.text('Unidades',cx.uni,y+4.1,{align:'right'});
     if(!lay.dos){doc.text('Long.',cx.L,y+4.1,{align:'right'});doc.text('Ancho',cx.A,y+4.1,{align:'right'});doc.text('Alto',cx.H,y+4.1,{align:'right'});doc.text('Peso kg',cx.peso,y+4.1,{align:'right'});}
@@ -872,21 +889,21 @@ function pdfTabla(doc,c,lay){
     g.forEach(function(it,k){
       var ym=y+k*rh+rh/2;
       // letra en recuadro con el color del producto: negra sobre claros y blanca sobre oscuros, asi se lee tambien en blanco y negro
-      var col=hex(it.color);doc.setFillColor(col[0],col[1],col[2]);doc.roundedRect(x+1.5,ym-2.4,5.2,4.8,0.9,0.9,'F');
-      var claro=(0.299*col[0]+0.587*col[1]+0.114*col[2])>150;doc.setTextColor(claro?25:255,claro?25:255,claro?25:255);
-      doc.setFont('helvetica','bold');doc.setFontSize(7.4);doc.text(String(it.letra||''),x+4.1,ym+1.05,{align:'center'});
+      var col=grisBN(it.color);doc.setFillColor(col[0],col[1],col[2]);doc.setDrawColor(0,0,0);doc.setLineWidth(0.4);doc.roundedRect(x+1.3,ym-2.7,5.8,5.4,0.9,0.9,'FD');
+      doc.setTextColor(0,0,0);
+      doc.setFont('helvetica','bold');doc.setFontSize(8.6);doc.text(String(it.letra||''),x+4.2,ym+1.2,{align:'center'});
       // SKU en gris y descripcion, en la misma celda
-      var fs=lay.dos?7.6:8.6, cod=String(it.cod||''), nm=String(it.desc||it.cod||'').replace(new RegExp('^'+cod.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*'),'')||cod;
+      var fs=lay.dos?8:9.2, cod=String(it.cod||''), nm=String(it.desc||it.cod||'').replace(new RegExp('^'+cod.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*'),'')||cod;
       var xd=x+9.5, maxW=cx.uni-(lay.dos?12:18)-xd;
-      doc.setFont('helvetica','normal');doc.setFontSize(fs);doc.setTextColor(120,130,145);doc.text(cod,xd,ym+1.05);
+      doc.setFont('helvetica','normal');doc.setFontSize(fs);doc.setTextColor(70,76,88);doc.text(cod,xd,ym+1.05);
       var xn=xd+doc.getTextWidth(cod)+2.2;
-      doc.setTextColor(40,50,65);
+      doc.setTextColor(0,0,0);
       if(doc.getTextWidth(nm)>maxW-(xn-xd)){while(nm.length>1&&doc.getTextWidth(nm+'…')>maxW-(xn-xd))nm=nm.slice(0,-1);nm+='…';}
       doc.text(nm,xn,ym+1.05);
       doc.setFont('helvetica','bold');doc.text(fmt(it.n*(it.m||1)),cx.uni,ym+1.05,{align:'right'});doc.setFont('helvetica','normal');
-      if((it.m||1)>1&&!lay.dos){doc.setFontSize(7);doc.setTextColor(120,130,145);doc.text(fmt(it.n)+' bultos x '+it.m,cx.uni-12,ym+1.05,{align:'right'});}
+      if((it.m||1)>1&&!lay.dos){doc.setFontSize(7.6);doc.setTextColor(70,76,88);doc.text(fmt(it.n)+' bultos x '+it.m,cx.uni-12,ym+1.05,{align:'right'});}
       if(!lay.dos){doc.text(num(it.L),cx.L,ym+1.05,{align:'right'});doc.text(num(it.W),cx.A,ym+1.05,{align:'right'});doc.text(num(it.H),cx.H,ym+1.05,{align:'right'});doc.text(fmt(it.n*it.pesoU),cx.peso,ym+1.05,{align:'right'});}
-      doc.setDrawColor(228,232,238);doc.setLineWidth(0.2);doc.line(x,y+(k+1)*rh,x+cw,y+(k+1)*rh);
+      doc.setDrawColor(120,125,135);doc.setLineWidth(0.25);doc.line(x,y+(k+1)*rh,x+cw,y+(k+1)*rh);
     });
   });
   // total
