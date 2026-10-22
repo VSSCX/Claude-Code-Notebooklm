@@ -520,6 +520,8 @@ document.addEventListener('click', ev => {
     case 'entregasConjunto': entregasConjunto(!!t.dataset.ensayo); break;
     case 'gruposConjunto': gruposConjunto(); break;
     case 'restablecerCamiones': guardarCamiones(true); break;
+    case 'pdfPedido': pdfPedido(t.dataset.ped); break;
+    case 'pdfConjunto': pdfConjunto(); break;
     case 'verVisorCub': UI.verVisorCub = !UI.verVisorCub; render(); break;
     case 'verPredist': UI.verPredist = !UI.verPredist; render(); break;
     case 'guardarPredist': { const p = Store.get('pedidos', UI.sel);

@@ -149,6 +149,7 @@ function vistaConjunto(){
     <div class="label-foot">
       ${faltanEnt ? `<button class="btn quiet sm" data-act="entregasConjunto" data-ensayo="1" title="Recorre VL01N sin guardar">Ensayo en SAP</button>
         <button class="btn primary sm" data-act="entregasConjunto">Crear ${faltanEnt === totalEnt ? '' : 'las que faltan: '}${faltanEnt} entrega(s) en SAP</button>` : ''}
+      ${d.visor ? `<button class="btn sm" data-act="pdfConjunto" title="PDF para operaciones, un archivo por camión">${ICON.descargar} Descargar PDF</button>` : ''}
       ${!faltanEnt && porCrear.length ? `<button class="btn primary sm" data-act="gruposConjunto">Crear ${porCrear.length} grupo(s) en SAP</button>` : ''}
       <span class="spacer"></span><span class="small muted">Una entrega por camión y pedido; un grupo por camión${varias ? ' y categoría' : ''}.</span></div>
     ${estadoJob()}
@@ -162,7 +163,7 @@ function vistaConjunto(){
       <td>${x.faltan.length ? `<span class="tag warn">Faltan ${x.faltan.length}</span>` : x.dePed.length ? `<span class="tag ok">${x.dePed.map(e => esc(e.entrega)).join(' · ')}</span>` : ''}</td>
       <td>${x.gruposCat.map(gc => `<div style="white-space:nowrap">${varias ? `<span class="small muted">${gc.k} </span>` : ''}${gc.grupo ? `<span class="tag ok code">${esc(gc.grupo)}</span>` : gc.listo ? '<span class="tag warn">Por crear</span>' : '—'}</div>`).join('')}</td></tr>`).join('')}
     </tbody></table></div></div>
-  ${d.visor ? `<div class="visor-caja" style="margin-top:16px;min-height:480px"><iframe title="Visor 3D del cubicaje conjunto" src="${esc(d.visor)}"></iframe></div>` : ''}
+  ${d.visor ? `<div class="visor-caja" style="margin-top:16px;min-height:480px"><iframe data-k="visor-conj" title="Visor 3D del cubicaje conjunto" src="${esc(d.visor)}"></iframe></div>` : ''}
   <div class="row" style="gap:12px;align-items:flex-end;margin-top:16px">
     ${distintos.length > 1 ? `<label class="f" title="Los pedidos son de clientes distintos: el pallet, la caja master y el híbrido se toman de este">Reglas de${sel3('data-conjcli', distintos.map(x => ({v: x, t: x})), o.cliente || d.conjunto.reglas_de)}</label>` : ''}
     <label class="f">Modo${sel3('data-conjmodo', modos.map(m => ({v: m, t: m})), o.modo)}</label>
@@ -537,6 +538,30 @@ function visorPedido(p, cb, alto, clave = p.pedido){
     ${herramientasVisor()}
     <a class="btn sm abrir" href="${esc(cb.visor)}" target="_blank" rel="noopener" style="position:absolute;right:10px;bottom:10px">${ICON.external} Aparte</a></div>`;
 }
+/* PDF del cubicaje sin entrar al visor aparte: el visor 3D genera el PDF, así que se le pide desde aquí (aunque esté oculto, se muestra un momento). */
+const pausa = ms => new Promise(r => setTimeout(r, ms));
+async function pedirPdfAlVisor(buscar, listo){
+  for (let i = 0; i < 100; i++){                                  // hasta ~10 s a que el visor cargue sus datos
+    const f = buscar();
+    if (f && f.contentWindow && listo(f)){ f.contentWindow.postMessage({tipo: 'od-visor-pdf', soloActual: false}, location.origin); return true; }
+    await pausa(100);
+  }
+  toast('El visor 3D no alcanzó a cargar. Intenta de nuevo.');
+  return false;
+}
+async function pdfPedido(pedido){
+  const cb = UI.cubicaje[pedido]; if (!cb || !cb.visor) return toast('Este cubicaje no tiene visor 3D.');
+  const n = (cb.camiones || []).length;
+  toast(n > 1 ? `Se descargarán ${n} PDF, uno por camión. Si el navegador pregunta, permite las descargas múltiples.` : 'Generando el PDF…');
+  if (!UI.verVisorCub){ UI.verVisorCub = true; render(); }
+  await pedirPdfAlVisor(() => document.querySelector('iframe[data-k="visor-ped"]'),
+    f => f.dataset.visor ? Visor.listos.has(f) && !!Visor.enviado.get(f) : f.contentDocument && f.contentDocument.readyState === 'complete');
+}
+async function pdfConjunto(){
+  const n = (UI.conjunto && UI.conjunto.camiones || []).length;
+  toast(n > 1 ? `Se descargarán ${n} PDF, uno por camión. Si el navegador pregunta, permite las descargas múltiples.` : 'Generando el PDF…');
+  await pedirPdfAlVisor(() => document.querySelector('iframe[data-k="visor-conj"]'), f => f.contentDocument && f.contentDocument.readyState === 'complete');
+}
 function fichasCamion(p, cb){
   const porCamion = {};
   for (const f of cb.filas) porCamion[f.camion] = f.ocup_acum;
@@ -605,6 +630,7 @@ function vistaCubicaje(p){
       ${cb.visor ? `<button class="btn sm" data-act="ensayoEntregas" title="Recorre VL01N sin guardar, para revisar antes de crear">Ensayo en SAP</button>
         <button class="btn primary sm" data-act="crearEntregas" title="Crea una entrega por camión en VL01N">Crear entregas en SAP</button>
         <a class="btn sm" href="/api/cubicaje/${encodeURIComponent(p.pedido)}/excel">Exportar a Excel</a>
+        <button class="btn sm" data-act="pdfPedido" data-ped="${esc(p.pedido)}" title="PDF para operaciones, un archivo por camión (blanco y negro, con vista desde arriba)">${ICON.descargar} Descargar PDF</button>
         <button class="btn sm" data-act="verVisorCub" aria-pressed="${!!UI.verVisorCub}">${UI.verVisorCub ? 'Ocultar visor 3D' : 'Ver visor 3D aquí'}</button>` : ''}</div>
     ${cb.camiones.length ? fichasCamion(p, cb) : ''}
     ${cb.visor && UI.verVisorCub ? `<div style="margin:10px 0 14px">${visorPedido(p, cb, 640)}</div>` : ''}

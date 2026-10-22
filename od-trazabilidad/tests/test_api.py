@@ -379,6 +379,27 @@ def test_visor_no_se_acumula(c, monkeypatch, tmp_path):
     assert c.get("/visor/visor/three.min.js").status_code == 200     # las sirve la plataforma
 
 
+def test_el_visor_aparte_se_arma_con_la_plantilla_de_hoy(c):
+    """Un visor guardado antes de una mejora (PDF en blanco y negro, vista desde arriba…) se abre «aparte» con la plantilla
+    actual y sus mismos datos: el PDF que se descarga sale igual en todos lados."""
+    from pathlib import Path
+    from app.config import settings
+    anterior = settings.plantilla_visor
+    object.__setattr__(settings, "plantilla_visor", str(Path(__file__).resolve().parent.parent / "web" / "visor" / "Plantilla_Visor.html"))
+    carpeta = Path(settings.visores_dir)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    datos = '{"camiones":[{"idx":1,"tipo":"Rampla 53","items":[],"cajas":[],"pallets":[]}],"pedido":"VIEJO-77"}'
+    (carpeta / "pedido_9999_viejo.html").write_text(
+        f"<html><body>plantilla antigua\nlet DATA={datos};\n</body></html>", encoding="utf-8")
+    r = c.get("/visor/pedido_9999_viejo.html")
+    assert r.status_code == 200
+    assert "plantilla antigua" not in r.text and "PLANTA, DESDE ARRIBA" in r.text      # plantilla nueva
+    assert f"let DATA={datos};" in r.text                                              # los datos del cubicaje, intactos
+    object.__setattr__(settings, "plantilla_visor", anterior)
+    assert c.get("/visor/no_existe.html").status_code == 404
+    assert c.get("/visor/..%2Ftrazabilidad.html").status_code in (404, 400)
+
+
 def _archivo_medidas(tmp_path, filas):
     from openpyxl import Workbook
     wb = Workbook(); ws = wb.active; ws.title = "Base para carga"

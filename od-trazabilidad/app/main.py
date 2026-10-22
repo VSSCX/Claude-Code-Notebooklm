@@ -195,6 +195,31 @@ app.mount("/fonts", StaticFiles(directory=WEB / "fonts"), name="fonts")
 app.mount("/vendor", StaticFiles(directory=WEB / "vendor"), name="vendor")
 VISORES = Path(settings.visores_dir)
 VISORES.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/visor/{nombre}.html", include_in_schema=False)
+def visor_al_dia(nombre: str):
+    """El visor que se abre «aparte» es un HTML guardado al cubicar, con la plantilla de ese momento. Aquí se vuelve a armar con la
+    plantilla de hoy (PDF para imprimir, vista desde arriba, contraste…) y los mismos datos del cubicaje: los cubicajes hechos antes
+    de una mejora también la tienen y el PDF que se descarga sale igual en todos lados."""
+    import re
+
+    from fastapi.responses import HTMLResponse
+
+    from .cubicaje.visor import html_visor
+    ruta = (VISORES / f"{nombre}.html").resolve()
+    if VISORES.resolve() not in ruta.parents or not ruta.is_file():
+        raise HTTPException(404, "Visor no encontrado.")
+    html = ruta.read_text(encoding="utf-8")
+    m = re.search(r"^let DATA=(.*);\s*$", html, re.MULTILINE)
+    if m:                                                   # el del cubicaje; el «visor vivo» no trae datos propios y se sirve tal cual
+        try:
+            html = html_visor(Path(settings.plantilla_visor).read_text(encoding="utf-8"), m.group(1))
+        except (OSError, ValueError):
+            pass                                            # sin plantilla: queda la versión guardada
+    return HTMLResponse(html)
+
+
 app.mount("/visor", StaticFiles(directory=VISORES), name="visor")
 
 
