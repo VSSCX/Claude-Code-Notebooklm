@@ -63,26 +63,89 @@ function vistaPedidos(){
       ${lista}
       ${UI.juntar ? barraJuntar(todos) : ''}
     </section>
-    <section aria-label="Detalle del pedido">${UI.verConjunto && UI.conjunto ? vistaConjunto() : UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
+    <section aria-label="Detalle del pedido">${UI.verConjunto && UI.conjunto ? vistaConjunto() : UI.juntar ? vistaJuntar() : UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
   </div>`;
 }
 
 /* ---- Juntar pedidos: cubicar varios en los mismos camiones (multipedido del Excel) ---- */
-const puedeJuntar = p => { const f = flujoDe(p); return f.enPlataforma && !f.desact; };
+const puedeJuntar = () => true;       // cualquier pedido se puede marcar: el panel dice qué le falta a cada uno
 function seleccionJuntar(todos){
   const ps = [...UI.juntarSel].map(id => Store.get('pedidos', id)).filter(Boolean);
   const clientes_ = [...new Set(ps.map(p => (p.cliente || '').trim().toUpperCase()))];
   return {ps, clientes: clientes_.filter(Boolean)};
 }
+/* En qué situación está cada pedido marcado para juntar. Un pedido cuyas entregas ya se crearon con su análisis NO se puede juntar
+   tal cual: duplicaría lo despachado. Hay que volver a analizarlo (SAP resta lo entregado) y queda solo lo que falta: el concho. */
+function estadoJuntar(p){
+  const f = flujoDe(p), {tot} = resumen(p);
+  if (UI.trayendo === p.pedido) return {k: 'trayendo', tono: 'info', txt: 'Leyendo SAP…', det: 'No uses SAP mientras tanto'};
+  if (!f.an) return {k: 'sin', tono: 'warn', txt: 'Sin analizar', det: 'Analízalo para saber qué falta', accion: 'Analizar'};
+  if (f.desact) return {k: 'viejo', tono: 'warn', txt: 'Cambió el cliente', det: 'Vuelve a analizarlo', accion: 'Analizar'};
+  const usado = f.ents.length > 0 && (!f.cb || f.ents.length >= f.cb.camiones);
+  if (usado) return tot.pendiente > 0
+    ? {k: 'usado', tono: 'warn', txt: `Quedan ${fmt(tot.pendiente)} un.`, det: 'Sus entregas ya están creadas: trae lo que quedó', accion: 'Traer lo que quedó'}
+    : {k: 'nada', tono: 'err', txt: 'Ya se despachó todo', det: 'No tiene nada pendiente: quítalo de la selección'};
+  if (!(f.an.carga > 0)) return {k: 'nada', tono: 'err', txt: 'Nada que cargar', det: 'El análisis no deja unidades para este pedido'};
+  return {k: 'listo', tono: 'ok', txt: `Listo · ${fmt(f.an.carga)} un.`, det: f.an.suministro > 1 ? `Suministro ${f.an.suministro}: solo lo que faltaba` : 'Listo para cubicar'};
+}
+function juntarListo(){
+  const {ps} = seleccionJuntar();
+  return ps.length >= 2 && !UI.conjuntoCargando && !UI.trayendo && ps.every(p => estadoJuntar(p).k === 'listo');
+}
 function barraJuntar(todos){
-  const {ps, clientes: cs} = seleccionJuntar(todos);
-  const listo = ps.length >= 2 && !UI.conjuntoCargando;
-  const msg = !ps.length ? 'Marca los pedidos que viajarán juntos.'
-    : ps.length === 1 ? 'Marca al menos otro pedido más.'
-    : `${ps.length} pedidos${cs.length > 1 ? ` de ${cs.length} clientes (${cs.join(', ')})` : ''} · ${fmt(ps.reduce((a, p) => a + resumen(p).tot.pedida, 0))} un. solicitadas`;
+  const {ps} = seleccionJuntar(todos);
+  const msg = !ps.length ? 'Marca los pedidos que viajarán juntos.' : ps.length === 1 ? 'Marca al menos otro pedido más.'
+    : juntarListo() ? `${ps.length} pedidos listos para cubicar juntos.` : 'Revisa el panel de la derecha: a algún pedido le falta un paso.';
   return `<div class="juntar-bar" role="region" aria-label="Juntar pedidos">
     <span class="small" aria-live="polite">${esc(msg)}</span>
-    <button class="btn primary sm" data-act="cubicarJuntos" ${listo ? '' : 'disabled'}>${UI.conjuntoCargando ? 'Cubicando…' : 'Cubicar juntos'}</button></div>`;
+    <button class="btn primary sm" data-act="cubicarJuntos" ${juntarListo() ? '' : 'disabled'}>${UI.conjuntoCargando ? 'Cubicando…' : 'Cubicar juntos'}</button></div>`;
+}
+/* Panel guiado: qué es juntar, en qué paso va y qué botón sigue */
+function vistaJuntar(){
+  const {ps} = seleccionJuntar();
+  const est = ps.map(p => [p, estadoJuntar(p)]);
+  const aTraer = est.filter(([, e]) => e.accion), listo = juntarListo();
+  const marcados = ps.length >= 2, hechoTraer = marcados && !aTraer.length && !est.some(([, e]) => e.k === 'nada' || e.k === 'trayendo');
+  const paso = (n, txt, hecho, actual) => `<span class="cj-paso ${hecho ? 'ok' : ''} ${actual ? 'actual' : ''}"><i>${hecho ? ICON.check : n}</i>${txt}</span>`;
+  const actual = !marcados ? 1 : !hechoTraer ? 2 : 3;
+  const siguiente = !ps.length ? 'Marca en la lista, con la casilla, los pedidos que quieres cargar en el mismo camión. Puedes marcar pedidos que ya fueron entregados y facturados si les quedó un concho.'
+    : ps.length === 1 ? 'Marca al menos otro pedido más.'
+    : aTraer.length ? `Falta traer lo que quedó de ${aTraer.length === 1 ? 'un pedido' : aTraer.length + ' pedidos'}. Se lee SAP (VL01N, solo lectura) y el pedido queda con <b>únicamente lo que falta</b>: lo ya entregado se descuenta.`
+    : est.some(([, e]) => e.k === 'nada') ? 'Hay pedidos sin nada que cargar: desmárcalos para seguir.'
+    : listo ? 'Todo listo. Al cubicar juntos se arman los camiones con la carga de todos los pedidos.' : 'Esperando a SAP…';
+  return `<div class="panel juntar-guia" data-k="juntar-guia">
+    <div class="panel-h"><h3>Juntar pedidos en un camión</h3><span class="spacer"></span><span class="small muted">Cada pedido mantiene su entrega; comparten camión y cita</span></div>
+    <div class="cj-pasos" role="list" aria-label="Pasos para juntar pedidos">
+      ${paso(1, 'Marca los pedidos', marcados, actual === 1)}${paso(2, 'Trae lo que quedó', hechoTraer, actual === 2)}${paso(3, 'Cubica juntos', false, actual === 3)}</div>
+    <p class="juntar-sig"><b>Ahora:</b> ${siguiente}</p>
+    ${ps.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Situación</th><th></th></tr></thead><tbody>
+      ${est.map(([p, e]) => `<tr><td class="code"><b>${esc(p.pedido)}</b></td><td>${esc(p.cliente || '—')}</td>
+        <td><span class="tag ${e.tono}">${esc(e.txt)}</span><div class="small muted">${esc(e.det)}</div></td>
+        <td class="n">${e.accion ? `<button class="btn sm" data-act="traerQuedo" data-ped="${esc(p.pedido)}" ${UI.trayendo ? 'disabled' : ''}>${esc(e.accion)}</button>` : ''}
+          <button class="btn quiet sm icon" data-act="quitarJuntar" data-ped="${esc(safeId(p.pedido))}" title="Quitar de la selección" aria-label="Quitar ${esc(p.pedido)} de la selección">${ICON.x}</button></td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty"><h3>Ningún pedido marcado</h3><p>Usa las casillas de la lista de la izquierda.</p></div>`}
+    ${estadoJob()}
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      ${aTraer.length > 1 ? `<button class="btn" data-act="traerTodos" ${UI.trayendo ? 'disabled' : ''}>Traer lo que quedó de los ${aTraer.length}</button>` : ''}
+      <button class="btn primary" data-act="cubicarJuntos" ${listo ? '' : 'disabled'}>${UI.conjuntoCargando ? 'Cubicando…' : 'Cubicar juntos'}</button></div>
+    <p class="juntar-nota">Después de cubicar eliges si los pedidos comparten grupo de SAP o cada uno lleva el suyo, creas las entregas, los grupos y confirmas la cita del camión.</p>
+  </div>`;
+}
+/* Volver a analizar desde el panel, con los datos de siempre (puesto de Configuración, fecha de hoy y el cliente del pedido) */
+async function traerQuedo(pedido){
+  const p = Store.get('pedidos', safeId(pedido)); if (!p || UI.trayendo) return;
+  if (!(p.cliente || '').trim()){ UI.sel = safeId(pedido); return abrirLecturaSap('analizar'); }       // sin cliente se pregunta
+  UI.trayendo = pedido; render();
+  try { await lanzarAnalisis(pedido, {puesto: (config().puesto || 'PN01').toUpperCase(), fecha: new Date().toISOString().slice(0, 10), cliente: p.cliente}); await Store.refresh(); }
+  finally { UI.trayendo = null; render(); }
+}
+async function traerTodos(){
+  for (const p of seleccionJuntar().ps){
+    if (!estadoJuntar(p).accion) continue;
+    await traerQuedo(p.pedido);
+    const e = estadoJuntar(Store.get('pedidos', safeId(p.pedido)) || p);
+    if (e.accion) return;                                  // algo falló: el aviso ya salió, no se sigue con los otros
+  }
 }
 async function cubicarJuntos(){
   const ids = UI.verConjunto && UI.conjunto ? [...UI.conjunto.conjunto.pedidos] : [...UI.juntarSel];
@@ -142,10 +205,20 @@ function vistaConjunto(){
     <div class="cells">${peds.map(n => `<div class="cell"><span class="cap">Pedido</span><button class="enlace" data-sel="${esc(safeId(n))}" data-salir-conj style="font-size:var(--t-md);margin:0">${esc(n)}</button>
       <span class="small muted num">${distintos.length > 1 && cliDe[n] ? esc(cliDe[n]) + ' · ' : ''}${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span>
       <label class="cat-grupo" title="${ents.length ? 'Ya hay entregas creadas: la categoría ya no se puede cambiar' : 'Pedidos de distinta categoría viajan en el mismo camión pero van en entregas y grupos de SAP separados'}">Grupo de SAP
-        <select data-conjcat="${esc(n)}" ${ents.length ? 'disabled' : ''} aria-label="Categoría de grupo del pedido ${esc(n)}">${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${catDe(n) === k ? 'selected' : ''}>Categoría ${k}</option>`).join('')}</select></label></div>`).join('')}</div>
-    ${varias ? `<p class="small" style="margin:10px 0 0"><span class="tag info">${cats.length} categorías</span> Comparten camión y cita, pero cada categoría lleva sus propias entregas y su propio grupo de SAP.</p>` : ''}
+        <select data-conjcat="${esc(n)}" ${ents.length ? 'disabled' : ''} aria-label="Categoría de grupo del pedido ${esc(n)}">${[...'ABCDEFGH'].map(k => `<option value="${k}" ${catDe(n) === k ? 'selected' : ''}>Categoría ${k}</option>`).join('')}</select></label></div>`).join('')}</div>
+    <div class="grp-modo" role="radiogroup" aria-label="Cómo van los grupos de SAP">
+      <span class="cap">Grupos de SAP</span>
+      <label class="opcion ${!varias ? 'on' : ''}"><input type="radio" name="grpmodo" value="camion" data-conjgrp ${!varias ? 'checked' : ''} ${ents.length ? 'disabled' : ''}>
+        <span><b>Un grupo por camión</b><small>Pedidos del mismo tipo: cada pedido con su entrega, todos en el mismo grupo.</small></span></label>
+      <label class="opcion ${cats.length === peds.length ? 'on' : ''}"><input type="radio" name="grpmodo" value="pedido" data-conjgrp ${cats.length === peds.length ? 'checked' : ''} ${ents.length || peds.length > 8 ? 'disabled' : ''}>
+        <span><b>Un grupo por pedido</b><small>Distinta categoría: comparten camión y cita, pero cada pedido va en su propio grupo.</small></span></label>
+      ${varias && cats.length !== peds.length ? `<span class="small muted">Personalizado: ${cats.length} grupos por camión (ajústalos en «Grupo de SAP» de cada pedido).</span>` : ''}
+      ${ents.length ? `<span class="small muted">Ya hay entregas creadas: la forma de agrupar ya no se puede cambiar.</span>` : ''}</div>
     <div class="label-flujo"><div class="cj-pasos" role="list" aria-label="Pasos del cubicaje conjunto">
       ${paso(1, 'Cubicar juntos', true)}${paso(2, `Entregas ${totalEnt - faltanEnt} de ${totalEnt}`, totalEnt > 0 && !faltanEnt)}${paso(3, `Grupos ${todosGrupos.filter(x => x.grupo).length} de ${todosGrupos.length}`, todosGrupos.every(x => x.grupo))}</div></div>
+    <p class="cj-sig"><b>Siguiente:</b> ${faltanEnt ? `crea las entregas en SAP: una por camión y por pedido (${faltanEnt === totalEnt ? totalEnt : faltanEnt} en total). Con «Ensayo en SAP» revisas sin guardar nada.`
+      : porCrear.length ? `crea ${porCrear.length === 1 ? 'el grupo' : 'los ' + porCrear.length + ' grupos'} de SAP (VL06)${varias ? ': uno por camión y categoría' : ''}.`
+      : 'todo está creado. Confirma la cita de cada camión desde la pestaña Grupos de los pedidos (fecha, hora y referencia) y se lleva sola a SAP.'}</p>
     <div class="label-foot">
       ${faltanEnt ? `<button class="btn quiet sm" data-act="entregasConjunto" data-ensayo="1" title="Recorre VL01N sin guardar">Ensayo en SAP</button>
         <button class="btn primary sm" data-act="entregasConjunto">Crear ${faltanEnt === totalEnt ? '' : 'las que faltan: '}${faltanEnt} entrega(s) en SAP</button>` : ''}
@@ -193,7 +266,7 @@ async function entregasConjunto(ensayo){
 async function cambiarCategoria(pedido, cat){
   const d = UI.conjunto; if (!d) return;
   try {
-    const r = await api('PUT', `/cubicaje-conjunto/${encodeURIComponent(d.conjunto.id)}/categorias`, {categorias: {[pedido]: cat}});
+    const r = await api('PUT', `/cubicaje-conjunto/${encodeURIComponent(d.conjunto.id)}/categorias`, {categorias: typeof pedido === 'object' ? pedido : {[pedido]: cat}});
     d.categorias = r.categorias;
   } catch(e){ Avisos.agregar('error', 'No se pudo cambiar la categoría', e.message); }
   render();
@@ -217,6 +290,10 @@ document.addEventListener('change', ev => {
   const el = ev.target; if (!el.matches) return;
   if (el.matches('[data-jsel]')){ el.checked ? UI.juntarSel.add(el.dataset.jsel) : UI.juntarSel.delete(el.dataset.jsel); render(); }
   else if (el.matches('[data-conjcat]')) cambiarCategoria(el.dataset.conjcat, el.value);
+  else if (el.matches('[data-conjgrp]')){                       // un grupo por camión (todos A) o uno por pedido (A, B, C…)
+    const peds = UI.conjunto.conjunto.pedidos;
+    cambiarCategoria(Object.fromEntries(peds.map((n, i) => [n, el.value === 'pedido' ? 'ABCDEFGH'[i] : 'A'])));
+  }
   else if (el.matches('[data-conjmodo]')){ (UI.conjOpts = UI.conjOpts || {}).modo = el.value; }
   else if (el.matches('[data-conjcli]')){ (UI.conjOpts = UI.conjOpts || {}).cliente = el.value; }
   else if (el.matches('[data-conjcm]')){ (UI.conjOpts = UI.conjOpts || {}).caja_master = el.value; }

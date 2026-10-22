@@ -12,7 +12,7 @@ from ...db import get_session
 from ...integrations import clientes as cli_mod
 from ...integrations import kits as kits_mod
 from ...integrations import medidas as med_mod
-from ...models import Config, Entrega
+from ...models import Config, Entrega, Pedido
 from ..comun import (
     _aplicar_ajustes,
     _calefones_de,
@@ -116,6 +116,8 @@ def _cubicar(numero, body: dict, s: Session):
             raise HTTPException(422, f"Primero hay que analizar el pedido {n}: la carga sale del análisis."
                                 if multi else "Primero hay que analizar el pedido: la carga sale del análisis.")
         analisis[n] = _json.loads(ca.valor)
+    if multi:
+        _pedidos_con_entregas_hechas(s, numeros, analisis)
     numero = numeros[0]
     an = analisis[numero]
     suministro = int(an.get("suministro") or 1)
@@ -243,6 +245,27 @@ def _cubicar(numero, body: dict, s: Session):
     return doc
 
 
+def _pedidos_con_entregas_hechas(s: Session, numeros: list[str], analisis: dict) -> None:
+    """Juntar pedidos con un análisis que ya se usó duplicaría lo despachado: si las entregas de ese análisis ya están creadas,
+    el pedido debe analizarse de nuevo para traer solo lo que quedó (el nuevo suministro)."""
+    cid = _id_conjunto(numeros)
+    usados = []
+    for n in numeros:
+        suministro = int(analisis[n].get("suministro") or 1)
+        ents = [e for e in s.scalars(select(Entrega).join(Entrega.pedido_ref).where(
+            Entrega.anulada.is_(False), Pedido.pedido == n)).all() if (e.suministro or 1) == suministro]
+        if not ents or all(e.camion_ref.startswith(cid + "-") for e in ents):
+            continue                                    # sin entregas, o son de este mismo conjunto
+        cub = s.get(Config, _clave_cubicaje(n))
+        camiones = len(json.loads(cub.valor).get("camiones") or []) if cub else 0
+        if not camiones or len(ents) >= camiones:
+            usados.append(n)
+    if usados:
+        raise HTTPException(422, f"{'El pedido' if len(usados) == 1 else 'Los pedidos'} {', '.join(usados)} ya "
+                                 f"{'tiene' if len(usados) == 1 else 'tienen'} entregas creadas con su análisis actual. Vuelve a "
+                                 "analizarlo para traer solo lo que quedó por enviar y recién ahí júntalo con los otros.")
+
+
 def _avisos_clientes(s: Session, distintos: list[str], base: str) -> list[str]:
     """Aviso cuando los pedidos juntos son de clientes con reglas distintas: el cubicaje usa las de `base`."""
     if len(distintos) < 2:
@@ -293,7 +316,7 @@ def cubicar_conjunto(body: dict, s: Session = Depends(get_session)):
     return _cubicar(pedidos, {k: v for k, v in body.items() if k != "pedidos"}, s)
 
 
-CATEGORIAS_GRUPO = ("A", "B", "C", "D")
+CATEGORIAS_GRUPO = tuple("ABCDEFGH")
 
 
 @router.put("/cubicaje-conjunto/{cid}/categorias")

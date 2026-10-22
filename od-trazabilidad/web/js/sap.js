@@ -172,13 +172,13 @@ function cierreAnalisis(){
     if (d.sin_sql && (d.sin_sql.plan || d.sin_sql.disponibilidad)) Avisos.agregar('error', `Pedido ${d.pedido} analizado sin conexión a SQL Server`,
       (sinPlan ? 'No se cruzó con el plan SOP: la carga no está limitada por el plan. ' : '') + (d.sin_sql.disponibilidad ? 'Faltan la primera disponibilidad y, si no venía en ZSD001_03, la OC. ' : '') + 'Lo de SAP sí se leyó.',
       ['Revisa la VPN o la red y la conexión en Configuración, y vuelve a analizar antes de crear entregas.']);
-    if (d.suministro_nuevo) Avisos.agregar('info', `Se abrió el suministro ${d.suministro} de este pedido`,
+    if (d.suministro_nuevo) Avisos.agregar('info', `Pedido ${d.pedido}: se abrió el suministro ${d.suministro}`,
       'Lo que ya se suministró queda registrado en el suministro anterior, con sus entregas y su cubicaje. Este análisis trabaja solo lo que se liberó ahora.', []);
     if (d.export_aviso) Avisos.agregar('info', 'La copia de la Qty en entrega no quedó guardada', d.export_aviso, ['El análisis sí terminó con los datos leídos de SAP.']);
     else if (d.aviso_sap) toast(d.aviso_sap);
     delete UI.analisis[d.pedido]; delete UI.cubicaje[d.pedido]; UI.autoCub[d.pedido] = false;
     if (UI.exportarAlTerminar === d.pedido){ UI.exportarAlTerminar = null; setTimeout(() => descargarKam(d.pedido), 400); }
-    UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos';
+    if (!UI.juntar){ UI.sel = safeId(d.pedido); UI.sub = 'analisis'; UI.view = 'pedidos'; }      // juntando pedidos se queda en el panel
     render();
   } else if (j.estado === 'error'){
     UI.exportarAlTerminar = null;

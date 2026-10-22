@@ -515,6 +515,9 @@ document.addEventListener('click', ev => {
     case 'guardarCamiones': guardarCamiones(false); break;
     case 'juntarModo': UI.juntar = !UI.juntar; if (!UI.juntar){ UI.juntarSel.clear(); } render(); break;
     case 'cubicarJuntos': cubicarJuntos(); break;
+    case 'traerQuedo': traerQuedo(t.dataset.ped); break;
+    case 'traerTodos': traerTodos(); break;
+    case 'quitarJuntar': UI.juntarSel.delete(t.dataset.ped); render(); break;
     case 'verConjunto': if (t.dataset.cid) abrirConjuntoDe(t.dataset.cid); else { UI.verConjunto = true; render(); } break;
     case 'salirConjunto': UI.verConjunto = false; render(); break;
     case 'entregasConjunto': entregasConjunto(!!t.dataset.ensayo); break;

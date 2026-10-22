@@ -1362,6 +1362,7 @@ def test_conjunto_con_categorias_comparte_camion_y_separa_entregas_y_grupos(c, t
     cid = d["conjunto"]["id"]
     assert d["categorias"] == {}                                      # sin elegir, todos van en la categoría A
     assert c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "Z"}}).status_code == 422
+    assert c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "H"}}).status_code == 200      # hay letras para 8 grupos
     assert c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"9999": "B"}}).status_code == 422
     assert c.put("/api/cubicaje-conjunto/JNOEXISTE/categorias", json={"categorias": {}}).status_code == 404
     r = c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "b"}})
@@ -1427,6 +1428,26 @@ def test_conjunto_con_categorias_comparte_camion_y_separa_entregas_y_grupos(c, t
     assert t["estado"] == "ok" and vistos == [("8707099999", "31.10.2026", "10:00:00", "", False)]
     nueva = next(e for e in _estado(c)["entregas"] if e["entrega"] == "8707099999")
     assert nueva["cita"]["fecha"] == "2026-10-31" and nueva["pasos"]["sap"]["ok"]
+
+
+def test_juntar_pedidos_con_entregas_ya_creadas_pide_volver_a_analizar(c, tmp_path, monkeypatch):
+    """Juntar los conchos de pedidos ya despachados: si el análisis de un pedido ya se usó (sus entregas existen), juntarlo tal
+    cual duplicaría lo despachado. Hay que volver a analizarlo (queda solo lo que falta) y recién ahí se puede juntar."""
+    from app.integrations import sap_crear
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4430")
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4431")
+    c.post("/api/cubicaje/4430", json={})
+
+    def falso(pedido, puesto, fecha, materiales, fecha_cita="", hora_cita="", ensayo=False, ses=None):
+        r = sap_crear.Resultado(ok=True, ensayo=ensayo)
+        r.entrega, r.mensaje = "87080" + pedido[-3:] + "1", "ok"
+        return r
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4430", "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:200]
+    r = c.post("/api/cubicaje-conjunto", json={"pedidos": ["4430", "4431"]})
+    assert r.status_code == 422 and "4430" in r.json()["detail"] and "Vuelve a analizarlo" in r.json()["detail"]
+    assert "4431" not in r.json()["detail"]                         # el otro no tiene entregas: no es problema
 
 
 def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):
