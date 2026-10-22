@@ -181,13 +181,13 @@ async function guardarEntrega(pedId, id, marcar){
   if (await save('entregas', nid, e)) toast(id ? 'Entrega actualizada' : 'Entrega creada');
 }
 
-function abrirGrupo(key, opts = {}){
+function abrirGrupo(key){
   const g = grupo1(key); if (!g) return;
   const c = g.cita || {};
   abrirDlg(g.sinGrupo ? `Camión de la entrega ${g.entregas[0].entrega}` : `Camión · grupo ${g.grupo}`, `
     <p style="margin-top:0" class="small">Se aplica a ${g.entregas.length} entrega(s): ${esc(g.entregas.map(e => e.entrega).join(', '))}${g.pedidos.length > 1 ? ' (de más de un pedido)' : ''}.</p>
     <div class="fgrid">
-      <label class="f">N° cita cliente<input type="text" name="citaNum" value="${esc(c.numero || '')}"></label>
+      <label class="f">Referencia del grupo (N° de cita)<input type="text" name="citaNum" value="${esc(c.numero || '')}"></label>
       <label class="f">Fecha cita<input type="date" name="citaFecha" value="${esc(c.fecha || '')}"></label>
       <label class="f">Hora cita<input type="time" name="citaHora" value="${esc(c.hora || '')}"></label>
       <label class="f">Vehículo${sel('vehiculo', CAT.vehiculo, g.vehiculo)}</label>
@@ -195,61 +195,105 @@ function abrirGrupo(key, opts = {}){
       <label class="f">Unidad de negocio${sel('un', CAT.un, g.un)}</label>
       <label class="f">Región${sel('region', CAT.region, g.region)}</label>
       <label class="f">Tipo${sel('tipo', CAT.tipo, g.tipo)}</label>
-    </div>
-    ${opts.msg ? `<p class="err" style="margin-top:10px">${esc(opts.msg)}</p>` : ''}`,
-    `<button class="btn primary" data-act="guardarGrupo" data-grupo="${esc(key)}" data-marcar="${esc(opts.marcar || '')}">Guardar en todo el camión</button>`);
-  if (opts.marcar === 'confirmada') dlg.querySelector('[name="citaFecha"]').focus();
+    </div>`,
+    `<button class="btn primary" data-act="guardarGrupo" data-grupo="${esc(key)}">Guardar en todo el camión</button>`);
 }
-async function guardarGrupo(key, marcar){
+async function guardarGrupo(key){
   const g = grupo1(key); if (!g) return;
   const cita = {numero:dval('citaNum'), fecha:dval('citaFecha'), hora:dval('citaHora')};
-  if (marcar === 'confirmada' && !(cita.fecha && cita.hora)) return dErr('Falta fecha u hora de la cita.');
   const campos = {vehiculo:dval('vehiculo'), carga:dval('carga'), un:dval('un'), region:dval('region'), tipo:dval('tipo')};
   dlg.close();
   for (const orig of g.entregas){
     const e = clone(orig);
     Object.assign(e, campos); e.cita = cita;
-    if (marcar){
-      e.pasos = e.pasos || {};
-      if (!pasoOk(e, 'solicitada')) e.pasos.solicitada = {ok:true, at:nowISO()};
-      e.pasos[marcar] = {ok:true, at:nowISO()};
-      addLog(e, `Hecho: ${STEPS.find(s => s.k === marcar).t} (camión)`);
-    } else addLog(e, 'Datos del camión editados');
+    addLog(e, 'Datos del camión editados');
     if (!await save('entregas', safeId(e.entrega), e)) return;
   }
   toast('Camión actualizado');
 }
 
+/* Cita confirmada: solo se pregunta lo que hace falta (fecha, hora y la referencia de cada grupo). El resto de los datos
+   del camión que alimentan la proyección queda para «Editar camión». Al guardar, la fecha y la hora van a las entregas y la
+   referencia a la cabecera del grupo en SAP, sin pasos manuales. Un camión con pedidos de distinta categoría tiene varios
+   grupos pero UNA cita: la fecha y la hora valen para todos y cada grupo lleva su referencia. */
+function abrirCita(key, msg = ''){
+  const g = grupo1(key); if (!g) return;
+  const camion = gruposDelCamion(g), varios = camion.length > 1, c = g.cita || {};
+  const nombre = x => (x.sinGrupo ? 'grupo por crear' : `grupo ${x.grupo}`) + (x.categoria && varios ? ` · categoría ${x.categoria}` : '');
+  const nEnt = camion.reduce((a, x) => a + x.entregas.length, 0);
+  const sinNumero = camion.filter(x => x.sinGrupo);
+  abrirDlg(g.pasos.confirmada ? 'Cambiar la cita confirmada' : 'Confirmar la cita', `
+    <p style="margin-top:0" class="small">${nEnt} entrega(s)${varios ? ` en ${camion.length} grupos del mismo camión (los pedidos son de distinta categoría)` : ''}: ${esc(camion.flatMap(x => x.entregas.map(e => e.entrega)).join(', '))}.</p>
+    <div class="fgrid">
+      <label class="f">Fecha de la cita<input type="date" name="citaFecha" value="${esc(c.fecha || '')}"></label>
+      <label class="f">Hora de la cita<input type="time" name="citaHora" value="${esc(c.hora || '')}"></label>
+    </div>
+    <div class="stack" style="margin-top:12px">${camion.map((x, i) => `<label class="f">Referencia del ${esc(varios ? nombre(x) : 'grupo')}
+      <input type="text" name="ref${i}" value="${esc((x.cita || {}).numero || '')}" placeholder="N° de cita del cliente o texto completo, sin límite de largo" autocomplete="off"></label>`).join('')}</div>
+    <label class="chk" style="margin-top:14px"><input type="checkbox" name="enSap" checked> Actualizar en SAP al guardar</label>
+    <p class="small muted" style="margin:6px 0 0">Pone fecha y hora en cada entrega y la referencia completa en la cabecera del grupo (VG02).${sinNumero.length ? ` ${sinNumero.length === 1 ? 'Un grupo aún no existe' : sinNumero.length + ' grupos aún no existen'} en SAP: sus entregas reciben la fecha y la hora ahora, y la referencia se usa al crear el grupo.` : ''}</p>
+    ${msg ? `<p class="err" style="margin-top:10px">${esc(msg)}</p>` : ''}`,
+    `<button class="btn primary" data-act="guardarCita" data-grupo="${esc(key)}">Confirmar cita</button>`);
+  dlg.querySelector(c.fecha ? '[name="ref0"]' : '[name="citaFecha"]').focus();
+}
+async function guardarCita(key){
+  const g = grupo1(key); if (!g) return;
+  const camion = gruposDelCamion(g);
+  const fecha = dval('citaFecha'), hora = dval('citaHora');
+  if (!(fecha && hora)) return dErr('Falta la fecha o la hora de la cita.');
+  const refs = camion.map((_, i) => dval('ref' + i));
+  const enSap = !!dlg.querySelector('[name="enSap"]')?.checked;
+  dlg.close();
+  for (const [i, x] of camion.entries()) for (const orig of x.entregas){
+    const e = clone(orig);
+    const cambio = (orig.cita || {}).fecha !== fecha || (orig.cita || {}).hora !== hora;
+    e.cita = {numero: refs[i], fecha, hora};
+    e.pasos = e.pasos || {};
+    if (!pasoOk(e, 'solicitada')) e.pasos.solicitada = {ok:true, at:nowISO()};
+    e.pasos.confirmada = {ok:true, at:nowISO()};
+    if (cambio && pasoOk(e, 'sap')) e.pasos.sap = {ok:false, at:nowISO()};     // otra fecha: SAP todavía tiene la anterior
+    addLog(e, `Cita confirmada: ${fmtFecha(fecha)} ${hora}${refs[i] ? ' · ' + refs[i] : ''}`);
+    if (!await save('entregas', safeId(e.entrega), e)) return;
+  }
+  toast('Cita confirmada');
+  if (enSap) await citaCamionSap(camion.map(x => x.key));
+}
+
 function abrirReprogramar(key){
   const g = grupo1(key); if (!g) return;
-  const c = g.cita || {};
+  const c = g.cita || {}, camion = gruposDelCamion(g);
   abrirDlg(g.sinGrupo ? `Reprogramar entrega ${g.entregas[0].entrega}` : `Reprogramar grupo ${g.grupo}`, `
-    <p style="margin-top:0">Se reabren: ${REABRE_AL_REPROGRAMAR.map(k => STEPS.find(s => s.k === k).t).join(', ')}. Cita actual: <b>${c.fecha ? fmtFecha(c.fecha) + ' ' + (c.hora || '') : '—'}</b>.</p>
+    <p style="margin-top:0">Se reabren: ${REABRE_AL_REPROGRAMAR.map(k => STEPS.find(s => s.k === k).t).join(', ')}. Cita actual: <b>${c.fecha ? fmtFecha(c.fecha) + ' ' + (c.hora || '') : '—'}</b>.${camion.length > 1 ? ` La nueva fecha y hora valen para los ${camion.length} grupos del camión.` : ''}</p>
     <div class="fgrid">
       <label class="f">Nueva fecha (si ya la tienes)<input type="date" name="f" value=""></label>
       <label class="f">Nueva hora<input type="time" name="h" value=""></label>
-      <label class="f">N° cita nuevo<input type="text" name="n" value="${esc(c.numero || '')}"></label>
+      <label class="f">Referencia nueva del grupo<input type="text" name="n" value="${esc(c.numero || '')}"></label>
     </div>
-    <label class="f" style="margin-top:12px">Motivo<input type="text" name="motivo" placeholder="Ej.: cliente sin capacidad en andén"></label>`,
+    <label class="f" style="margin-top:12px">Motivo<input type="text" name="motivo" placeholder="Ej.: cliente sin capacidad en andén"></label>
+    <label class="chk" style="margin-top:14px"><input type="checkbox" name="enSap" checked> Con fecha y hora nuevas, actualizar en SAP al guardar</label>`,
     `<button class="btn primary" data-act="guardarReprog" data-grupo="${esc(key)}">Reprogramar</button>`);
 }
 async function guardarReprog(key){
   const g = grupo1(key); if (!g) return;
   const motivo = dval('motivo');
   if (!motivo) return dErr('Indica el motivo; queda en el historial.');
-  const antes = g.cita || {};
-  const cita = {numero:dval('n'), fecha:dval('f') || antes.fecha || '', hora:dval('h') || antes.hora || ''};
+  const antes = g.cita || {}, camion = gruposDelCamion(g);
+  const nuevaF = dval('f'), nuevaH = dval('h');
+  const enSap = !!dlg.querySelector('[name="enSap"]')?.checked && !!(nuevaF && nuevaH);
+  const numero = dval('n');
   dlg.close();
-  for (const orig of g.entregas){
+  for (const x of camion) for (const orig of x.entregas){
     const e = clone(orig);
     for (const k of REABRE_AL_REPROGRAMAR) e.pasos[k] = {ok:false, at:nowISO()};
-    e.cita = cita;
-    if (dval('f') && dval('h')) e.pasos.confirmada = {ok:true, at:nowISO()};
+    // cada grupo conserva su referencia; solo la del grupo desde el que se reprograma cambia
+    e.cita = {numero: x.key === g.key ? numero : (x.cita || {}).numero || '', fecha: nuevaF || antes.fecha || '', hora: nuevaH || antes.hora || ''};
+    if (nuevaF && nuevaH) e.pasos.confirmada = {ok:true, at:nowISO()};
     e.reprog = (e.reprog || 0) + 1;
     addLog(e, `Reprogramada (antes ${antes.fecha ? fmtFecha(antes.fecha) : '—'} ${antes.hora || ''}): ${motivo}`);
     if (!await save('entregas', safeId(e.entrega), e)) return;
   }
   toast('Cita reprogramada en el camión');
+  if (enSap) await citaCamionSap(camion.map(x => x.key));
 }
 /* ---- Crear en SAP: primero ensayo, después de verdad ---- */
 async function crearEntregasSap(pedido, ensayo){
@@ -272,8 +316,10 @@ async function crearEntregasSap(pedido, ensayo){
 async function crearGrupoSap(entregas, ensayo, camion, clienteDe){
   if (!entregas.length) return toast('No hay entregas para agrupar');
   const p = Store.get('pedidos', UI.sel) || {};
+  // si la cita ya trae su referencia, el grupo nace con ella (completa, sin tope de largo)
+  const referencia = entregas.map(n => (Store.get('entregas', safeId(n)) || {}).cita?.numero).find(Boolean) || '';
   try { UI.job = await api('POST', '/sap/crear_grupo',
-      {entregas, ensayo, camion: camion || '1', cliente: clienteDe || p.cliente || ''}); render(); }
+      {entregas, ensayo, camion: camion || '1', cliente: clienteDe || p.cliente || '', referencia}); render(); }
   catch(e){ return toast(e.message); }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok'){
@@ -281,25 +327,33 @@ async function crearGrupoSap(entregas, ensayo, camion, clienteDe){
     Avisos.agregar('ok', ensayo ? 'Ensayo del grupo terminado' : `Grupo ${d.grupo} creado en SAP`,
                    d.mensaje || '', d.incidencias || []);
     await Store.refresh();
+    // la cita ya estaba confirmada: el grupo recién creado la recibe sin que nadie lo pida
+    const nuevo = !ensayo && d.grupo ? grupos().find(x => x.grupo === String(d.grupo)) : null;
+    if (nuevo && nuevo.pasos.confirmada && nuevo.cita.fecha && nuevo.cita.hora) await citaCamionSap([nuevo.key]);
   } else if (UI.job) Avisos.agregar('error', 'No se pudo crear el grupo', UI.job.error || '');
   render();
 }
-async function citaGrupoSap(grupo, ensayo){
-  const r = await preguntar({titulo: `Cita del grupo ${grupo} en SAP`, texto: 'Actualiza la fecha, la hora y la referencia de la cita en VG02.',
-    campos: [{nombre: 'f', etiqueta: 'Fecha (dd.mm.aaaa)', ayuda: '21.10.2026'}, {nombre: 'h', etiqueta: 'Hora (hh:mm), opcional', ayuda: '09:30'}, {nombre: 'ref', etiqueta: 'Referencia o N° de cita, opcional'}],
-    ok: 'Actualizar en SAP', validar: v => (v.f || v.h || v.ref) ? '' : 'Indica al menos un dato que cambiar.'});
-  if (!r) return;
-  const f = r.f, h = r.h, ref = r.ref;
-  try { UI.job = await api('POST', '/sap/fecha_grupo', {grupo, fecha: f.trim(),
-      hora: h.trim() ? h.trim() + ':00' : '', referencia: ref.trim(), ensayo}); render(); }
-  catch(e){ return toast(e.message); }
+/* Lleva a SAP la cita ya guardada en la plataforma: fecha y hora en las entregas y la referencia en la cabecera del grupo */
+async function citaCamionSap(keys, ensayo = false){
+  const gs = keys.map(grupo1).filter(Boolean);
+  const c = (gs[0] || {}).cita || {};
+  if (!gs.length || !(c.fecha && c.hora)) return abrirCita(keys[0]);       // sin fecha u hora no hay nada que llevar
+  const [a, m, d] = c.fecha.split('-');
+  const cuerpo = {fecha: `${d}.${m}.${a}`, hora: c.hora.length === 5 ? c.hora + ':00' : c.hora, ensayo,
+    grupos: gs.filter(x => !x.sinGrupo).map(x => ({grupo: x.grupo, referencia: (x.cita || {}).numero || ''})),
+    entregas: gs.filter(x => x.sinGrupo).flatMap(x => x.entregas.map(e => e.entrega))};
+  try { UI.job = await api('POST', '/sap/cita_camion', cuerpo); render(); }
+  catch(e){ return Avisos.agregar('error', 'La cita quedó guardada, pero SAP no se actualizó', e.message,
+    ['Cuando SAP esté libre, usa «Actualizar en SAP» en el grupo.']); }
   await seguirJob();
   if (UI.job && UI.job.estado === 'ok'){
-    const d = UI.job.datos || {};
-    Avisos.agregar('ok', ensayo ? 'Ensayo de la cita terminado' : `Cita del grupo ${grupo} actualizada`,
-                   d.mensaje || '', d.incidencias || []);
+    const r = UI.job.datos || {};
+    Avisos.agregar('ok', ensayo ? 'Ensayo de la cita terminado' : 'Cita actualizada en SAP',
+      `${fmtFecha(c.fecha)} ${c.hora}` + (cuerpo.grupos.length ? ` · ${cuerpo.grupos.map(x => 'grupo ' + x.grupo).join(', ')}` : '') +
+      (cuerpo.entregas.length ? ` · ${cuerpo.entregas.length} entrega(s)` : ''), r.incidencias || []);
     await Store.refresh();
-  } else if (UI.job) Avisos.agregar('error', 'No se pudo actualizar la cita', UI.job.error || '');
+  } else if (UI.job) Avisos.agregar('error', 'La cita quedó guardada, pero SAP no se actualizó', UI.job.error || '',
+    ['Cuando SAP esté libre, usa «Actualizar en SAP» en el grupo.']);
   render();
 }
 
@@ -404,7 +458,8 @@ document.addEventListener('click', ev => {
     case 'editarEntrega': abrirEntrega(Store.get('entregas', ent).pedido, ent); break;
     case 'guardarEntrega': guardarEntrega(t.dataset.ped, t.dataset.id, t.dataset.marcar); break;
     case 'editarGrupo': abrirGrupo(t.dataset.grupo); break;
-    case 'guardarGrupo': guardarGrupo(t.dataset.grupo, t.dataset.marcar); break;
+    case 'guardarGrupo': guardarGrupo(t.dataset.grupo); break;
+    case 'guardarCita': guardarCita(t.dataset.grupo); break;
     case 'reprogGrupo': abrirReprogramar(t.dataset.grupo); break;
     case 'guardarReprog': guardarReprog(t.dataset.grupo); break;
     case 'anular': anular(ent, true); break;
@@ -412,7 +467,7 @@ document.addEventListener('click', ev => {
     case 'ensayoEntregas': { const p = Store.get('pedidos', UI.sel); if (p) crearEntregasSap(p.pedido, true); break; }
     case 'crearEntregas': { const p = Store.get('pedidos', UI.sel); if (p) crearEntregasSap(p.pedido, false); break; }
     case 'crearGrupoSap': crearGrupoSap((t.dataset.ents || '').split(',').filter(Boolean), false, t.dataset.cam); break;
-    case 'citaGrupo': citaGrupoSap(t.dataset.num, false); break;
+    case 'citaGrupo': citaCamionSap([t.dataset.grupo]); break;
     case 'ensayoGrupo': crearGrupoSap((t.dataset.ents || '').split(',').filter(Boolean), true, t.dataset.cam); break;
     case 'borrarGrupoSap': borrarEnSap('grupo', t.dataset.num); break;
     case 'reactivar': anular(ent, false); break;

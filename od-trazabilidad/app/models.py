@@ -61,7 +61,7 @@ class Entrega(Base):
     pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id", ondelete="CASCADE"), index=True)
     grupo: Mapped[str] = mapped_column(Unicode(20), default="", index=True)
     tipo: Mapped[str] = mapped_column(Unicode(20), default="Stock")
-    cita_numero: Mapped[str] = mapped_column(Unicode(30), default="", index=True)
+    cita_numero: Mapped[str] = mapped_column(Unicode(120), default="", index=True)   # referencia del grupo, completa
     cita_fecha: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     cita_hora: Mapped[str] = mapped_column(Unicode(5), default="")
     vehiculo: Mapped[str] = mapped_column(Unicode(20), default="Rampla 53")
@@ -75,6 +75,8 @@ class Entrega(Base):
     # Camión compartido entre pedidos: las entregas creadas desde un cubicaje conjunto para el mismo camión
     # llevan la misma referencia (conjunto-camión) y se agrupan juntas en SAP.
     camion_ref: Mapped[str] = mapped_column(Unicode(40), default="", index=True)
+    # Categoría de grupo dentro de un camión compartido: pedidos de distinta categoría viajan juntos pero van en grupos de SAP separados.
+    categoria: Mapped[str] = mapped_column(Unicode(20), default="")
     suministro: Mapped[int] = mapped_column(Integer, default=1)       # 1.ª, 2.ª… tanda del pedido (lo liberado en distintos momentos)
     creado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)

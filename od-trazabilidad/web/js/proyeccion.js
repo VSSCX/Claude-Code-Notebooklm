@@ -8,11 +8,12 @@ function camiones(){
     if (e.anulada || !e.cita || !e.cita.fecha) continue;
     if (e.cita.fecha < UI.pDesde || (UI.pHasta && e.cita.fecha > UI.pHasta)) continue;
     const conf = pasoOk(e, 'confirmada'); if (!conf && !UI.pPorConf) continue;
-    const key = e.cita.numero ? 'C' + e.cita.numero : 'G' + (e.grupo || e.entrega);
+    // un camión compartido por pedidos de distinta categoría tiene varios grupos (y referencias) pero es UN camión en la proyección
+    const key = e.camion_ref ? 'K' + e.camion_ref + '|' + e.cita.fecha + (e.cita.hora || '') : e.cita.numero ? 'C' + e.cita.numero : 'G' + (e.grupo || e.entrega);
     const p = Store.get('pedidos', safeId(e.pedido)) || {};
     const t = out.get(key) || {key, fecha:e.cita.fecha, hora:e.cita.hora || '', cliente:p.cliente || '', canal:p.canal || '', region:e.region || '',
-      vehiculo:e.vehiculo || '', carga:e.carga || '', un:e.un || '', qty:0, grupos:new Set(), ents:[], conf:true, cita:e.cita.numero || ''};
-    t.qty += unidades(e); if (e.grupo) t.grupos.add(e.grupo); t.ents.push(e); t.conf = t.conf && conf;
+      vehiculo:e.vehiculo || '', carga:e.carga || '', un:e.un || '', qty:0, grupos:new Set(), citas:new Set(), ents:[], conf:true};
+    t.qty += unidades(e); if (e.grupo) t.grupos.add(e.grupo); if (e.cita.numero) t.citas.add(e.cita.numero); t.ents.push(e); t.conf = t.conf && conf;
     out.set(key, t);
   }
   return [...out.values()].sort((a,b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
@@ -33,7 +34,7 @@ function vistaProyeccion(){
     ${cams.map(t => { const cargado = t.ents.every(e => pasoOk(e, 'proyeccion'));
       return `<tr><td>${fmtFecha(t.fecha)}</td><td class="num">${esc(t.hora || '—')}</td><td class="n">${isoWeek(t.fecha)}</td><td>${esc(t.cliente)}</td><td>${esc(t.region)}</td>
       <td>${t.conf ? '<span class="tag ok">Confirmado</span>' : '<span class="tag warn">Por confirmar</span>'} ${esc(ampm(t.hora))}</td>
-      <td>${esc(t.vehiculo)}</td><td>${esc(t.carga)}</td><td>${esc(t.un)}</td><td class="n">${fmt(t.qty)}</td><td class="num">${esc([...t.grupos].join(', '))}</td><td class="num">${esc(t.cita)}</td>
+      <td>${esc(t.vehiculo)}</td><td>${esc(t.carga)}</td><td>${esc(t.un)}</td><td class="n">${fmt(t.qty)}</td><td class="num">${esc([...t.grupos].join(', '))}</td><td class="num">${esc([...t.citas].join(', '))}</td>
       <td>${cargado ? '<span class="tag ok">Cargado</span>' : '<span class="tag">Pendiente</span>'}</td></tr>`; }).join('')}
     </tbody></table></div>
     <div class="row" style="margin-top:14px"><button class="btn primary" data-act="exportProy">Descargar Excel para 2026.xlsx</button>

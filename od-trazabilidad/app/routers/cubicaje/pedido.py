@@ -1,8 +1,10 @@
 """Cubicaje de un pedido y cubicaje conjunto de varios."""
+import json
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import domain
@@ -10,6 +12,7 @@ from ...db import get_session
 from ...integrations import clientes as cli_mod
 from ...integrations import kits as kits_mod
 from ...integrations import medidas as med_mod
+from ...models import Config, Entrega
 from ..comun import (
     _aplicar_ajustes,
     _calefones_de,
@@ -260,6 +263,9 @@ def _guardar_conjunto(s: Session, doc: dict, numeros: list[str], cid: str) -> No
     """Guarda el cubicaje conjunto y, para cada pedido, su parte: los camiones y las filas que le tocan (con la numeración
     de camiones compartida). Así crear entregas, el visor y el flujo de cada pedido funcionan como siempre."""
     por_pedido = {}
+    previo = s.get(Config, f"conjunto:{cid}")                  # volver a cubicar no pierde las categorías ya elegidas
+    doc["categorias"] = {n: c for n, c in (json.loads(previo.valor).get("categorias") or {}).items()
+                         if n in numeros} if previo else {}
     for n in numeros:
         filas_n = [f for f in doc["filas"] if str(f.get("pedido")) == n]
         cams = sorted({f["camion"] for f in filas_n})
@@ -285,6 +291,42 @@ def cubicar_conjunto(body: dict, s: Session = Depends(get_session)):
     if len(set(pedidos)) < 2:
         raise HTTPException(422, "Elige al menos dos pedidos para cubicarlos juntos.")
     return _cubicar(pedidos, {k: v for k, v in body.items() if k != "pedidos"}, s)
+
+
+CATEGORIAS_GRUPO = ("A", "B", "C", "D")
+
+
+@router.put("/cubicaje-conjunto/{cid}/categorias")
+def put_categorias_conjunto(cid: str, body: dict, s: Session = Depends(get_session)):
+    """Categoría de grupo de cada pedido del cubicaje conjunto. Los pedidos comparten camión, pero los de distinta
+    categoría van en entregas y grupos de SAP separados (no se pueden guardar en el mismo grupo)."""
+    import json as _json
+
+    from ...models import Config
+    c = s.get(Config, f"conjunto:{cid}")
+    if c is None:
+        raise HTTPException(404, "Ese cubicaje conjunto no existe: vuelve a cubicar los pedidos juntos.")
+    doc = _json.loads(c.valor)
+    nuevas = body.get("categorias") or {}
+    if not isinstance(nuevas, dict):
+        raise HTTPException(422, "Formato de categorías inválido.")
+    en_conjunto = set(doc["conjunto"]["pedidos"])
+    cat = dict(doc.get("categorias") or {})
+    for n, v in nuevas.items():
+        if n not in en_conjunto:
+            raise HTTPException(422, f"El pedido {n} no es de este cubicaje conjunto.")
+        v = str(v or "").strip().upper() or "A"
+        if v not in CATEGORIAS_GRUPO:
+            raise HTTPException(422, f"Categoría inválida: {v}.")
+        cat[n] = v
+    ya = s.scalars(select(Entrega).where(Entrega.camion_ref.like(f"{cid}-%"), Entrega.anulada.is_(False))).all()
+    if ya and cat != (doc.get("categorias") or {}):
+        # Las entregas ya creadas tienen su categoría: cambiarla ahora las dejaría en el grupo equivocado
+        raise HTTPException(409, "Ya hay entregas creadas para este conjunto: la categoría ya no se puede cambiar.")
+    doc["categorias"] = cat
+    domain.guardar_config(s, f"conjunto:{cid}", doc)
+    _commit(s)
+    return {"categorias": cat}
 
 
 @router.get("/cubicaje-conjunto/{cid}")

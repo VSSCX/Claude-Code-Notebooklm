@@ -363,11 +363,12 @@ def get_analisis(numero: str, s: Session = Depends(get_session)):
 
 
 @router.get("/analisis/{numero}/excel")
-def excel_analisis(numero: str, s: Session = Depends(get_session)):
-    """Excel de estatus para responder a los KAM: qué pidió el cliente, cuánto de eso ya está en entrega, cuánto falta
-    y, de lo que falta, si hay stock y cuándo es la próxima liberación.
+def excel_analisis(numero: str, interno: bool = False, s: Session = Depends(get_session)):
+    """Excel de estatus para responder a los KAM. Una sola hoja con lo que importa: lo pedido, lo que ya está en entrega,
+    lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación.
 
-    Hojas: Estatus (la que se comparte), Entregas (qué lleva cada entrega) y Análisis SAP (el detalle interno)."""
+    Con `interno=true` sale el libro completo para el equipo (estado, suministros, reserva y otros stocks, control de
+    calidad, qué lleva cada entrega y el detalle del análisis): eso se trabaja puertas adentro, no se envía al KAM."""
     import json as _json
     import re
     from datetime import datetime as _dt
@@ -466,19 +467,28 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     ws = wb.active
     ws.title = "Estatus"
     ws.append([f"Estatus del pedido {numero}" + (f" · OC {oc}" if oc else "") + (f" · {ped.cliente}" if ped.cliente else "")])
-    ws.append([f"Pedido: {tot_ped:,} un. · En entrega: {tot_ent:,} un. · Falta: {tot_falta:,} un.".replace(",", ".")
+    ws.append([f"Pedido: {tot_ped:,} un. · En entrega: {tot_ent:,} un. · Pendiente: {tot_falta:,} un.".replace(",", ".")
                + (f" · {round(100 * tot_ent / tot_ped)} % cubierto" if tot_ped else "")])
-    ws.append([f"Generado el {ahora:%d-%m-%Y %H:%M}. Entregas de la plataforma al momento de exportar"
-               + ("; próxima liberación consultada ahora." if disp_fresca else
-                  ("." if not pendientes else "; próxima liberación del análisis (no hubo conexión para actualizarla)."))
-               + (f" Stock y cantidades de SAP: análisis del {hora_an_txt}." if doc else " Sin análisis de SAP: stock no disponible.")])
     sin_plan = bool(((doc or {}).get("sin_sql") or {}).get("plan"))
-    ws.append(["Alerta (del análisis de SAP): Sin stock · Stock parcial · Limitado SOP = el plan SOP deja menos de lo pedido · Completo."
+    if interno:
+        ws.append([f"Generado el {ahora:%d-%m-%Y %H:%M}. Entregas de la plataforma al momento de exportar"
+                   + ("; próxima liberación consultada ahora." if disp_fresca else
+                      ("." if not pendientes else "; próxima liberación del análisis (no hubo conexión para actualizarla)."))
+                   + (f" Stock y cantidades de SAP: análisis del {hora_an_txt}." if doc else " Sin análisis de SAP: stock no disponible.")])
+    else:
+        ws.append([f"Generado el {ahora:%d-%m-%Y %H:%M}."
+                   + ("" if not pendientes or disp_fresca else " La próxima liberación es la del último análisis (no hubo conexión para actualizarla).")
+                   + (f" Stock según SAP al {hora_an_txt}." if doc and pendientes else "")])
+    ws.append(["Alerta: Sin stock · Stock parcial · Limitado SOP = el saldo del plan SOP deja menos de lo pedido · Completo."
                + (" Este análisis se hizo sin conexión a SQL Server: no se cruzó con el plan SOP." if sin_plan else "")]
               if doc else [])
-    CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Alerta"] + [f"Suministro {k}" for k in sums]
-           + ["Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)",
-              "Próx. liberación (cant.)"])
+    if interno:
+        CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Estado", "Alerta"] + [f"Suministro {k}" for k in sums]
+               + ["Saldo SOP", "Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Control de calidad",
+                  "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+    else:
+        CAB = ["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Alerta", "Saldo SOP", "Stock CD30",
+               "Próx. liberación (fecha)", "Próx. liberación (cant.)"]
     ws.append(CAB)
     fila_cab = ws.max_row
     for f in filas:
@@ -487,27 +497,34 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
         fa = filas_an.get(f["sku"]) or {}
         # solo de lo que aún falta; una fila puede tener dos alertas (p. ej. Sin stock y Limitado SOP)
         alerta = " + ".join(fa.get("alertas") or ([fa["alerta"]] if fa.get("alerta") else [])) if f["falta"] > 0 else ""
-        ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f), alerta]
-                  + [por_sum[k].get(f["sku"], 0) for k in sums]
-                  + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), en_calidad(f["sku"])]
-                     if f["falta"] > 0 else [None] * 5)
-                  + [fecha_corta(fecha) if fecha else "", cant])
+        saldo = fa.get("saldo") if f["falta"] > 0 and fa and not fa.get("sin_plan") else None
+        if interno:
+            ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f), alerta]
+                      + [por_sum[k].get(f["sku"], 0) for k in sums]
+                      + [saldo]
+                      + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), en_calidad(f["sku"])]
+                         if f["falta"] > 0 else [None] * 5)
+                      + [fecha_corta(fecha) if fecha else "", cant])
+        else:
+            ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], alerta, saldo,
+                       st.get("cd30") if f["falta"] > 0 else None, fecha_corta(fecha) if fecha else "", cant])
 
-    we = wb.create_sheet("Entregas")
-    we.append(["N° entrega", "SKU", "Descripción", "Qty", "Suministro"])
-    for e in sorted(activas, key=lambda x: (x.suministro or 1, x.entrega)):
-        for l in e.lineas:
-            we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
+    if interno:
+        we = wb.create_sheet("Entregas")
+        we.append(["N° entrega", "SKU", "Descripción", "Qty", "Suministro"])
+        for e in sorted(activas, key=lambda x: (x.suministro or 1, x.entrega)):
+            for l in e.lineas:
+                we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
 
-    wa = wb.create_sheet("Análisis SAP")
-    wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
-               "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
-    for f in (doc["resultado"]["filas"] if doc else []):
-        st = f.get("stock") or {}
-        cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
-        wa.append([oc, f["sku"], f["descripcion"], " + ".join(f.get("alertas") or [f.get("alerta", "")]), f["pendiente"],
-                   f["qty_entrega"], st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
-                   f.get("control_calidad"), fecha.strip(), cant.strip()])
+        wa = wb.create_sheet("Análisis SAP")
+        wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
+                   "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+        for f in (doc["resultado"]["filas"] if doc else []):
+            st = f.get("stock") or {}
+            cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
+            wa.append([oc, f["sku"], f["descripcion"], " + ".join(f.get("alertas") or [f.get("alerta", "")]), f["pendiente"],
+                       f["qty_entrega"], st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
+                       f.get("control_calidad"), fecha.strip(), cant.strip()])
 
     cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")
     tonos = {"Pendiente": "FDE2E2", "Parcial": "FFF1CC", "En entrega": "E3F4E8"}
@@ -528,9 +545,11 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
             hoja.column_dimensions[col[0].column_letter].width = min(max(ancho, 10), 46)
         hoja.freeze_panes = f"A{fc + 1}"
         hoja.auto_filter.ref = f"A{fc}:{hoja.cell(row=hoja.max_row, column=hoja.max_column).coordinate}"
-    for r in range(fila_cab + 1, ws.max_row + 1):                   # el estado se lee de un vistazo
-        ws.cell(row=r, column=6).fill = PatternFill("solid", fgColor=tonos[ws.cell(row=r, column=6).value])
-        al = ws.cell(row=r, column=7)                                   # la alerta, con los mismos tonos de la plataforma
+    col_alerta = 7 if interno else 6
+    for r in range(fila_cab + 1, ws.max_row + 1):
+        if interno:                                                     # el estado se lee de un vistazo
+            ws.cell(row=r, column=6).fill = PatternFill("solid", fgColor=tonos[ws.cell(row=r, column=6).value])
+        al = ws.cell(row=r, column=col_alerta)                          # la alerta, con los mismos tonos de la plataforma
         primera = str(al.value or "").split(" + ")[0]                  # con dos alertas manda el color de la primera
         if primera in tonos_alerta:
             al.fill = PatternFill("solid", fgColor=tonos_alerta[primera])
@@ -539,7 +558,7 @@ def excel_analisis(numero: str, s: Session = Depends(get_session)):
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    nombre = re.sub(r"[^\w.-]", "_", f"Estatus_{numero}" + (f"_OC_{oc}" if oc else ""))
+    nombre = re.sub(r"[^\w.-]", "_", f"{'Interno' if interno else 'Estatus'}_{numero}" + (f"_OC_{oc}" if oc else ""))
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})
@@ -645,15 +664,17 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
             por_camion[f["camion"]][f["sku"]] = por_camion[f["camion"]].get(f["sku"], 0) + f["unidades"]
         if not por_camion:
             raise HTTPException(422, f"El cubicaje del pedido {numero} no tiene camiones para crear.")
-        tareas.append((numero, puesto, por_camion, ((cub.get("conjunto") or {}).get("id") or ""),
-                       _fecha_vl01n(s, numero, body.get("fecha"))))
+        conj_id = (cub.get("conjunto") or {}).get("id") or ""
+        cj = s.get(Config, f"conjunto:{conj_id}") if conj_id else None
+        categoria = ((_json.loads(cj.valor).get("categorias") or {}).get(numero) or "A") if cj else ""
+        tareas.append((numero, puesto, por_camion, conj_id, _fecha_vl01n(s, numero, body.get("fecha")), categoria))
     numero = tareas[0][0]
     total = sum(len(x[2]) for x in tareas)
 
     def correr(avance):
         salidas = []
         hecho = 0
-        for numero, puesto, por_camion, conj, fecha in tareas:
+        for numero, puesto, por_camion, conj, fecha, categoria in tareas:
             for cam, materiales in sorted(por_camion.items()):
                 hecho += 1
                 avance(f"{'Ensayo' if ensayo else 'Creando'} entrega {hecho} de {total}: pedido {numero}, camión {cam} (fecha de selección {fecha})")
@@ -672,7 +693,7 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
                             from ..schemas import EntregaIn
                             domain.guardar_entrega(ses, EntregaIn(
                                 entrega=r.entrega, pedido=numero, grupo="",
-                                camion_ref=f"{conj}-{cam}" if conj else "",
+                                camion_ref=f"{conj}-{cam}" if conj else "", categoria=categoria,
                                 lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
                             ses.commit()
                     except Exception as err:  # noqa: BLE001
@@ -758,10 +779,33 @@ def sap_crear_grupo(body: dict, s: Session = Depends(get_session)):
         raise HTTPException(409, str(e)) from e
 
 
+def _registrar_cita_sap(entregas: list, fecha: str, hora: str, referencia: str) -> None:
+    """Deja en la plataforma lo que ya quedó escrito en SAP: fecha, hora y referencia en las entregas, y el paso
+    "Fecha en SAP" hecho (solo si se mandaron fecha y hora)."""
+    from datetime import date as _date
+    f_iso = None
+    if fecha:
+        try:
+            d, m, a = fecha.split(".")
+            f_iso = _date(int(a), int(m), int(d))
+        except ValueError:
+            f_iso = None
+    for e in entregas:
+        if f_iso:
+            e.cita_fecha = f_iso
+        if hora:
+            e.cita_hora = hora[:5]
+        if referencia:
+            e.cita_numero = referencia
+        if fecha and hora:
+            domain._set_paso(e, "sap", True)
+        domain._log(e, f"Cita en SAP: {fecha} {hora[:5]} {referencia}".strip(), "web")
+        e.actualizado = domain.ahora()
+
+
 @router.post("/sap/fecha_grupo", status_code=202)
 def sap_fecha_grupo(body: dict, s: Session = Depends(get_session)):
     """Fecha, hora y referencia de la cita de un grupo (VG02), como el paso del Excel."""
-    from datetime import date as _date
     from ..integrations import sap_crear
     grupo = str(body.get("grupo", "")).strip()
     fecha = str(body.get("fecha", "")).strip()
@@ -781,25 +825,77 @@ def sap_fecha_grupo(body: dict, s: Session = Depends(get_session)):
         if not ensayo:
             from ..db import SessionLocal
             with SessionLocal() as ses:
-                for e in ses.scalars(select(Entrega).where(Entrega.grupo == grupo)).all():
-                    if fecha:
-                        try:
-                            d, m, a = fecha.split(".")
-                            e.cita_fecha = _date(int(a), int(m), int(d))
-                        except ValueError:
-                            pass
-                    if hora:
-                        e.cita_hora = hora[:5]
-                    if referencia:
-                        e.cita_numero = referencia
-                    domain._log(e, f"Cita en SAP: {fecha} {hora} {referencia}".strip(), "web")
-                    e.actualizado = domain.ahora()
+                _registrar_cita_sap(list(ses.scalars(select(Entrega).where(Entrega.grupo == grupo)).all()),
+                                    fecha, hora, referencia)
                 ses.commit()
         return {"grupo": grupo, "ensayo": ensayo, "mensaje": r.mensaje, "pasos": r.pasos,
                 "incidencias": r.incidencias}
 
     try:
         return acciones.lanzar_python("fecha_grupo", f"Cita del grupo {grupo}", [grupo], correr)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.post("/sap/cita_camion", status_code=202)
+def sap_cita_camion(body: dict, s: Session = Depends(get_session)):
+    """Cita confirmada de un camión: pone fecha y hora en sus entregas y la referencia en la cabecera de cada grupo.
+
+    Es lo que hacían los dos scripts del Excel (el de la entrega y el del grupo), en un solo trabajo y sin pedir
+    nada más: la web la dispara sola al confirmar la cita. `grupos` = [{grupo, referencia}] (un camión puede
+    llevar varios grupos, uno por categoría); `entregas` = las que aún no tienen grupo (se actualizan en VL02N)."""
+    from ..integrations import sap_crear
+    fecha = str(body.get("fecha", "")).strip()
+    hora = str(body.get("hora", "")).strip()
+    ensayo = bool(body.get("ensayo", False))
+    grupos = [{"grupo": str(g.get("grupo", "")).strip(), "referencia": str(g.get("referencia", "")).strip()}
+              for g in (body.get("grupos") or []) if str(g.get("grupo", "")).strip()]
+    sueltas = [str(x).strip() for x in (body.get("entregas") or []) if str(x).strip()]
+    if not (fecha and hora):
+        raise HTTPException(422, "Para actualizar la cita en SAP se necesitan fecha (dd.mm.aaaa) y hora.")
+    if not (grupos or sueltas):
+        raise HTTPException(422, "No hay grupos ni entregas que actualizar.")
+    nombre = " + ".join([f"grupo {g['grupo']}" for g in grupos] + [f"entrega {n}" for n in sueltas])
+
+    def correr(avance):
+        hecho, total = 0, len(grupos) + len(sueltas)
+        salidas = []
+        for g in grupos:
+            hecho += 1
+            avance(f"{'Ensayo' if ensayo else 'Actualizando'} la cita en SAP: grupo {g['grupo']} ({hecho} de {total})")
+            r = sap_crear.actualizar_grupo(g["grupo"], fecha, hora, g["referencia"], ensayo=ensayo)
+            salidas.append({"grupo": g["grupo"], "ok": r.ok, "mensaje": r.mensaje, "incidencias": r.incidencias})
+            if not r.ok:
+                break
+            if not ensayo:
+                from ..db import SessionLocal
+                with SessionLocal() as ses:
+                    _registrar_cita_sap(list(ses.scalars(select(Entrega).where(Entrega.grupo == g["grupo"])).all()),
+                                        fecha, hora, g["referencia"])
+                    ses.commit()
+        if not salidas or salidas[-1]["ok"]:
+            for n in sueltas:
+                hecho += 1
+                avance(f"{'Ensayo' if ensayo else 'Actualizando'} la cita en SAP: entrega {n} ({hecho} de {total})")
+                r = sap_crear.actualizar_fecha(n, fecha, hora, ensayo=ensayo)
+                salidas.append({"entrega": n, "ok": r.ok, "mensaje": r.mensaje, "incidencias": r.incidencias})
+                if not r.ok:
+                    break
+                if not ensayo:
+                    from ..db import SessionLocal
+                    with SessionLocal() as ses:
+                        e = ses.scalar(select(Entrega).where(Entrega.entrega == n))
+                        if e is not None:
+                            _registrar_cita_sap([e], fecha, hora, "")
+                        ses.commit()
+        errores = [x for x in salidas if not x["ok"]]
+        if errores:
+            raise RuntimeError(errores[0]["mensaje"])
+        return {"ensayo": ensayo, "resultados": salidas, "incidencias": [i for x in salidas for i in x["incidencias"]]}
+
+    try:
+        return acciones.lanzar_python("cita_camion", f"{'Ensayo de la cita' if ensayo else 'Cita'} en SAP: {nombre}",
+                                      [g["grupo"] for g in grupos] + sueltas, correr)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
 

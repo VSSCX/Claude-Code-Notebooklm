@@ -983,7 +983,9 @@ def test_crear_grupo_y_cita_por_grupo(c, monkeypatch):
 def test_referencia_del_grupo_como_el_excel():
     from app.integrations.sap_crear import referencia_grupo
     assert referencia_grupo("1", ["8705709527"], "PARIS") == "CAM1_8705709527_PARIS"
-    assert len(referencia_grupo("12", ["8705709527", "8705709528", "8705709529"], "SODIMAC")) <= 30
+    # sin tope de caracteres: la referencia queda completa (el Excel la cortaba a 30)
+    assert referencia_grupo("12", ["8705709527", "8705709528", "8705709529"], "SODIMAC") == \
+        "CAM12_8705709527_8705709528_8705709529_SODIMAC"
 
 
 def test_respaldo_automatico(c, tmp_path, monkeypatch):
@@ -1327,6 +1329,83 @@ def test_cubicaje_conjunto_entregas_por_camion_y_pedido_y_camion_compartido(c, t
     # cada pedido solo crea lo suyo: nada de mezclar cantidades de otro pedido
     assert sum(sum(m.values()) for p, m in llamadas if p == "4400") == 50
     assert sum(sum(m.values()) for p, m in llamadas if p == "4401") == 50
+
+
+def test_conjunto_con_categorias_comparte_camion_y_separa_entregas_y_grupos(c, tmp_path, monkeypatch):
+    """Pedidos de distinta categoría viajan en el mismo camión, pero sus entregas llevan su categoría (para agruparse por
+    separado) y la cita confirmada del camión llega a cada grupo con su propia referencia, completa."""
+    from app.integrations import sap_crear
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4420")
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4421")
+    d = c.post("/api/cubicaje-conjunto", json={"pedidos": ["4420", "4421"]}).json()
+    cid = d["conjunto"]["id"]
+    assert d["categorias"] == {}                                      # sin elegir, todos van en la categoría A
+    assert c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "Z"}}).status_code == 422
+    assert c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"9999": "B"}}).status_code == 422
+    assert c.put("/api/cubicaje-conjunto/JNOEXISTE/categorias", json={"categorias": {}}).status_code == 404
+    r = c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "b"}})
+    assert r.status_code == 200 and r.json()["categorias"] == {"4421": "B"}
+    # volver a cubicar no pierde la categoría elegida
+    assert c.post("/api/cubicaje-conjunto", json={"pedidos": ["4420", "4421"]}).json()["categorias"] == {"4421": "B"}
+
+    creadas = []
+
+    def falso(pedido, puesto, fecha, materiales, fecha_cita="", hora_cita="", ensayo=False, ses=None):
+        creadas.append(pedido)
+        r = sap_crear.Resultado(ok=True, ensayo=ensayo)
+        r.entrega, r.mensaje = f"87070{len(creadas):05d}", "ok"
+        return r
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedidos": ["4420", "4421"], "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    ents = [e for e in _estado(c)["entregas"] if e["entrega"].startswith("87070")]
+    assert {e["pedido"]: e["categoria"] for e in ents} == {"4420": "A", "4421": "B"}
+    # con entregas creadas la categoría ya no se mueve: quedarían en el grupo equivocado
+    r = c.put(f"/api/cubicaje-conjunto/{cid}/categorias", json={"categorias": {"4421": "A"}})
+    assert r.status_code == 409
+
+    # cada categoría tiene su grupo de SAP (uno por pedido aquí); el camión es el mismo
+    por_pedido = {e["pedido"]: e for e in ents if e["camion_ref"].endswith("-1")}
+    for n, g in (("4420", "7001"), ("4421", "7002")):
+        e = por_pedido[n]
+        e["grupo"] = g
+        assert c.put(f"/api/entregas/{e['entrega']}", json=e).status_code in (200, 201)
+    assert len({e["camion_ref"] for e in por_pedido.values()}) == 1
+
+    # cita confirmada del camión: fecha y hora para los dos grupos y una referencia COMPLETA para cada uno
+    vistos = []
+    monkeypatch.setattr(sap_crear, "actualizar_grupo",
+                        lambda g, f="", h="", ref="", ensayo=False, ses=None:
+                        (vistos.append((g, f, h, ref, ensayo)), sap_crear.Resultado(ok=True, ensayo=ensayo, grupo=g, mensaje="ok"))[1])
+    monkeypatch.setattr(sap_crear, "actualizar_fecha",
+                        lambda n, f, h="", ensayo=False, ses=None:
+                        (vistos.append((n, f, h, "", ensayo)), sap_crear.Resultado(ok=True, ensayo=ensayo, mensaje="ok"))[1])
+    larga = "CAM1_" + "8707000001_" * 6 + "SODIMAC_CITA_55120"                                   # bastante más de 30 caracteres
+    cuerpo = {"fecha": "30.10.2026", "hora": "09:30:00", "grupos": [{"grupo": "7001", "referencia": larga},
+                                                                      {"grupo": "7002", "referencia": "CITA-55121"}]}
+    assert c.post("/api/sap/cita_camion", json={**cuerpo, "hora": ""}).status_code == 422       # sin hora no hay cita
+    assert c.post("/api/sap/cita_camion", json={"fecha": "30.10.2026", "hora": "09:30:00"}).status_code == 422
+    t = _esperar_job(c, c.post("/api/sap/cita_camion", json={**cuerpo, "ensayo": True}).json()["id"])
+    assert t["estado"] == "ok" and [v[0] for v in vistos] == ["7001", "7002"] and all(v[4] for v in vistos)
+    assert all(not e["cita"]["fecha"] for e in _estado(c)["entregas"] if e["entrega"].startswith("87070"))   # el ensayo no escribe
+    vistos.clear()
+    t = _esperar_job(c, c.post("/api/sap/cita_camion", json=cuerpo).json()["id"])
+    assert t["estado"] == "ok", str(t)[:300]
+    assert vistos[0][:4] == ("7001", "30.10.2026", "09:30:00", larga)                             # referencia sin recorte
+    hechas = {e["grupo"]: e for e in _estado(c)["entregas"] if e["grupo"] in ("7001", "7002")}
+    assert hechas["7001"]["cita"] == {"numero": larga, "fecha": "2026-10-30", "hora": "09:30"}
+    assert hechas["7002"]["cita"]["numero"] == "CITA-55121" and hechas["7002"]["cita"]["fecha"] == "2026-10-30"
+    assert all(e["pasos"]["sap"]["ok"] for e in hechas.values())                                  # «Fecha en SAP» queda hecho
+
+    # una entrega que todavía no tiene grupo recibe la fecha y la hora en la propia entrega (VL02N)
+    vistos.clear()
+    suelta = c.put("/api/entregas/8707099999", json={"entrega": "8707099999", "pedido": "4420",
+                                                     "lineas": [{"sku": "1", "qty": 1}]}).json()
+    t = _esperar_job(c, c.post("/api/sap/cita_camion", json={"fecha": "31.10.2026", "hora": "10:00:00",
+                                                              "entregas": ["8707099999"]}).json()["id"])
+    assert t["estado"] == "ok" and vistos == [("8707099999", "31.10.2026", "10:00:00", "", False)]
+    nueva = next(e for e in _estado(c)["entregas"] if e["entrega"] == "8707099999")
+    assert nueva["cita"]["fecha"] == "2026-10-31" and nueva["pasos"]["sap"]["ok"]
 
 
 def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):

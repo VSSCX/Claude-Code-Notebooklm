@@ -242,6 +242,8 @@ def test_accion_en_curso_responde_409_en_todos_los_endpoints_sap(monkeypatch, da
         ("/api/sap/crear_entregas", {"pedido": "4005100000", "puesto": "PN01", "ensayo": True}),
         ("/api/sap/crear_grupo", {"entregas": ["8700"], "ensayo": True}),
         ("/api/sap/fecha_grupo", {"grupo": "123", "fecha": "01.10.2026", "ensayo": True}),
+        ("/api/sap/cita_camion", {"grupos": [{"grupo": "123", "referencia": "X"}], "fecha": "01.10.2026",
+                                  "hora": "09:00:00", "ensayo": True}),
     ]
     acciones._ocupado[0] = True
     try:
@@ -1131,28 +1133,44 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
         return {"90000": {"cantidad": 450, "fecha": "2026-10-20"}}
     monkeypatch.setattr(bases, "disponibilidad", fresca)
     monkeypatch.setattr(bases, "control_calidad", lambda fresco=False: {"90000": 20})
+    saldo = doc["resultado"]["filas"][0]["saldo"]                      # lo que el plan SOP deja
     r = c.get("/api/analisis/4005100000/excel")
     assert r.status_code == 200 and "Estatus_4005100000" in r.headers["content-disposition"]
     assert consultas == [True]                                          # la liberación se pregunta de nuevo al exportar
     wb = load_workbook(BytesIO(r.content))
-    assert wb.sheetnames == ["Estatus", "Entregas", "Análisis SAP"]
+    assert wb.sheetnames == ["Estatus"]                                 # al KAM solo va lo que importa
     ws = wb["Estatus"]
     textos = [ws.cell(row=n, column=1).value for n in range(1, 4)]
     assert "4005100000" in textos[0] and "OC0" in textos[0]
-    assert "Pedido:" in textos[1] and "Falta:" in textos[1]
-    assert "Generado el" in textos[2] and "01-10-2026 09:30" in textos[2] and "consultada ahora" in textos[2]
+    assert "Pedido:" in textos[1] and "Pendiente:" in textos[1]
+    assert "Generado el" in textos[2] and "01-10-2026 09:30" in textos[2]
     cab = next(n for n in range(1, 10) if ws.cell(row=n, column=1).value == "SKU")
-    assert [x.value for x in ws[cab]][:7] == ["SKU", "Descripción", "Pedido", "En entrega", "Falta", "Estado", "Alerta"]
-    assert "Alerta (del análisis de SAP)" in ws.cell(row=4, column=1).value
+    # pedido, en entrega, pendiente, alerta, saldo SOP, stock CD30 y próxima liberación; nada más
+    assert [x.value for x in ws[cab]] == ["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Alerta", "Saldo SOP",
+                                          "Stock CD30", "Próx. liberación (fecha)", "Próx. liberación (cant.)"]
+    assert ws.cell(row=4, column=1).value.startswith("Alerta:")
     filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
     f9000 = filas["90000"]
     # pedido 10, dos entregas de 3 = 6 en entrega, faltan 4: sale con el stock del análisis y la liberación fresca
-    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[7:11] == (5, 1, 2, 0) and f9000[11:14] == (20, "20-10-2026", 450)
-    assert f9000[6] == "Limitado SOP"                                    # la alerta del análisis, como en la plataforma
-    assert next(x for x in ws.iter_rows(min_row=cab + 1) if x[0].value == "90000")[6].fill.fgColor.rgb.endswith("DDE8F3")
-    # lo que ya está completo en entrega no lleva stock ni liberación
+    assert f9000[2:5] == (10, 6, 4) and f9000[5] == "Limitado SOP" and f9000[6] == saldo
+    assert f9000[7:10] == (5, "20-10-2026", 450)
+    assert next(x for x in ws.iter_rows(min_row=cab + 1) if x[0].value == "90000")[5].fill.fgColor.rgb.endswith("DDE8F3")
+    # lo que ya está completo en entrega no lleva alerta, saldo, stock ni liberación
     completo = next(x for x in filas.values() if x[4] == 0)
-    assert completo[5] == "En entrega" and not completo[6] and completo[7:14] == (None,) * 7
+    assert completo[5:10] == (None, None, None, None, None) or all(not v for v in completo[5:10])
+
+    # el libro interno trae todo el detalle del equipo
+    r = c.get("/api/analisis/4005100000/excel?interno=true")
+    assert "Interno_4005100000" in r.headers["content-disposition"]
+    wb = load_workbook(BytesIO(r.content))
+    assert wb.sheetnames == ["Estatus", "Entregas", "Análisis SAP"]
+    ws = wb["Estatus"]
+    assert [x.value for x in ws[cab]][:7] == ["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Estado", "Alerta"]
+    assert "Control de calidad" in [x.value for x in ws[cab]]
+    filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
+    f9000 = filas["90000"]
+    assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[6] == "Limitado SOP" and f9000[7] == saldo
+    assert f9000[8:12] == (5, 1, 2, 0) and f9000[12:15] == (20, "20-10-2026", 450)
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
     assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 5 for x in ent)
     assert wb["Análisis SAP"][1][3].value == "Alerta" and wb["Análisis SAP"][1][4].value == "Qty pendiente"
@@ -1166,7 +1184,10 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     ws = load_workbook(BytesIO(r.content))["Estatus"]
     assert "no hubo conexión" in ws.cell(row=3, column=1).value
     fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
-    assert fila[11:14] == (12, "15-10-2026", 300)       # sin conexión: control de calidad y liberación del análisis
+    assert fila[8:10] == ("15-10-2026", 300)           # sin conexión: la liberación del análisis
+    ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel?interno=true").content))["Estatus"]
+    fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
+    assert fila[12:15] == (12, "15-10-2026", 300)       # y el control de calidad del análisis
 
 
 def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
@@ -1596,9 +1617,13 @@ def test_el_analisis_trae_las_unidades_en_control_de_calidad_y_el_excel_kam_mues
     assert fila["alertas"] == ["Stock parcial", "Limitado SOP"]
     ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel").content))["Estatus"]
     cab = next(n for n in range(1, 10) if ws.cell(row=n, column=1).value == "SKU")
+    assert "Control de calidad" not in [x.value for x in ws[cab]]          # al KAM no va: es información interna
+    f = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "9000")
+    assert f[5] == "Stock parcial + Limitado SOP"
+    ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel?interno=true").content))["Estatus"]
     assert "Control de calidad" in [x.value for x in ws[cab]]
     f = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "9000")
-    assert f[6] == "Stock parcial + Limitado SOP" and f[11] == 14
+    assert f[6] == "Stock parcial + Limitado SOP" and f[12] == 14
     time.sleep(0.2)
 
 

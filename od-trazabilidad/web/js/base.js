@@ -297,8 +297,10 @@ function calcularGrupos(){
   for (const e of Store.list('entregas')){
     if (e.anulada) continue;
     // las entregas de un camión compartido entre pedidos (cubicaje conjunto) forman un solo grupo aunque aún no tengan número
-    const key = e.grupo ? 'G' + e.grupo : e.camion_ref ? 'C' + e.camion_ref : 'E' + e.entrega;
-    const g = m.get(key) || {key, grupo:e.grupo || '', sinGrupo:!e.grupo, entregas:[]};
+    // y dentro del camión, los pedidos de otra categoría van en su propio grupo (la A conserva la clave de siempre)
+    const cat = e.categoria && e.categoria !== 'A' ? '/' + e.categoria : '';
+    const key = e.grupo ? 'G' + e.grupo : e.camion_ref ? 'C' + e.camion_ref + cat : 'E' + e.entrega;
+    const g = m.get(key) || {key, grupo:e.grupo || '', sinGrupo:!e.grupo, entregas:[], camionRef:e.camion_ref || '', categoria:e.categoria || ''};
     g.entregas.push(e); m.set(key, g);
   }
   for (const g of m.values()){
@@ -320,12 +322,14 @@ function calcularGrupos(){
 const gruposDe = ped => grupos().filter(g => g.entregas.some(e => e.pedido === ped))
   .sort((a, b) => (a.cita.fecha || '9').localeCompare(b.cita.fecha || '9') || String(a.grupo).localeCompare(String(b.grupo)));
 const grupo1 = key => grupos().find(g => g.key === key);
+/* Un camión compartido entre pedidos de distinta categoría tiene varios grupos de SAP, pero una sola cita (fecha y hora) */
+const gruposDelCamion = g => g.camionRef ? grupos().filter(x => x.camionRef === g.camionRef) : [g];
 
 async function marcarPasoGrupo(key, k, forzar){
   const g = grupo1(key); if (!g || POR_ENTREGA.includes(k)) return;
   const nuevo = forzar ?? !g.pasos[k];
-  if (nuevo && k === 'confirmada' && !(g.cita.fecha && g.cita.hora))
-    return abrirGrupo(key, {marcar:'confirmada', msg:'Para confirmar la cita ingresa fecha y hora.'});
+  // Confirmar la cita siempre pregunta fecha, hora y referencia del grupo (y la lleva a SAP): no se marca a ciegas
+  if (nuevo && k === 'confirmada') return abrirCita(key);
   await Promise.all(g.entregas.map(e => marcarPaso(safeId(e.entrega), k, nuevo)));
 }
 

@@ -173,6 +173,8 @@ RUTAS = [
     ("POST", r"^/api/sap/crear_entregas$", "sap", "Pidió crear entregas en SAP", 0),
     ("POST", r"^/api/sap/crear_grupo$", "sap", "Pidió crear un grupo en SAP", 0),
     ("POST", r"^/api/sap/fecha_grupo$", "sap", "Pidió poner la cita de un grupo en SAP", 0),
+    ("POST", r"^/api/sap/cita_camion$", "sap", "Pidió actualizar la cita confirmada de un camión en SAP", 0),
+    ("PUT", r"^/api/cubicaje-conjunto/[^/]+/categorias$", "cubicaje", "Cambió la categoría de grupo de un pedido del cubicaje conjunto", 0),
     ("POST", r"^/api/sap/borrar_entrega$", "sap", "Pidió borrar una entrega en SAP", 0),
     ("POST", r"^/api/sap/borrar_grupo$", "sap", "Pidió borrar un grupo en SAP", 0),
     ("POST", r"^/api/archivos$", "pedido", "Subió un archivo", 0),

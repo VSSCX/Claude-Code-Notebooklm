@@ -49,7 +49,11 @@ function vistaBandeja(){
       const nombre = g.sinGrupo ? 'entrega ' + g.entregas[0].entrega : 'grupo ' + g.grupo;
       return `<div class="tarea" data-k="${esc(claveTareaGrupo(g, s.k))}"><div class="c1"><b>${g.sinGrupo ? 'Entrega ' + esc(g.entregas[0].entrega) : 'Grupo ' + esc(g.grupo)}</b><span class="num">${fmt(g.unidades)} un.</span>${botonCerrarTarea(claveTareaGrupo(g, s.k), nombre)}</div>
       <div class="c2">${esc(p.cliente || '—')} · ${g.pedidos.length > 1 ? g.pedidos.length + ' pedidos' : 'Pedido ' + esc(g.pedidos[0])} · ${g.entregas.length} entrega(s)${g.cita.fecha ? ` · ${fmtFecha(g.cita.fecha)} ${esc(g.cita.hora || '')}` : ''}</div>
-      <div class="row tight">${POR_ENTREGA.includes(s.k) ? '' : `<button class="btn primary sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1">Marcar hecho</button>`}
+      <div class="row tight">${POR_ENTREGA.includes(s.k) ? ''
+        : s.k === 'confirmada' ? `<button class="btn primary sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1" title="Pide fecha, hora y referencia del grupo y las lleva a SAP">Confirmar cita</button>`
+        : s.k === 'sap' ? `<button class="btn primary sm" data-act="citaGrupo" data-grupo="${esc(g.key)}" title="Pone la fecha, la hora y la referencia en SAP">Actualizar en SAP</button>
+          <button class="btn quiet sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1" title="Si ya lo hiciste a mano en SAP">Marcar hecho</button>`
+        : `<button class="btn primary sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1">Marcar hecho</button>`}
       <button class="btn quiet sm" data-abrir="${esc(safeId(g.pedidos[0]))}" data-sub="${POR_ENTREGA.includes(s.k) ? 'entregas' : 'grupos'}">Ver pedido</button></div></div>`; }).join('')}</section>`).join('')}</div>`
   : (colsFlujo.length ? '' : `<div class="panel empty"><h3>No hay tareas pendientes</h3><p>Aquí aparece el próximo paso de cada pedido analizado y de cada camión.</p></div>`)}`;
 }

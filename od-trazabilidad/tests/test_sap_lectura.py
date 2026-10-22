@@ -511,9 +511,8 @@ def test_crear_grupo_sigue_la_secuencia_del_excel():
     assert ses.menu_usado                                                         # menú crear grupo
     vals = {k.rsplit("/", 1)[1]: v.Text for k, v in ses.popup_grupo.items()}
     assert vals["ctxtVBSK-SMART"] == "K" and vals["ctxtLIKP-LGNUM"] == "CD3"
-    # el Excel corta la referencia en 30 caracteres
-    assert vals["txtVBSK-VTEXT"] == "CAM3_8705709527_8705709528_PARIS"[:30]
-    assert len(vals["txtVBSK-VTEXT"]) == 30
+    # la referencia va completa: el Excel la cortaba a 30 caracteres
+    assert vals["txtVBSK-VTEXT"] == "CAM3_8705709527_8705709528_PARIS"
 
 
 def test_crear_grupo_en_ensayo_no_abre_el_menu():
@@ -568,6 +567,47 @@ def test_cita_del_grupo_recorre_sus_entregas():
 
     assert not sap_crear.actualizar_grupo("", "26.09.2026", ses=SesionVG02([])).ok
     assert not sap_crear.actualizar_grupo("1392270", "", ses=SesionVG02([])).ok
+
+
+class CampoCorto(Campo):
+    """Un campo de SAP con largo máximo: lo que sobra se pierde al escribir."""
+    def __init__(self, maximo):
+        self._t, self.maximo = "", maximo
+        self.CaretPosition = 0
+
+    @property
+    def Text(self):
+        return self._t
+
+    @Text.setter
+    def Text(self, v):
+        self._t = str(v)[:self.maximo]
+
+
+def test_la_referencia_del_grupo_va_completa_y_avisa_si_sap_la_recorta():
+    from app.integrations import sap_crear
+    larga = "CAM1_8705709527_8705709528_8705709529_8705709530_SODIMAC_CITA_77881"      # 66 caracteres
+
+    class SesionRef(SesionCrear):
+        def __init__(self, maximo):
+            super().__init__([], mensaje="ok")
+            self.ref = CampoCorto(maximo)
+
+        def findById(self, ident):
+            if ident == "wnd[0]/usr/txtVBSK-VTEXT":
+                return self.ref
+            if ident in ("wnd[1]", "wnd[2]"):
+                raise KeyError(ident)
+            return super().findById(ident)
+
+    ses = SesionRef(maximo=200)
+    r = sap_crear.actualizar_grupo("1392270", referencia=larga, ses=ses)
+    assert r.ok and ses.ref.Text == larga and not any("recortó" in i for i in r.incidencias)     # sin recorte, sin aviso
+
+    ses = SesionRef(maximo=40)                                           # el campo de SAP sí tiene su propio largo
+    r = sap_crear.actualizar_grupo("1392270", referencia=larga, ses=ses)
+    assert r.ok and ses.ref.Text == larga[:40]
+    assert any("recortó la referencia a 40 caracteres" in i for i in r.incidencias)       # y se dice, no se esconde
 
 
 def test_incidencias_quedan_registradas():

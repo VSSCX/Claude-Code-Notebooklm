@@ -108,17 +108,28 @@ function vistaConjunto(){
   const d = UI.conjunto, cid = d.conjunto.id, peds = d.conjunto.pedidos;
   const cliDe = d.conjunto.clientes || {}, distintos = d.conjunto.distintos || [];
   const ents = entregasDelConjunto(cid);
+  // Categoría de grupo de cada pedido: los de distinta categoría comparten camión pero van en entregas y grupos separados
+  const catDe = n => ((d.categorias || {})[n]) || 'A';
+  const cats = [...new Set(peds.map(catDe))].sort(), varias = cats.length > 1;
   const camiones = d.camiones.map(c => {
     const filas = d.filas.filter(f => f.camion === c.numero);
     const porPed = {}; filas.forEach(f => { porPed[f.pedido] = (porPed[f.pedido] || 0) + f.unidades; });
     const dePed = ents.filter(e => e.camion_ref === `${cid}-${c.numero}`);
     const faltan = Object.keys(porPed).filter(n => !dePed.some(e => e.pedido === n));
-    const grupo = dePed.length && dePed.every(e => e.grupo) ? [...new Set(dePed.map(e => e.grupo))].join(', ') : '';
+    // un grupo de SAP por categoría presente en este camión
+    const gruposCat = cats.map(k => {
+      const delCat = Object.keys(porPed).filter(n => catDe(n) === k);
+      if (!delCat.length) return null;
+      const es = dePed.filter(e => delCat.includes(e.pedido));
+      const num = es.length && es.every(e => e.grupo) ? [...new Set(es.map(e => e.grupo))].join(', ') : '';
+      return {k, es, grupo: num, listo: es.length > 0 && delCat.every(n => es.some(e => e.pedido === n))};
+    }).filter(Boolean);
     const ocup = filas.length ? filas[filas.length - 1].ocup_acum : 0;
-    return {c, filas, porPed, dePed, faltan, grupo, ocup};
+    return {c, filas, porPed, dePed, faltan, gruposCat, ocup};
   });
   const faltanEnt = camiones.reduce((a, x) => a + x.faltan.length, 0), totalEnt = camiones.reduce((a, x) => a + Object.keys(x.porPed).length, 0);
-  const sinGrupo = camiones.filter(x => !x.faltan.length && x.dePed.length && !x.grupo);
+  const todosGrupos = camiones.flatMap(x => x.gruposCat);
+  const porCrear = todosGrupos.filter(x => x.listo && !x.grupo);
   const modos = ['MDA', 'MDA PREDISTRIBUIDO', 'SDA STOCK', 'SDA PREDISTRIBUIDO'];
   const o = UI.conjOpts = UI.conjOpts || {modo: d.modo, caja_master: d.caja_master || '', piso_pallet: d.piso_pallet || '', cliente: d.conjunto.reglas_de || ''};
   const sel3 = (attr, opciones, valor) => `<select ${attr}>${opciones.map(x => `<option value="${esc(x.v)}" ${x.v === valor ? 'selected' : ''}>${esc(x.t)}</option>`).join('')}</select>`;
@@ -129,24 +140,27 @@ function vistaConjunto(){
       <p class="small muted" style="margin:4px 0 0">${esc(distintos.length > 1 ? distintos.join(' + ') : d.cliente || '')} · ${esc(d.modo)} · ${d.camiones.length} camión(es) · ${fmt(d.unidades)} un.</p></div>
       <div class="label-act"><button class="btn sm" data-act="salirConjunto">Volver a los pedidos</button></div></div>
     <div class="cells">${peds.map(n => `<div class="cell"><span class="cap">Pedido</span><button class="enlace" data-sel="${esc(safeId(n))}" data-salir-conj style="font-size:var(--t-md);margin:0">${esc(n)}</button>
-      <span class="small muted num">${distintos.length > 1 && cliDe[n] ? esc(cliDe[n]) + ' · ' : ''}${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span></div>`).join('')}</div>
+      <span class="small muted num">${distintos.length > 1 && cliDe[n] ? esc(cliDe[n]) + ' · ' : ''}${fmt((d.por_pedido[n] || {}).unidades || 0)} un.</span>
+      <label class="cat-grupo" title="${ents.length ? 'Ya hay entregas creadas: la categoría ya no se puede cambiar' : 'Pedidos de distinta categoría viajan en el mismo camión pero van en entregas y grupos de SAP separados'}">Grupo de SAP
+        <select data-conjcat="${esc(n)}" ${ents.length ? 'disabled' : ''} aria-label="Categoría de grupo del pedido ${esc(n)}">${['A', 'B', 'C', 'D'].map(k => `<option value="${k}" ${catDe(n) === k ? 'selected' : ''}>Categoría ${k}</option>`).join('')}</select></label></div>`).join('')}</div>
+    ${varias ? `<p class="small" style="margin:10px 0 0"><span class="tag info">${cats.length} categorías</span> Comparten camión y cita, pero cada categoría lleva sus propias entregas y su propio grupo de SAP.</p>` : ''}
     <div class="label-flujo"><div class="cj-pasos" role="list" aria-label="Pasos del cubicaje conjunto">
-      ${paso(1, 'Cubicar juntos', true)}${paso(2, `Entregas ${totalEnt - faltanEnt} de ${totalEnt}`, totalEnt > 0 && !faltanEnt)}${paso(3, `Grupos ${camiones.length - sinGrupo.length - camiones.filter(x => x.faltan.length).length} de ${camiones.length}`, camiones.every(x => x.grupo))}</div></div>
+      ${paso(1, 'Cubicar juntos', true)}${paso(2, `Entregas ${totalEnt - faltanEnt} de ${totalEnt}`, totalEnt > 0 && !faltanEnt)}${paso(3, `Grupos ${todosGrupos.filter(x => x.grupo).length} de ${todosGrupos.length}`, todosGrupos.every(x => x.grupo))}</div></div>
     <div class="label-foot">
       ${faltanEnt ? `<button class="btn quiet sm" data-act="entregasConjunto" data-ensayo="1" title="Recorre VL01N sin guardar">Ensayo en SAP</button>
         <button class="btn primary sm" data-act="entregasConjunto">Crear ${faltanEnt === totalEnt ? '' : 'las que faltan: '}${faltanEnt} entrega(s) en SAP</button>` : ''}
-      ${!faltanEnt && sinGrupo.length ? `<button class="btn primary sm" data-act="gruposConjunto">Crear ${sinGrupo.length} grupo(s) en SAP</button>` : ''}
-      <span class="spacer"></span><span class="small muted">Una entrega por camión y pedido; un grupo por camión.</span></div>
+      ${!faltanEnt && porCrear.length ? `<button class="btn primary sm" data-act="gruposConjunto">Crear ${porCrear.length} grupo(s) en SAP</button>` : ''}
+      <span class="spacer"></span><span class="small muted">Una entrega por camión y pedido; un grupo por camión${varias ? ' y categoría' : ''}.</span></div>
     ${estadoJob()}
   </div>
   ${(d.avisos || []).map(a => `<p class="small" style="margin:10px 0 0"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
   <div class="panel" style="margin-top:16px"><div class="panel-h"><h3>Camiones</h3><span class="spacer"></span><span class="small muted">Cada camión puede llevar carga de varios pedidos</span></div>
-    <div class="scroll"><table class="tbl"><thead><tr><th>Camión</th><th>Vehículo</th><th>Pedidos que lleva</th><th class="n">Unidades</th><th class="n">Ocupación</th><th class="n">Kilos</th><th>Entregas</th><th>Grupo</th></tr></thead><tbody>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Camión</th><th>Vehículo</th><th>Pedidos que lleva</th><th class="n">Unidades</th><th class="n">Ocupación</th><th class="n">Kilos</th><th>Entregas</th><th>${varias ? 'Grupos' : 'Grupo'}</th></tr></thead><tbody>
     ${camiones.map(x => `<tr><td><b>${x.c.numero}</b></td><td>${esc(x.c.tipo)}</td>
       <td>${Object.entries(x.porPed).map(([n, u]) => `<span class="tag ${Object.keys(x.porPed).length > 1 ? 'info' : ''}">${esc(n)} · ${fmt(u)}</span>`).join(' ')}</td>
       <td class="n">${fmt(x.filas.reduce((a, f) => a + f.unidades, 0))}</td><td class="n">${pctCub(x.ocup)}</td><td class="n">${kgTxt(((d.carga_por_camion || []).find(y => y.camion === x.c.numero) || {}).kilos) || '—'}</td>
       <td>${x.faltan.length ? `<span class="tag warn">Faltan ${x.faltan.length}</span>` : x.dePed.length ? `<span class="tag ok">${x.dePed.map(e => esc(e.entrega)).join(' · ')}</span>` : ''}</td>
-      <td>${x.grupo ? `<span class="tag ok code">${esc(x.grupo)}</span>` : x.dePed.length && !x.faltan.length ? '<span class="tag warn">Por crear</span>' : '—'}</td></tr>`).join('')}
+      <td>${x.gruposCat.map(gc => `<div style="white-space:nowrap">${varias ? `<span class="small muted">${gc.k} </span>` : ''}${gc.grupo ? `<span class="tag ok code">${esc(gc.grupo)}</span>` : gc.listo ? '<span class="tag warn">Por crear</span>' : '—'}</div>`).join('')}</td></tr>`).join('')}
     </tbody></table></div></div>
   ${d.visor ? `<div class="visor-caja" style="margin-top:16px;min-height:480px"><iframe title="Visor 3D del cubicaje conjunto" src="${esc(d.visor)}"></iframe></div>` : ''}
   <div class="row" style="gap:12px;align-items:flex-end;margin-top:16px">
@@ -175,20 +189,33 @@ async function entregasConjunto(ensayo){
     ensayo ? 'Se recorrió VL01N sin guardar. Revisa la pantalla de SAP.' : `${d.conjunto.pedidos.length} pedidos. Ahora crea los grupos: uno por camión.`);
   render();
 }
+async function cambiarCategoria(pedido, cat){
+  const d = UI.conjunto; if (!d) return;
+  try {
+    const r = await api('PUT', `/cubicaje-conjunto/${encodeURIComponent(d.conjunto.id)}/categorias`, {categorias: {[pedido]: cat}});
+    d.categorias = r.categorias;
+  } catch(e){ Avisos.agregar('error', 'No se pudo cambiar la categoría', e.message); }
+  render();
+}
 async function gruposConjunto(){
   const d = UI.conjunto, cid = d.conjunto.id;
   const camiones = [...new Set(entregasDelConjunto(cid).map(e => e.camion_ref))].sort();
   for (const ref of camiones){
-    const es = entregasDelConjunto(cid).filter(e => e.camion_ref === ref);
-    if (es.every(e => e.grupo)) continue;
-    const clis = [...new Set(es.map(e => (d.conjunto.clientes || {})[e.pedido]).filter(Boolean))];
-    await crearGrupoSap(es.map(e => e.entrega), false, ref.split('-').pop(), clis.length > 1 ? clis.join('+') : (clis[0] || d.cliente));
-    if (!UI.job || UI.job.estado !== 'ok') return;            // ante el primer problema se detiene (el aviso ya salió)
+    const delCamion = entregasDelConjunto(cid).filter(e => e.camion_ref === ref);
+    // los pedidos de distinta categoría van en el mismo camión pero en grupos distintos
+    for (const cat of [...new Set(delCamion.map(e => e.categoria || 'A'))].sort()){
+      const es = delCamion.filter(e => (e.categoria || 'A') === cat);
+      if (es.every(e => e.grupo)) continue;
+      const clis = [...new Set(es.map(e => (d.conjunto.clientes || {})[e.pedido]).filter(Boolean))];
+      await crearGrupoSap(es.map(e => e.entrega), false, ref.split('-').pop(), clis.length > 1 ? clis.join('+') : (clis[0] || d.cliente));
+      if (!UI.job || UI.job.estado !== 'ok') return;          // ante el primer problema se detiene (el aviso ya salió)
+    }
   }
 }
 document.addEventListener('change', ev => {
   const el = ev.target; if (!el.matches) return;
   if (el.matches('[data-jsel]')){ el.checked ? UI.juntarSel.add(el.dataset.jsel) : UI.juntarSel.delete(el.dataset.jsel); render(); }
+  else if (el.matches('[data-conjcat]')) cambiarCategoria(el.dataset.conjcat, el.value);
   else if (el.matches('[data-conjmodo]')){ (UI.conjOpts = UI.conjOpts || {}).modo = el.value; }
   else if (el.matches('[data-conjcli]')){ (UI.conjOpts = UI.conjOpts || {}).cliente = el.value; }
   else if (el.matches('[data-conjcm]')){ (UI.conjOpts = UI.conjOpts || {}).caja_master = el.value; }
@@ -266,7 +293,8 @@ function detallePedido(p){
             <button role="menuitem" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar en SAP' : 'Analizar en SAP'}</button>
             <button role="menuitem" data-act="nuevaEntrega">Nueva entrega</button>
             <button role="menuitem" data-act="editarPedido">Editar pedido</button>
-            <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel para el KAM: lo pedido, lo que está en entrega, lo que falta, el stock y la próxima liberación">Exportar estatus para el KAM (Excel)</a>
+            <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel para el KAM: lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">Exportar estatus para el KAM (Excel)</a>
+            <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel?interno=true" download title="Libro completo para el equipo: estado, suministros, otros stocks, control de calidad y detalle del análisis. No es para enviar al KAM">Exportar detalle interno (Excel)</a>
           </div></details></div>
       <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
     </div>
@@ -398,12 +426,13 @@ function grupoHTML(g){
       <div class="dk-id">${g.sinGrupo ? 'Sin grupo' : `Grupo <span class="code">${esc(g.grupo)}</span>`} ${estado}
         ${g.parcial ? '<span class="tag err" title="Hay pasos marcados en unas entregas del camión y en otras no">Entregas desalineadas</span>' : ''}
         ${otros ? '<span class="tag info">Camión compartido</span>' : ''}
+        ${g.camionRef && gruposDelCamion(g).length > 1 ? `<span class="tag info" title="Los pedidos de distinta categoría viajan en el mismo camión pero van en grupos de SAP separados; comparten la cita">Categoría ${esc(g.categoria || 'A')} · camión de ${gruposDelCamion(g).length} grupos</span>` : ''}
         ${(() => { const ps = Store.get('pedidos', UI.sel); const sm = [...new Set(g.entregas.map(e => e.suministro || 1))];
           return ps && resumen(ps).sums.length > 1 ? `<span class="tag">Suministro ${sm.join(' y ')}</span>` : ''; })()}</div>
       <div class="dk-qty">${fmt(g.unidades)} <small>un. · ${g.entregas.length} entrega(s)</small></div>
     </div>
     <div class="meta">
-      ${m('Cita', `<span class="code">${esc(c.numero || '—')}</span>`)}${m('Fecha', `${c.fecha ? fmtFecha(c.fecha) : '—'}${c.hora ? ' ' + esc(c.hora) : ''}`)}
+      ${m('Referencia', `<span class="code">${esc(c.numero || '—')}</span>`)}${m('Fecha', `${c.fecha ? fmtFecha(c.fecha) : '—'}${c.hora ? ' ' + esc(c.hora) : ''}`)}
       ${m('Vehículo', `${esc(g.vehiculo || '')} · ${esc(g.carga || '')}`)}${m('Tipo', `${esc(g.un || '')} · ${esc(g.tipo || '')}`)}${m('Región', esc(g.region || '—'))}
     </div>
     ${rutaHTML(g)}
@@ -417,7 +446,7 @@ function grupoHTML(g){
       ${g.sinGrupo
         ? `<button class="btn quiet sm" data-act="ensayoGrupo" data-cam="${esc(g.key)}" data-ents="${esc(g.entregas.map(e => e.entrega).join(','))}">Ensayo del grupo</button>
            <button class="btn sm" data-act="crearGrupoSap" data-cam="${esc(g.key)}" data-ents="${esc(g.entregas.map(e => e.entrega).join(','))}" title="Crea el grupo de transporte en VL06">Crear grupo en SAP</button>`
-        : `<button class="btn sm" data-act="citaGrupo" data-num="${esc(g.grupo)}" title="Fecha, hora y referencia de la cita en VG02">Cita en SAP</button>
+        : `<button class="btn sm" data-act="citaGrupo" data-grupo="${esc(g.key)}" title="Pone en SAP la fecha, la hora y la referencia completa de este grupo (VG02); si falta la cita, la pide">Actualizar cita en SAP</button>
            <span class="spacer"></span>
            <button class="btn danger sm" data-act="borrarGrupoSap" data-num="${esc(g.grupo)}" title="Borra el grupo en VG02; las entregas quedan sin grupo">Borrar grupo en SAP</button>`}
     </div>

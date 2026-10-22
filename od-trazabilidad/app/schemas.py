@@ -37,7 +37,7 @@ class PedidoIn(_Base):
 
 
 class CitaIn(_Base):
-    numero: str = Field("", max_length=30)
+    numero: str = Field("", max_length=120)
     fecha: date | None = None
     hora: str = Field("", pattern=r"^$|^\d{2}:\d{2}$")
 
@@ -74,6 +74,7 @@ class EntregaIn(_Base):
     anulada: bool = False
     reprog: int = Field(0, ge=0)
     camion_ref: str = Field("", max_length=40)
+    categoria: str = Field("", max_length=20)
     suministro: int = Field(0, ge=0)          # 0 = el suministro en curso del pedido
     lineas: list[LineaEntregaIn] = []
     pasos: dict[str, PasoIn] = {}

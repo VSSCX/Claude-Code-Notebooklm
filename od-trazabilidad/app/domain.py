@@ -75,7 +75,7 @@ def entrega_doc(e: Entrega) -> dict:
                  "hora": e.cita_hora},
         "vehiculo": e.vehiculo, "carga": e.carga, "un": e.un, "region": e.region,
         "factura": e.factura, "obs": e.obs, "anulada": e.anulada, "reprog": e.reprogramaciones,
-        "camion_ref": e.camion_ref, "suministro": e.suministro or 1,
+        "camion_ref": e.camion_ref, "categoria": e.categoria or "", "suministro": e.suministro or 1,
         "lineas": [{"sku": l.sku, "qty": l.qty} for l in e.lineas],
         "pasos": {p.paso: {"ok": p.ok, "at": _iso(p.at)} for p in e.pasos},
         "log": [{"at": _iso(x.at), "txt": x.texto, "origen": x.origen} for x in e.eventos[:LOG_MAX]],
@@ -132,7 +132,7 @@ def estado(s: Session) -> dict:
                  "hora": r.cita_hora},
         "vehiculo": r.vehiculo, "carga": r.carga, "un": r.un, "region": r.region,
         "factura": r.factura, "obs": r.obs, "anulada": r.anulada, "reprog": r.reprogramaciones,
-        "camion_ref": r.camion_ref, "suministro": r.suministro or 1,
+        "camion_ref": r.camion_ref, "categoria": r.categoria or "", "suministro": r.suministro or 1,
         "lineas": lineas_e.get(r.id, []), "pasos": pasos.get(r.id, {}), "log": log_e.get(r.id, []),
         "creado": _iso(r.creado), "actualizado": _iso(r.actualizado),
     } for r in s.execute(select(E))]
@@ -362,6 +362,9 @@ def guardar_entrega(s: Session, d: EntregaIn) -> Entrega:
     e.cita_numero, e.cita_fecha, e.cita_hora = d.cita.numero, d.cita.fecha, d.cita.hora
     if d.camion_ref or nueva:                      # lo que no trae la web no borra el vínculo del camión compartido
         e.camion_ref = d.camion_ref
+        e.categoria = d.categoria
+    elif d.categoria:
+        e.categoria = d.categoria
     if d.suministro:                               # la web lo manda al editar; una entrega nueva sin indicar toma el suministro en curso
         e.suministro = d.suministro
     elif nueva:

@@ -346,7 +346,8 @@ function vistaAnalisis(p){
     <div class="row" style="justify-content:space-between;margin-bottom:10px">
       <div class="small muted">cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
       <div class="row tight">
-        <a class="btn" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo que falta, el stock y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
+        <a class="btn" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
+        <a class="btn quiet" data-exp-kam href="${URL_KAM(p.pedido)}?interno=true" download title="Libro completo para el equipo (control de calidad, otros stocks, detalle). No es para enviar al KAM">${ICON.descargar} Detalle interno</a>
         <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
     <div class="legend" style="margin:0 0 12px">
       <div>Ocupación total<b>${pct(r.ocupacion_total)}</b></div>

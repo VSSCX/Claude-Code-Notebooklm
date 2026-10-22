@@ -355,11 +355,29 @@ VG02_HORA = ("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02/"
 
 
 def referencia_grupo(camion: str, entregas: list, cliente: str = "") -> str:
-    """Mismo texto que arma el Excel cuando no hay referencia de cita: CAM1_entrega_CLIENTE."""
+    """Mismo texto que arma el Excel cuando no hay referencia de cita: CAM1_entrega_CLIENTE (completo, sin tope)."""
     txt = "CAM" + str(camion) + "".join("_" + str(e).strip() for e in entregas)
     if cliente:
         txt += "_" + cliente.upper()
-    return txt[:30]
+    return txt
+
+
+def _escribir_referencia(o, texto: str) -> None:
+    """Escribe la referencia COMPLETA en el campo de texto del grupo (el Excel la cortaba a 25-30 caracteres).
+    Después lee lo que quedó: si el propio campo de SAP la recorta, se avisa con el largo que sí acepta."""
+    try:
+        o.Text = texto
+        o.SetFocus()
+        o.CaretPosition = len(texto)
+    except Exception as e:  # noqa: BLE001
+        anotar("No se pudo escribir la referencia del grupo", e)
+        return
+    try:
+        quedo = str(o.Text)
+    except Exception:  # noqa: BLE001
+        return
+    if quedo.strip() != texto.strip():
+        anotar(f"SAP recortó la referencia a {len(quedo)} caracteres (es el máximo del campo): quedó '{quedo}'")
 
 
 def _numero_grupo(ses) -> str:
@@ -381,7 +399,7 @@ def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=
     if not numeros:
         res.mensaje = "No hay entregas para agrupar."
         return _cerrar(res)
-    texto = (referencia or "").strip()[:30] or referencia_grupo(camion, numeros, cliente)
+    texto = (referencia or "").strip() or referencia_grupo(camion, numeros, cliente)
 
     ses = ses or conectar()
     ses.findById("wnd[0]/tbar[0]/okcd").Text = "/NVL06"
@@ -457,13 +475,17 @@ def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=
                          ("wnd[1]/usr/txtVBSK-VTEXT", texto),
                          ("wnd[1]/usr/ctxtLIKP-LGNUM", LGNUM)):
         o = _por_id(ses, ident)
-        if o is not None:
-            try:
-                o.Text = valor
-                o.SetFocus()
-                o.CaretPosition = len(valor)
-            except Exception:  # noqa: BLE001
-                pass
+        if o is None:
+            continue
+        if ident.endswith("VBSK-VTEXT"):
+            _escribir_referencia(o, texto)
+            continue
+        try:
+            o.Text = valor
+            o.SetFocus()
+            o.CaretPosition = len(valor)
+        except Exception:  # noqa: BLE001
+            pass
     _presionar(ses, "wnd[1]/tbar[0]/btn[0]", 20)
     for _ in range(5):
         w2 = _por_id(ses, "wnd[2]")
@@ -587,12 +609,8 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
         if o is None:
             res.mensaje = "No se encontró el campo de referencia del grupo."
             return _cerrar(res)
-        texto = referencia[:25]
-        try:
-            o.Text = texto
-            o.CaretPosition = len(texto)
-        except Exception:  # noqa: BLE001
-            pass
+        texto = referencia.strip()
+        _escribir_referencia(o, texto)
         if not ensayo:
             _presionar(ses, "wnd[0]/tbar[0]/btn[11]", 20)
             _aceptar_popups(ses)
