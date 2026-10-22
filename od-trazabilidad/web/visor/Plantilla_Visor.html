@@ -452,6 +452,7 @@ function skuMat(color,txt){
   }
   lines.forEach((ln,idx)=>g.fillText(ln,S/2,y0+idx*lh));
   const t=new THREE.CanvasTexture(cc); t.anisotropy=8;
+  t.encoding=THREE.sRGBEncoding;                                // sin esto el color salia lavado (pastel) y las cajas se perdian contra el fondo
   const mat=new THREE.MeshStandardMaterial({map:t,metalness:0,roughness:0.8});
   _skuCache[ckey]=mat; return mat;
 }
@@ -759,9 +760,13 @@ function shotWhite(azv,elv,w,h){
   var oldBg=scene.background, pr=renderer.getPixelRatio(), oldFloor=floorMesh.material;
   var sav={az:az,el:el,dist:dist,ctr:ctr.clone()};
   scene.background=new THREE.Color(0xffffff); floorMesh.material=new THREE.ShadowMaterial({opacity:0.16});
+  // Para imprimir: aristas oscuras y marcadas, para separar una caja de la otra y de la hoja
+  var arOp=_MAT_ARISTA.opacity, arCol=_MAT_ARISTA.color.getHex();
+  _MAT_ARISTA.opacity=0.95; _MAT_ARISTA.color.setHex(0x0b1522);
   renderer.setPixelRatio(1.5); renderer.setSize(w,h,false);
   pdfEncuadrar(azv,elv,w/h); renderer.render(scene,camera);
   var url=renderer.domElement.toDataURL('image/jpeg',0.92);
+  _MAT_ARISTA.opacity=arOp; _MAT_ARISTA.color.setHex(arCol);
   scene.background=oldBg; floorMesh.material=oldFloor; az=sav.az; el=sav.el; dist=sav.dist; ctr.copy(sav.ctr);
   renderer.setPixelRatio(pr); onResize();
   return url;
@@ -772,7 +777,9 @@ async function exportPDF(soloActual){
   var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;}), cur0=cur;
   var pS=palSel; palSel=null;                                           // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
-  var VISTAS=[['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
+  // La planta (desde arriba) va primero: es la que deja ver todos los productos, sin que una caja tape a otra.
+  // La camara no puede mirar exactamente en vertical (queda paralela al «arriba»): 1.53 rad es casi 88 grados.
+  var VISTAS=[['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
   for(var k=0;k<idxs.length;k++){
     var i=idxs[k], c=CAM[i];
     busy.textContent='Generando PDF '+(k+1)+' de '+idxs.length+'...';
@@ -780,10 +787,9 @@ async function exportPDF(soloActual){
     buildScene(i);
     var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     var lay=pdfDisposicion(c,VISTAS);
-    if(lay.juntas){pdfPagina(doc,c,i,CAM.length,VISTAS.map(function(v,k){return [k,v];}),VISTAS.length,lay);}     // caben las dos vistas en una hoja
-    else for(var v=0;v<VISTAS.length;v++){
-      if(v>0)doc.addPage();
-      pdfPagina(doc,c,i,CAM.length,[[v,VISTAS[v]]],VISTAS.length,lay);
+    for(var pg=0;pg<lay.paginas.length;pg++){                              // cada hoja repite la cabecera y el detalle de carga
+      if(pg>0)doc.addPage();
+      pdfPagina(doc,c,i,CAM.length,lay.paginas[pg].map(function(k){return [k,VISTAS[k]];}),VISTAS.length,lay,lay.esc[pg]);
     }
     doc.save(pdfNombre(c,i,CAM.length));                                   // un archivo por camion, con su numero en el nombre
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
@@ -797,13 +803,20 @@ function pdfDisposicion(c,vistas){
   var n=(c.items||[]).length, dos=n>26, filas=dos?Math.ceil(n/2):n;
   var rh=dos?4.6:(n<=10?6:(n<=18?5.3:4.7)), yTabla=51, altoTabla=6.5+filas*rh+8;
   var yFoto=yTabla+altoTabla+3, pie=PDF.H-16, iw=PDF.W-2*PDF.M, rot=6;
-  var altos=vistas.map(function(v){return Math.max(50,iw/pdfAspectoVista(v[1],v[2])*1.04);});
-  var sumaFotos=altos.reduce(function(a,x){return a+x;},0), hueco=pie-yFoto-altos.length*rot-(altos.length-1)*3;
-  var juntas=hueco>=sumaFotos*0.8, esc=Math.min(1,hueco/sumaFotos);       // las dos vistas caben (algo mas chicas) en la misma hoja
-  if(juntas)altos=altos.map(function(x){return x*esc;});
-  return {n:n,dos:dos,rh:rh,yTabla:yTabla,altoTabla:altoTabla,yFoto:yFoto,rot:rot,altoFoto:Math.max(50,pie-yFoto-rot),altos:altos,juntas:juntas};
+  // alto natural de cada vista a todo el ancho (v[3] = alto minimo; la planta es una franja baja y ancha)
+  var altos=vistas.map(function(v){return Math.max(v[3]||50,iw/pdfAspectoVista(v[1],v[2])*1.04);});
+  var cap=function(k){return pie-yFoto-k*rot-(k-1)*3;};                          // alto util con k vistas en la hoja
+  // Se reparten en hojas: caben juntas mientras no haya que achicarlas a menos de 80 %; si no, pasan a otra hoja
+  var paginas=[], act=[], suma=0;
+  vistas.forEach(function(v,k){
+    if(act.length&&(suma+altos[k])*0.8>cap(act.length+1)){paginas.push(act);act=[];suma=0;}
+    act.push(k);suma+=altos[k];
+  });
+  paginas.push(act);
+  var esc=paginas.map(function(pg){var sm=pg.reduce(function(a,k){return a+altos[k];},0);return Math.min(1,cap(pg.length)/sm);});
+  return {n:n,dos:dos,rh:rh,yTabla:yTabla,altoTabla:altoTabla,yFoto:yFoto,rot:rot,altoFoto:Math.max(50,pie-yFoto-rot),altos:altos,paginas:paginas,esc:esc};
 }
-function pdfPagina(doc,c,i,total,vistasPag,nv,lay){
+function pdfPagina(doc,c,i,total,vistasPag,nv,lay,esc){
   var W=PDF.W,M=PDF.M,INK=PDF.INK,GRIS=PDF.GRIS,AZUL=PDF.AZUL, ped=(DATA.pedido&&DATA.pedido!=='LIBRE')?DATA.pedido:'';
   var n=c.idx||(i+1), esPal=esSoloPallet(c.tipo), nombre=(esPal?'Pallet ':'Camión ')+n+' de '+total;
   // --- cabecera, como el informe de siempre: titulo y pedido a la izquierda, logo y camion a la derecha
@@ -829,7 +842,7 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay){
   // --- fotos del camion a todo el ancho; cada una toma la forma del camion (sin hoja en blanco arriba y abajo)
   var iw=W-2*M, yf=lay.yFoto;
   vistasPag.forEach(function(vp){
-    var k=vp[0], vista=vp[1], ih=Math.min(lay.altoFoto,lay.altos[k]);
+    var k=vp[0], vista=vp[1], ih=lay.altos[k]*(esc==null?1:esc);
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor.apply(doc,AZUL);
     doc.text('Vista '+(k+1)+'  ·  '+vista[0],M,yf+3.2);
     doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor.apply(doc,GRIS);
