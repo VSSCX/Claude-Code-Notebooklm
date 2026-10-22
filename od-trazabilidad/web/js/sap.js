@@ -198,18 +198,32 @@ async function cargarAnalisis(pedido){
 /* Lo que se mueve solo (plan SOP, disponibilidad, control de calidad) y las entregas se actualizan sin entrar a SAP.
    Solo el stock (MMBE) y la Qty en entrega de SAP piden «Volver a analizar». */
 UI.sqlIntento = {}; UI.sqlCargando = {};
-const MIN_ACTUALIZAR_SQL = 2;
+const MIN_ACTUALIZAR_SQL = 0.5;                  // minutos: con el análisis abierto, el plan SOP y el control de calidad se miran cada ~30 s
+const cargaTotal = a => a && a.resultado ? a.resultado.filas.reduce((x, f) => x + f.carga, 0) : 0;
+const firmaAnalisis = a => a && a.resultado ? JSON.stringify([a.resultado.filas.map(f => [f.sku, f.carga, f.saldo, f.control_calidad, f.alertas, f.disponibilidad]), (a.completos || []).length]) : '';
 async function actualizarSql(pedido, manual){
   if (UI.sqlCargando[pedido]) return;
-  UI.sqlCargando[pedido] = true; UI.sqlIntento[pedido] = Date.now(); render();
+  UI.sqlCargando[pedido] = true; UI.sqlIntento[pedido] = Date.now();
+  if (manual) render();                                     // solo la persona que lo pide ve «actualizando…»; el automático es silencioso
+  const antes = UI.analisis[pedido], firma = firmaAnalisis(antes), carga = cargaTotal(antes);
   try {
-    UI.analisis[pedido] = await api('POST', `/analisis/${encodeURIComponent(pedido)}/actualizar`);
-    delete UI.cubicaje[pedido];                              // el cubicaje se vuelve a pedir: la carga pudo cambiar
-    Store.refresh();
-    if (manual){ const e = UI.analisis[pedido].sql_estado || {}; toast(e.ok ? 'Plan SOP, control de calidad y entregas al día' : 'Sin conexión a SQL Server: se muestran los datos de antes'); }
+    const nuevo = await api('POST', `/analisis/${encodeURIComponent(pedido)}/actualizar`);
+    UI.analisis[pedido] = nuevo;
+    if (cargaTotal(nuevo) !== carga){ delete UI.cubicaje[pedido]; Store.refresh(); }    // la carga cambió: el cubicaje y el flujo se vuelven a pedir
+    if (manual){ const e = nuevo.sql_estado || {}; toast(e.ok ? 'Plan SOP, control de calidad y entregas al día' : 'Sin conexión a SQL Server: se muestran los datos de antes'); }
+    UI.sqlCargando[pedido] = false;
+    if (manual || firmaAnalisis(nuevo) !== firma || (antes && antes.sql_estado && antes.sql_estado.ok !== (nuevo.sql_estado || {}).ok)) render();
+    else renderSoon();
+    return;
   } catch(e){ if (manual) toast(e.message); }
   UI.sqlCargando[pedido] = false; render();
 }
+/* Mientras el análisis está abierto, se mira cada ~30 s sin que nadie tenga que presionar nada */
+setInterval(() => {
+  if (document.hidden || UI.view !== 'pedidos' || UI.sub !== 'analisis' || !UI.sel) return;
+  const p = Store.get('pedidos', UI.sel), a = p && UI.analisis[p.pedido];
+  if (a && a.resultado && sqlVencido(p.pedido, a)) actualizarSql(p.pedido);
+}, 10000);
 /* Al mirar el análisis se pone al día solo (cada pocos minutos), salvo que la persona esté escribiendo */
 function sqlVencido(pedido, a){
   if (UI.sqlCargando[pedido] || (UI.job && UI.job.estado === 'en_curso') || dlg.open) return false;
@@ -326,7 +340,7 @@ function vistaAnalisis(p){
         <small class="muted">Solo el stock y lo que hay en entrega en SAP piden «Volver a analizar».</small></span>
         <button class="btn sm" data-act="abrirAnalisis">Volver a analizar</button></div>
       <div class="fuente"><span class="tag ink">SQL</span><span><span><b>Plan SOP, disponibilidad, control de calidad y entregas</b> <span class="muted">${cargandoSql ? 'actualizando…' : q ? `actualizado ${q.cuando} (${q.hace})` : 'sin actualizar'}</span></span>
-        ${st.ok === false && !cargandoSql ? `<small class="warn-t">No se pudo consultar SQL Server (${esc(st.motivo || 'sin conexión')}): se muestran los datos de antes.</small>` : '<small class="muted">Se actualiza solo al mirar este análisis; los cambios de saldo SOP y de control de calidad se ven sin volver a SAP.</small>'}</span>
+        ${st.ok === false && !cargandoSql ? `<small class="warn-t">No se pudo consultar SQL Server (${esc(st.motivo || 'sin conexión')}): se muestran los datos de antes.</small>` : '<small class="muted">Se actualiza solo cada ~30 segundos mientras este análisis está abierto: el saldo SOP y el control de calidad se ven sin volver a SAP.</small>'}</span>
         <button class="btn sm" data-act="actualizarSql" data-ped="${esc(p.pedido)}" ${cargandoSql ? 'disabled' : ''}>${cargandoSql ? 'Actualizando…' : 'Actualizar'}</button></div>
     </div>
     <div class="row" style="justify-content:space-between;margin-bottom:10px">

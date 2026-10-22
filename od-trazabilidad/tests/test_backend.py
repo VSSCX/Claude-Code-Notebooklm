@@ -1671,6 +1671,15 @@ def test_el_plan_el_control_de_calidad_y_las_entregas_se_actualizan_sin_volver_a
     assert f["saldo"] == 90 and f["carga"] == 90 and f["control_calidad"] == 25 and f["alertas"] == ["Limitado SOP"]
     assert doc["sql_estado"]["ok"] is True and doc["sql_actualizado"] and sap_llamado == []
     assert c.get("/api/analisis/4009990002").json()["resultado"]["filas"][0]["saldo"] == 90          # queda guardado
+    # si nada cambió no se escribe: la versión no se mueve (otros equipos con el análisis abierto no se recargan sin motivo)
+    v1 = c.get("/api/version").json()["version"]
+    doc = c.post("/api/analisis/4009990002/actualizar").json()
+    assert c.get("/api/version").json()["version"] == v1 and doc["sql_actualizado"]
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 80, "vendido": 0, "pdte_mes": 0, "tipo": "X"}})
+    c.post("/api/analisis/4009990002/actualizar")
+    assert c.get("/api/version").json()["version"] != v1                       # con un cambio real, sí
+    monkeypatch.setattr(bases, "plan_sop", lambda g, fresco=False: {"9000": {"plan": 90, "vendido": 0, "pdte_mes": 0, "tipo": "X"}})
+    c.post("/api/analisis/4009990002/actualizar")
     # una entrega nueva baja lo que falta sin tocar SAP
     r = c.put("/api/entregas/8800010", json={"entrega": "8800010", "pedido": "4009990002", "lineas": [{"sku": "9000", "qty": 30}]})
     assert r.status_code in (200, 201), r.text

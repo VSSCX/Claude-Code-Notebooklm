@@ -106,6 +106,13 @@ def put_ajustes_analisis(body: dict, s: Session = Depends(get_session)):
     return actual
 
 
+def _firma_analisis(doc: dict) -> str:
+    """Lo que de verdad cambia un análisis al actualizar (sin las horas): sirve para escribir solo cuando hay algo nuevo."""
+    import json as _json
+    return _json.dumps([doc.get(k) for k in ("plan", "disponibilidad", "control_calidad", "posiciones", "completos", "resultado", "sin_sql")],
+                       sort_keys=True, default=str)
+
+
 def refrescar_analisis(s: Session, numero: str):
     """Actualiza lo que se mueve solo y no necesita SAP: plan SOP, disponibilidad y control de calidad (SQL Server), y lo que
     ya tiene entrega en la plataforma. El stock (MMBE) y la Qty en entrega de SAP quedan como estaban en el análisis.
@@ -120,6 +127,7 @@ def refrescar_analisis(s: Session, numero: str):
         return None
     doc = _json.loads(c.valor)
     crudas = doc.get("posiciones_sap") or doc["posiciones"]
+    antes = _firma_analisis(doc)
     skus = {domain.norm_sku(p["sku"]) for p in crudas}
     sin_sql = dict(doc.get("sin_sql") or {})
     ok, motivo = True, ""
@@ -149,9 +157,10 @@ def refrescar_analisis(s: Session, numero: str):
     doc["resultado"] = calcular(doc["posiciones"], doc["plan"], doc["en_entrega"], doc["medidas"],
                                 doc["disponibilidad"], doc["stock"], doc["ajustes"],
                                 sin_plan=bool(sin_sql.get("plan")), control_calidad=doc.get("control_calidad"))
-    domain.guardar_config(s, _clave_analisis(numero), doc)
-    domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
-    _commit(s)
+    if _firma_analisis(doc) != antes:                  # sin cambios no se escribe: no se mueve la versión ni se recargan los demás
+        domain.guardar_config(s, _clave_analisis(numero), doc)
+        domain.anotar_flujo(s, numero, analisis=domain.resumen_analisis(doc))
+        _commit(s)
     return doc, ok, motivo
 
 
