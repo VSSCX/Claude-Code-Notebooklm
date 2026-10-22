@@ -476,6 +476,12 @@ document.addEventListener('click', ev => {
     case 'actualizarYExportar': actualizarYExportar(t.dataset.ped); break;
     case 'verSuministro': cambiarSub('entregas'); break;
     case 'plegarEntrega': UI.plegadas.has(ent) ? UI.plegadas.delete(ent) : UI.plegadas.add(ent); render(); break;
+    case 'irEntrega': {                       // del grupo a la entrega que lo forma (aunque sea de otro pedido del camión)
+      const e = Store.list('entregas').find(x => safeId(x.entrega) === ent); if (!e) break;
+      UI.sel = safeId(e.pedido); UI.plegadas.delete(ent); UI.sub = ''; cambiarSub('entregas');
+      setTimeout(() => { const el = document.querySelector(`[data-k="e-${ent}"]`); if (el) el.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 60); break; }
+    case 'plegarTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.add(safeId(x.entrega))); render(); break;
+    case 'expandirTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.delete(safeId(x.entrega))); render(); break;
     case 'logEntrega': UI.entLog.has(ent) ? UI.entLog.delete(ent) : UI.entLog.add(ent); render(); break;
     case 'verCubEntrega': { const p = Store.get('pedidos', UI.sel), e = p && Store.list('entregas').find(x => safeId(x.entrega) === ent);
       if (!e) break;

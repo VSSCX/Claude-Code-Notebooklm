@@ -63,7 +63,7 @@ function vistaPedidos(){
       ${lista}
       ${UI.juntar ? barraJuntar(todos) : ''}
     </section>
-    <section aria-label="Detalle del pedido">${UI.verConjunto && UI.conjunto ? vistaConjunto() : UI.juntar ? vistaJuntar() : UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
+    <section aria-label="Detalle del pedido" class="${!(UI.verConjunto && UI.conjunto) && !UI.juntar && UI.sel ? 'detalle-pane' : ''}">${UI.verConjunto && UI.conjunto ? vistaConjunto() : UI.juntar ? vistaJuntar() : UI.sel ? detallePedido(Store.get('pedidos', UI.sel)) : `<div class="panel empty"><h3>Selecciona un pedido</h3><p>Verás su avance por producto y cada entrega con sus pasos.</p></div>`}</section>
   </div>`;
 }
 
@@ -310,13 +310,14 @@ function cambiarSub(nueva){
   document.documentElement.classList.add('anim-tabs');          // solo en clics de pestaña: elegir otro pedido no anima la barra
   clearTimeout(cambiarSub._t); cambiarSub._t = setTimeout(() => document.documentElement.classList.remove('anim-tabs'), 300);
   render();
-  entrar(document.querySelector('.tab-body'), 10 * dir, dir ? 0 : 4);
+  const tb = document.querySelector('.tab-body'); if (tb) tb.scrollTop = 0;       // cada pestaña parte desde arriba
+  entrar(tb, 10 * dir, dir ? 0 : 4);
 }
 function flujoHTML(f){
   return `<div class="ruta flujo" role="group" aria-label="Flujo del pedido">${f.pasos.map((s, i) =>
     `<button class="paso ${s.hecho ? 'done' : ''} ${s.sig ? 'next' : ''} ${s.omit ? 'fixed' : ''}" data-flujo="${s.k}" aria-current="${!!s.sig}"
       title="${esc(s.t + (s.hecho ? ' · hecho' : s.sig ? ' · siguiente' : s.omit ? ' · no aplica' : ''))}"><span class="k">${s.hecho ? ICON.check : i + 1}</span>
-      <span class="t">${esc(s.t)}</span>${s.det ? `<span class="d">${esc(s.det)}</span>` : ''}</button>`).join('')}</div>`;
+      <span class="txt"><span class="t">${esc(s.t)}</span>${s.det ? `<span class="d">${esc(s.det)}</span>` : ''}</span></button>`).join('')}</div>`;
 }
 /* El botón de un paso (o "siguiente") lleva a donde se hace */
 function avanzarFlujo(k){
@@ -350,15 +351,17 @@ function detallePedido(p){
   } else if (UI.sub === 'pendientes'){
     const pen = filas.filter(r => r.pendiente > 0);
     const sms = resumen(p).sums.map(x => x.n);
-    cuerpo = pen.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Pedido</th><th class="n">En entregas</th>${sms.length > 1 ? sms.map(n => `<th class="n sum-col">Suministro ${n}</th>`).join('') : ''}<th class="n">Por suministrar</th></tr></thead><tbody>
-      ${pen.map(r => `<tr><td class="code">${esc(r.sku)}</td><td>${esc(r.desc)}</td><td class="n">${fmt(r.pedida)}</td><td class="n">${fmt(r.enEntrega + r.externa)}</td>${sms.length > 1 ? sms.map(n => `<td class="n sum-col">${fmt((r.sum || {})[n] || 0)}</td>`).join('') : ''}<td class="n"><b>${fmt(r.pendiente)}</b></td></tr>`).join('')}
+    cuerpo = pen.length ? `<div class="scroll tabla-larga"><table class="tbl compacta"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Pedido</th><th class="n">En entregas</th>${sms.length > 1 ? sms.map(n => `<th class="n sum-col">Suministro ${n}</th>`).join('') : ''}<th class="n">Por suministrar</th></tr></thead><tbody>
+      ${pen.map(r => `<tr><td class="code">${esc(r.sku)}</td><td class="desc">${esc(r.desc)}</td><td class="n">${fmt(r.pedida)}</td><td class="n">${fmt(r.enEntrega + r.externa)}</td>${sms.length > 1 ? sms.map(n => `<td class="n sum-col">${fmt((r.sum || {})[n] || 0)}</td>`).join('') : ''}<td class="n"><b>${fmt(r.pendiente)}</b></td></tr>`).join('')}
       </tbody></table></div><div class="row" style="margin-top:14px"><button class="btn primary" data-act="nuevaEntrega">Crear entrega con estos pendientes</button></div>`
       : `<div class="empty"><h3>Nada por suministrar</h3><p>Todas las unidades del pedido ya están en alguna entrega.</p></div>`;
   }
   const cuenta = {entregas: activas.length, grupos: gs.length, pendientes: tot.pendiente ? fmt(tot.pendiente) + ' un.' : ''};
   const enCurso = UI.job && UI.job.estado === 'en_curso';
-  const celda = (cap, val, extra = '') => `<div class="cell ${extra}"><span class="cap">${cap}</span><span class="val">${val}</span></div>`;
+  // Cada cifra lleva el color de su tramo en la barra: así no hace falta una leyenda aparte
+  const celda = (cap, val, extra = '', color = '') => `<div class="cell ${extra}"><span class="cap">${color ? `<i class="sw ${color}" aria-hidden="true"></i>` : ''}${cap}</span><span class="val">${val}</span></div>`;
   const sub = [p.cliente || 'Sin cliente', `OC ${p.oc || '—'}`, p.canal, p.fechaOC ? `recibido ${fmtFecha(p.fechaOC)}` : ''].filter(Boolean);
+  const archivos = archivosDe(p.pedido, '');
   return `<div class="label" data-k="label-${esc(safeId(p.pedido))}">
     <div class="label-top">
       <div style="min-width:0;flex:1">
@@ -373,21 +376,21 @@ function detallePedido(p){
             <button role="menuitem" data-act="editarPedido">Editar pedido</button>
             <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel para el KAM: lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">Exportar estatus para el KAM (Excel)</a>
             <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel?interno=true" download title="Libro completo para el equipo: estado, suministros, otros stocks, control de calidad y detalle del análisis. No es para enviar al KAM">Exportar detalle interno (Excel)</a>
+            <label role="menuitem" class="menu-subir">Subir PDF o imagen<input type="file" accept=".pdf,.png,.jpg,.html" data-subir data-pedido="${esc(p.pedido)}" data-grupo="" style="display:none"></label>
           </div></details></div>
-      <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}<span class="code">${esc(p.pedido)}</span></div>
+      <div class="label-code">${codigoBarrasSVG(p.pedido, {etiqueta: `Código de barras del pedido ${p.pedido}`})}</div>
     </div>
-    <div class="cells">
-      ${celda('Solicitado', fmt(tot.pedida))}${celda('En entrega', fmt(tot.enEntrega))}${celda('Pendiente', fmt(tot.pendiente))}
-      ${celda('Agendado', pct(tot.agendado + tot.entregado, tot.pedida))}${celda('Entregado', fmt(tot.entregado))}
+    <div class="cells compacta">
+      ${celda('Solicitado', fmt(tot.pedida))}${celda('Entregado', fmt(tot.entregado), '', 's-ent')}${celda('Agendado', fmt(tot.agendado), '', 's-age')}
+      ${celda('Sin cita', fmt(tot.sinCita), '', 's-sin')}${celda('Pendiente', fmt(tot.pendiente), '', 's-pen')}
       ${tot.externa ? celda('Otras entregas SAP', fmt(tot.externa)) : ''}${tot.exceso ? celda('Exceso en entregas', fmt(tot.exceso), 'alert') : ''}
     </div>
-    <div class="label-bar">${barHTML(tot, true)}
-      <div class="legend" style="margin-top:8px"><span><span class="sw s-ent"></span>Entregado</span><span><span class="sw s-age"></span>Agendado</span><span><span class="sw s-sin"></span>Sin cita</span><span><span class="sw s-pen"></span>Pendiente</span></div></div>
+    <div class="label-bar">${barHTML(tot)}</div>
     ${suministrosHTML(p, tot, flujo)}
     ${p.obs ? `<p class="label-obs small">${esc(p.obs)}</p>` : ''}
     <div class="label-flujo">${flujoHTML(flujo)}</div>
     ${estadoJob()}
-    <div class="label-files">${listaArchivos(p.pedido, '')}</div>
+    ${archivos.length || UI.verArchivo ? `<div class="label-files">${listaArchivos(p.pedido, '')}</div>` : ''}
   </div>
   <div class="tabs" role="tablist" aria-label="Secciones del pedido">${TABS_PEDIDO.map(([k, t]) =>
     `<button role="tab" data-sub="${k}" aria-selected="${UI.sub === k}">${t}${cuenta[k] !== undefined && cuenta[k] !== '' ? `<span class="tcount">${cuenta[k]}</span>` : ''}</button>`).join('')}<i class="tab-ind" aria-hidden="true"${UI.tabInd ? ` style="transform:${UI.tabInd}"` : ''}></i></div>
@@ -450,7 +453,16 @@ function suministrosHTML(p, tot, flujo){
     <span class="sum-chip falta ${tot.pendiente ? '' : 'ok'}"><b>Por suministrar</b><span class="num">${fmt(tot.pendiente)} un.</span></span></div>`;
 }
 /* Con un solo suministro la lista es plana; con más, cada tanda lleva su encabezado: lo ya suministrado queda separado de lo nuevo */
+UI.entIniciado = {};
 function listaEntregas(p, ents, actual){
+  // con muchas entregas se parte viendo el resumen de cada una; el detalle se abre con un clic (o «Ver el detalle de todas»)
+  if (!UI.entIniciado[p.pedido]){
+    UI.entIniciado[p.pedido] = true;
+    if (ents.filter(e => !e.anulada).length > 4) ents.forEach(e => UI.plegadas.add(safeId(e.entrega)));
+  }
+  return barraEntregas(ents) + listaEntregasPorTanda(p, ents, actual);
+}
+function listaEntregasPorTanda(p, ents, actual){
   const sms = [...new Set(ents.map(e => e.suministro || 1))].sort((a, b) => b - a);
   if (sms.length < 2) return ents.map(entregaHTML).join('');
   return sms.map(sm => {
@@ -461,33 +473,60 @@ function listaEntregas(p, ents, actual){
       <span class="small muted">${fmt(un)} un. · ${act.length} entrega(s)</span></div>${es.map(entregaHTML).join('')}</section>`;
   }).join('');
 }
+/* Lo que lleva una entrega según el cubicaje: su camión y los bultos (por entrega y por SKU) */
+function cargaDeEntrega(p, e){
+  const idx = e.anulada ? null : camionDeEntrega(p, e);
+  const cb = UI.cubicaje[claveCub(p, e)];
+  if (idx === null || !cb || !cb.camiones) return {idx: null, cb};
+  const cam = cb.camiones[idx], carga = (cb.carga_por_camion || []).find(x => x.camion === cam.numero) || null;
+  const bultosSku = {};
+  if (carga) for (const l of carga.lineas || []) bultosSku[normSku(l.sku)] = (bultosSku[normSku(l.sku)] || 0) + (+l.bultos || 0);
+  return {idx, cb, cam, carga, bultosSku};
+}
+/* La barra de la pestaña: cuántas entregas, cuántas unidades y cómo abrir o cerrar todo el detalle */
+function barraEntregas(ents){
+  const act = ents.filter(e => !e.anulada);
+  const abiertas = act.filter(e => !UI.plegadas.has(safeId(e.entrega))).length;
+  return `<div class="ent-barra"><span><b>${act.length}</b> entrega${act.length === 1 ? '' : 's'} · <b>${fmt(act.reduce((a, e) => a + unidades(e), 0))}</b> un.${ents.length > act.length ? ` · ${ents.length - act.length} anulada(s)` : ''}</span>
+    <span class="spacer"></span>
+    ${act.length > 1 ? `<button class="btn quiet sm" data-act="${abiertas ? 'plegarTodas' : 'expandirTodas'}">${abiertas ? 'Contraer todas' : 'Ver el detalle de todas'}</button>` : ''}</div>`;
+}
 function entregaHTML(e){
   const id = safeId(e.entrega), plegada = UI.plegadas.has(id);
   const p = Store.get('pedidos', UI.sel) || {pedido: e.pedido};
-  const idx = e.anulada ? null : camionDeEntrega(p, e);
+  const {idx, cb, cam, carga, bultosSku} = cargaDeEntrega(p, e);
   const abierta = UI.entCub === id && idx !== null;
   const lineas = e.lineas || [];
+  const sig = e.anulada ? null : STEPS.find(s => !pasoOk(e, s.k));
+  const estado = e.anulada ? '<span class="tag void">Anulada</span>' : sig ? `<span class="tag warn">Falta ${esc(sig.t)}</span>` : '<span class="tag ok">Entregada</span>';
   const verCam = e.anulada ? ''
-    : idx !== null ? `<button class="btn sm ent-cam" data-act="verCubEntrega" data-ent="${esc(id)}" aria-pressed="${abierta}" title="Ver cómo viaja esta entrega: camión n.º ${UI.cubicaje[claveCub(p, e)].camiones[idx].numero}">${ICON.truck}<span>Cubicaje</span></button>`
-    : `<button class="btn sm ent-cam" disabled title="${(UI.cubicaje[claveCub(p, e)] || {}).camiones ? 'Esta entrega no salió del cubicaje del pedido, por eso no tiene camión asociado' : 'No hay un cubicaje guardado para esta entrega'}">${ICON.truck}<span>Cubicaje</span></button>`;
+    : idx !== null ? `<button class="btn sm ent-cam" data-act="verCubEntrega" data-ent="${esc(id)}" aria-pressed="${abierta}" title="Ver cómo viaja esta entrega: camión n.º ${cam.numero}">${ICON.truck}<span>Cubicaje</span></button>`
+    : `<button class="btn sm ent-cam" disabled title="${(cb || {}).camiones ? 'Esta entrega no salió del cubicaje del pedido, por eso no tiene camión asociado' : 'No hay un cubicaje guardado para esta entrega'}">${ICON.truck}<span>Cubicaje</span></button>`;
+  const stat = (n, txt) => `<span class="ent-stat"><b class="num">${fmt(n)}</b> ${txt}</span>`;
+  const facturada = pasoOk(e, 'facturada');
   return `<article class="docket ent ${e.anulada ? 'void' : ''}" data-k="e-${esc(id)}">
-    <div class="dk-h">
-      <button class="ent-plegar" data-act="plegarEntrega" data-ent="${esc(id)}" aria-expanded="${!plegada}" aria-label="${plegada ? 'Mostrar' : 'Ocultar'} los productos de la entrega ${esc(e.entrega)}">${ICON.chevronAbajo}</button>
-      <div class="dk-id">Entrega <span class="code">${esc(e.entrega)}</span>${e.anulada ? ' <span class="tag void">Anulada</span>' : ''}</div>
-      <div class="dk-qty">${fmt(unidades(e))} <small>un. · ${lineas.length} SKU</small></div>
+    <div class="dk-h ent-h">
+      <button class="ent-plegar" data-act="plegarEntrega" data-ent="${esc(id)}" aria-expanded="${!plegada}" aria-label="${plegada ? 'Mostrar' : 'Ocultar'} el detalle de la entrega ${esc(e.entrega)}">${ICON.chevronAbajo}</button>
+      <div class="ent-id"><span class="cap">Entrega</span><span class="code">${esc(e.entrega)}</span></div>
+      <div class="ent-stats">${stat(unidades(e), 'un.')}${carga ? stat(carga.bultos, 'bultos') : ''}${stat(lineas.length, 'SKU')}</div>
+      <div class="ent-tags">${cam ? `<span class="tag" title="Camión del cubicaje en que viaja">${ICON.truck} ${esc(cam.tipo)} · n.º ${cam.numero}</span>` : ''}
+        ${e.grupo ? `<span class="tag info" title="Grupo de transporte en SAP">Grupo <span class="code">${esc(e.grupo)}</span></span>` : e.anulada ? '' : '<span class="tag">Sin grupo</span>'}
+        ${facturada || e.factura ? `<span class="tag ${facturada ? 'ok' : ''}" title="N° de factura">Factura <span class="code">${esc(e.factura || '—')}</span></span>` : ''}
+        ${estado}</div>
       <span class="spacer"></span>
       ${verCam}
       <details class="menu-acc"><summary class="btn quiet sm icon" aria-label="Más acciones de la entrega ${esc(e.entrega)}">${ICON.more}</summary>
         <div class="menu-acc-lista" role="menu">
           <button role="menuitem" data-act="editarEntrega" data-ent="${esc(id)}">Editar entrega</button>
+          ${!e.anulada && !facturada ? `<button role="menuitem" data-paso="facturada" data-ent="${esc(id)}">Registrar factura</button>` : ''}
           ${(e.log || []).length ? `<button role="menuitem" data-act="logEntrega" data-ent="${esc(id)}">${UI.entLog.has(id) ? 'Ocultar' : 'Ver'} historial</button>` : ''}
           ${e.anulada ? `<button role="menuitem" data-act="reactivar" data-ent="${esc(id)}">Reactivar</button>` :
             `<button role="menuitem" class="peligro" data-act="anular" data-ent="${esc(id)}">Anular entrega</button>
              <button role="menuitem" class="peligro" data-act="borrarEntregaSap" data-ent="${esc(e.entrega)}" title="Borra la entrega en VL06 y la quita de la plataforma">Borrar en SAP</button>`}
         </div></details>
     </div>
-    ${plegada ? '' : `<table class="tbl ent-tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Cantidad</th></tr></thead><tbody>
-      ${lineas.map(l => `<tr><td class="code">${esc(l.sku)}</td><td>${esc(l.desc || descDe(e.pedido, l.sku))}</td><td class="n">${fmt(l.qty)}</td></tr>`).join('')}</tbody></table>`}
+    ${plegada ? '' : `<div class="ent-detalle ${lineas.length > 8 ? 'tabla-corta' : ''}"><table class="tbl ent-tbl"><thead><tr><th>SKU</th><th>Descripción</th>${bultosSku ? '<th class="n">Bultos</th>' : ''}<th class="n">Unidades</th></tr></thead><tbody>
+      ${lineas.map(l => `<tr><td class="code">${esc(l.sku)}</td><td>${esc(l.desc || descDe(e.pedido, l.sku))}</td>${bultosSku ? `<td class="n">${bultosSku[normSku(l.sku)] !== undefined ? fmt(bultosSku[normSku(l.sku)]) : '—'}</td>` : ''}<td class="n">${fmt(l.qty)}</td></tr>`).join('')}</tbody></table></div>`}
     ${e.obs ? `<p class="dk-obs">${esc(e.obs)}</p>` : ''}
     ${UI.entLog.has(id) && (e.log || []).length ? `<ul class="log">${e.log.map(x => `<li>${new Date(x.at).toLocaleString('es-CL')} — ${esc(x.txt)}</li>`).join('')}</ul>` : ''}
     ${abierta ? cubicajeDeEntrega(p, e, idx) : ''}
@@ -496,35 +535,47 @@ function entregaHTML(e){
 
 function grupoHTML(g){
   const c = g.cita || {};
-  const estado = g.next ? `<span class="tag warn">Falta ${esc(g.next.t)}</span>` : '<span class="tag ok">Entregado</span>';
   const otros = g.pedidos.length > 1;
-  const m = (cap, v) => `<div class="m"><span class="cap">${cap}</span><span class="v">${v}</span></div>`;
-  return `<article class="docket" data-k="g-${esc(g.key)}">
-    <div class="dk-h">
-      <div class="dk-id">${g.sinGrupo ? 'Sin grupo' : `Grupo <span class="code">${esc(g.grupo)}</span>`} ${estado}
+  const camion = gruposDelCamion(g);
+  const estado = g.next ? `<span class="tag warn">Falta ${esc(g.next.t)}</span>` : '<span class="tag ok">Entregado</span>';
+  const pedActual = (Store.get('pedidos', UI.sel) || {}).pedido;
+  const k = g.next && g.next.k;
+  const falta = g.next ? g.entregas.filter(e => !pasoOk(e, k)) : [];
+  const llave = esc(g.key), ents = esc(g.entregas.map(e => e.entrega).join(','));
+  // lo que sigue, con el botón que lo hace: no hay que adivinar qué tocar
+  const siguiente = !g.next ? '<b>Camión completo.</b> Todos los pasos están hechos.'
+    : `<b>Siguiente:</b> ${esc(g.next.t)}${falta.length && falta.length < g.entregas.length ? ` <span class="muted">· falta en ${falta.map(e => esc(e.entrega)).join(', ')}</span>` : ''}
+      <span class="grp-acc">${k === 'confirmada' ? `<button class="btn primary sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1" title="Pide fecha, hora y referencia del grupo y las lleva a SAP">Confirmar cita</button>`
+        : k === 'sap' ? `<button class="btn primary sm" data-act="citaGrupo" data-grupo="${llave}" title="Pone la fecha, la hora y la referencia en SAP">Actualizar en SAP</button>
+          <button class="btn quiet sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1" title="Si ya lo hiciste a mano en SAP">Ya está hecho</button>`
+        : POR_ENTREGA.includes(k) ? `<button class="btn primary sm" data-act="irEntrega" data-ent="${esc(safeId((falta[0] || g.entregas[0]).entrega))}">Registrar facturas</button>`
+        : `<button class="btn primary sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1">Marcar hecho</button>`}</span>`;
+  return `<article class="docket grp" data-k="g-${llave}">
+    <div class="grp-h">
+      <div class="ent-id"><span class="cap">${g.sinGrupo ? 'Camión' : 'Grupo'}</span><span class="code ${g.sinGrupo ? 'sin' : ''}">${g.sinGrupo ? 'Sin grupo' : esc(g.grupo)}</span></div>
+      <div class="ent-stats"><span class="ent-stat"><b class="num">${fmt(g.unidades)}</b> un.</span><span class="ent-stat"><b class="num">${g.entregas.length}</b> entrega${g.entregas.length === 1 ? '' : 's'}</span></div>
+      <div class="ent-tags">${estado}
         ${g.parcial ? '<span class="tag err" title="Hay pasos marcados en unas entregas del camión y en otras no">Entregas desalineadas</span>' : ''}
         ${otros ? '<span class="tag info">Camión compartido</span>' : ''}
-        ${g.camionRef && gruposDelCamion(g).length > 1 ? `<span class="tag info" title="Los pedidos de distinta categoría viajan en el mismo camión pero van en grupos de SAP separados; comparten la cita">Categoría ${esc(g.categoria || 'A')} · camión de ${gruposDelCamion(g).length} grupos</span>` : ''}
+        ${g.camionRef && camion.length > 1 ? `<span class="tag info" title="Los pedidos de distinta categoría viajan en el mismo camión pero van en grupos de SAP separados; comparten la cita">Categoría ${esc(g.categoria || 'A')} · camión de ${camion.length} grupos</span>` : ''}
         ${(() => { const ps = Store.get('pedidos', UI.sel); const sm = [...new Set(g.entregas.map(e => e.suministro || 1))];
           return ps && resumen(ps).sums.length > 1 ? `<span class="tag">Suministro ${sm.join(' y ')}</span>` : ''; })()}</div>
-      <div class="dk-qty">${fmt(g.unidades)} <small>un. · ${g.entregas.length} entrega(s)</small></div>
+      <span class="spacer"></span>
+      <div class="grp-cita ${c.fecha ? '' : 'sin'}">${c.fecha ? `<span class="cap">Cita</span><b class="num">${fmtFecha(c.fecha)}${c.hora ? ' · ' + esc(c.hora) : ''}</b>` : '<span class="cap">Cita</span><span class="muted">Sin fecha</span>'}
+        ${c.numero ? `<span class="code small" title="Referencia del grupo">${esc(c.numero)}</span>` : ''}</div>
     </div>
-    <div class="meta">
-      ${m('Referencia', `<span class="code">${esc(c.numero || '—')}</span>`)}${m('Fecha', `${c.fecha ? fmtFecha(c.fecha) : '—'}${c.hora ? ' ' + esc(c.hora) : ''}`)}
-      ${m('Vehículo', `${esc(g.vehiculo || '')} · ${esc(g.carga || '')}`)}${m('Tipo', `${esc(g.un || '')} · ${esc(g.tipo || '')}`)}${m('Región', esc(g.region || '—'))}
-    </div>
+    <div class="grp-ents" aria-label="Entregas de este camión"><span class="cap">Entregas</span>${g.entregas.map(e => `<button class="ent-chip ${pasoOk(e, 'facturada') ? 'fac' : ''}" data-act="irEntrega" data-ent="${esc(safeId(e.entrega))}" title="Ver el detalle de la entrega ${esc(e.entrega)}">
+        <span class="code">${esc(e.entrega)}</span><span class="num">${fmt(unidades(e))} un. · ${(e.lineas || []).length} SKU</span>${e.pedido !== pedActual ? `<span class="tag">pedido ${esc(e.pedido)}</span>` : ''}${pasoOk(e, 'facturada') ? `<span class="tag ok">Factura ${esc(e.factura || '')}</span>` : ''}</button>`).join('')}</div>
     ${rutaHTML(g)}
-    <div class="scroll"><table class="tbl"><thead><tr><th>Entrega</th><th>Pedido</th><th class="n">Unidades</th><th class="n">SKU</th><th>Factura</th></tr></thead><tbody>
-      ${g.entregas.map(e => `<tr><td class="code">${esc(e.entrega)}</td><td class="code">${esc(e.pedido)}${e.pedido !== (Store.get('pedidos', UI.sel) || {}).pedido ? ' <span class="tag">otro pedido</span>' : ''}</td>
-      <td class="n">${fmt(unidades(e))}</td><td class="n">${(e.lineas || []).length}</td><td class="code">${esc(e.factura || '—')}${pasoOk(e, 'facturada') ? ` <span class="tag ok">${ICON.check}</span>` : ''}</td></tr>`).join('')}
-    </tbody></table></div>
+    <p class="grp-sig">${siguiente}</p>
+    <p class="grp-meta small muted">${esc([g.vehiculo, g.carga, g.un, g.tipo, g.region].filter(Boolean).join(' · '))}</p>
     <div class="dk-act">
-      <button class="btn sm" data-act="editarGrupo" data-grupo="${esc(g.key)}">Editar camión</button>
-      <button class="btn sm" data-act="reprogGrupo" data-grupo="${esc(g.key)}" ${g.pasos.confirmada ? '' : 'disabled title="Solo para citas confirmadas"'}>Reprogramar cita</button>
+      <button class="btn sm" data-act="editarGrupo" data-grupo="${llave}">Editar camión</button>
+      <button class="btn sm" data-act="reprogGrupo" data-grupo="${llave}" ${g.pasos.confirmada ? '' : 'disabled title="Solo para citas confirmadas"'}>Reprogramar cita</button>
       ${g.sinGrupo
-        ? `<button class="btn quiet sm" data-act="ensayoGrupo" data-cam="${esc(g.key)}" data-ents="${esc(g.entregas.map(e => e.entrega).join(','))}">Ensayo del grupo</button>
-           <button class="btn sm" data-act="crearGrupoSap" data-cam="${esc(g.key)}" data-ents="${esc(g.entregas.map(e => e.entrega).join(','))}" title="Crea el grupo de transporte en VL06">Crear grupo en SAP</button>`
-        : `<button class="btn sm" data-act="citaGrupo" data-grupo="${esc(g.key)}" title="Pone en SAP la fecha, la hora y la referencia completa de este grupo (VG02); si falta la cita, la pide">Actualizar cita en SAP</button>
+        ? `<span class="spacer"></span><button class="btn quiet sm" data-act="ensayoGrupo" data-cam="${llave}" data-ents="${ents}">Ensayo del grupo</button>
+           <button class="btn sm" data-act="crearGrupoSap" data-cam="${llave}" data-ents="${ents}" title="Crea el grupo de transporte en VL06">Crear grupo en SAP</button>`
+        : `<button class="btn sm" data-act="citaGrupo" data-grupo="${llave}" title="Pone en SAP la fecha, la hora y la referencia completa de este grupo (VG02); si falta la cita, la pide">Actualizar cita en SAP</button>
            <span class="spacer"></span>
            <button class="btn danger sm" data-act="borrarGrupoSap" data-num="${esc(g.grupo)}" title="Borra el grupo en VG02; las entregas quedan sin grupo">Borrar grupo en SAP</button>`}
     </div>
@@ -721,7 +772,7 @@ function vistaCubicaje(p){
     ${problemas ? `<p class="small" style="margin-top:10px">${problemas}</p>` : ''}
     ${(cb.avisos || []).map(a => `<p class="small"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
     ${(cb.kits || []).length ? `<p class="small muted" style="margin:6px 0"><span class="tag info">Kits</span> ${cb.kits.map(k => `<b>${esc(k.sku)}</b> × ${fmt(k.unidades)} (${k.componentes.map(c => esc(c.sku) + (c.por_kit > 1 ? ' ×' + c.por_kit : '')).join(' + ')})`).join(' · ')} — sus cajas viajan juntas.</p>` : ''}
-    <div style="margin-top:12px">${camiones}</div>
+    <div class="camiones-lista tabla-larga" style="margin-top:12px">${camiones}</div>
     ${detalleCarga(cb, UI.pedCam[p.pedido] || 0)}`;
 }
 

@@ -416,19 +416,21 @@ function pintar(el, html){
 }
 
 /* ---- La ruta de 9 pasos de un camión (o de una entrega suelta) ---- */
-function rutaHTML(g, {entrega} = {}){
-  return `<div class="ruta" role="group" aria-label="Pasos del camión">${STEPS.map((s, i) => {
-    const fijo = POR_ENTREGA.includes(s.k);
-    // 'Facturada' es por entrega: en la tarjeta de una entrega se marca ahí mismo; en el camión es de solo lectura
-    const hecho = fijo && entrega ? pasoOk(entrega, s.k) : g.pasos[s.k];
+/* Seguimiento paso a paso de un camión (grupo): cada paso dice si está hecho, cuál sigue y, cuando solo algunas
+   entregas lo tienen, cuántas. «Facturada» se registra por entrega (en la pestaña Entregas), así que aquí es de lectura. */
+function rutaHTML(g){
+  return `<ol class="ruta pasos-g" aria-label="Pasos del camión">${STEPS.map((s, i) => {
+    const fijo = POR_ENTREGA.includes(s.k), tot = g.entregas.length;
+    const n = g.entregas.filter(e => pasoOk(e, s.k)).length;
+    const hecho = tot > 0 && n === tot, parcial = n > 0 && n < tot;
     const sig = !hecho && g.next && g.next.k === s.k;
-    const accion = fijo ? (entrega ? `data-paso="${s.k}" data-ent="${esc(safeId(entrega.entrega))}"` : '')
-                        : `data-gpaso="${s.k}" data-grupo="${esc(g.key)}"`;
-    const bloqueado = fijo && !entrega;
-    const tit = fijo && !entrega ? `${s.t} · se marca en cada entrega` : `${s.t}${hecho ? ' · hecho' : sig ? ' · siguiente' : ''}`;
-    return `<button class="paso ${hecho ? 'done' : ''} ${sig ? 'next' : ''} ${i === STEPS.length - 1 ? 'last' : ''} ${bloqueado ? 'fixed' : ''}" ${bloqueado ? 'tabindex="-1" aria-disabled="true"' : accion}
-      aria-pressed="${!!hecho}" title="${esc(tit)}"><span class="k">${hecho ? ICON.check : i + 1}</span><span class="t">${esc(s.t)}</span></button>`;
-  }).join('')}</div>`;
+    const falta = g.entregas.filter(e => !pasoOk(e, s.k)).map(e => e.entrega);
+    const tit = `${s.t}${hecho ? ' · hecho' : sig ? ' · siguiente' : ''}${parcial ? ` · falta en ${falta.join(', ')}` : ''}${fijo ? ' · se registra en cada entrega' : ''}`;
+    const clase = `paso ${hecho ? 'done' : ''} ${sig ? 'next' : ''} ${parcial ? 'parcial' : ''} ${i === STEPS.length - 1 ? 'last' : ''} ${fijo ? 'fixed' : ''}`;
+    const cuerpo = `<span class="k">${hecho ? ICON.check : i + 1}</span><span class="t">${esc(s.t)}</span>${parcial || (fijo && tot > 1 && n) ? `<span class="d">${n} de ${tot}</span>` : ''}`;
+    return `<li>${fijo ? `<span class="${clase}" title="${esc(tit)}">${cuerpo}</span>`
+      : `<button class="${clase}" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" aria-pressed="${hecho}" title="${esc(tit)}">${cuerpo}</button>`}</li>`;
+  }).join('')}</ol>`;
 }
 
 /* Flujo del pedido, como en el Excel: análisis → ajuste de carga → cubicaje → entregas (una por camión) → grupos.

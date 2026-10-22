@@ -250,9 +250,9 @@ function detalleCarga(doc, abierto){
   };
   return `<section class="carga-det" aria-label="Qué lleva cada camión">
     <div class="carga-det-h"><h3>Qué lleva cada ${conPallets ? 'camión y pallet' : 'camión'}</h3><span class="small muted">Un bulto es una caja master o un producto suelto.</span></div>
-    ${cams.map((c, i) => `<details class="cam-det" data-k="cd-${i}" ${i === (abierto || 0) || cams.length === 1 ? 'open' : ''}>
+    <div class="tabla-larga cd-lista">${cams.map((c, i) => `<details class="cam-det" data-k="cd-${i}" ${i === (abierto || 0) || cams.length === 1 ? 'open' : ''}>
       <summary><b>${esc(c.tipo)} · n.º ${c.camion}</b><span class="num">${fmt(c.unidades)} un.</span><span class="num">${fmt(c.bultos)} bultos</span>${c.kilos > 0 ? `<span class="num">${kgTxt(c.kilos)}</span>` : ''}${c.pallets.length ? `<span class="num">${c.pallets.length} pallet${c.pallets.length === 1 ? '' : 's'}</span>` : ''}${c.piso ? `<span class="num">${fmt(c.piso.unidades)} a piso</span>` : ''}</summary>
-      <div class="scroll"><table class="tbl cam-tbl">${cab}<tbody>${cuerpo(c)}</tbody></table></div></details>`).join('')}
+      <div class="scroll"><table class="tbl cam-tbl">${cab}<tbody>${cuerpo(c)}</tbody></table></div></details>`).join('')}</div>
   </section>`;
 }
 function efectivoCub(inp){

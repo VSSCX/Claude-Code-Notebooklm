@@ -281,9 +281,7 @@ function avisosAnalisis(p, a, r){
       ${r.zsd_sin_cruce.map(esc).join(' · ')}. Su Qty en entrega no se descontó del saldo: revisa si corresponde a algún producto del pedido.</div></div>`);
   const lim = r.filas.filter(f => f.carga_calculada < f.qty_entrega);
   if (r.sin_plan) return out.join('');                     // sin plan no hay recortes que explicar: el aviso de arriba lo dice todo
-  if (!lim.length){
-    out.push(`<div class="aviso ok"><div><b>El plan SOP cubre todo lo pedido.</b> Se carga lo que pide el pedido, sin recortes.</div></div>`);
-  } else {
+  if (lim.length){
     const pedidas = lim.reduce((x, f) => x + f.qty_entrega, 0), limite = lim.reduce((x, f) => x + f.carga_calculada, 0);
     const cargadas = lim.reduce((x, f) => x + f.carga, 0);
     const recortadas = lim.filter(f => f.carga < f.qty_entrega);
@@ -311,7 +309,7 @@ function vistaAnalisis(p){
     const aut = (a.autorizaciones || {})[f.sku], limitada = f.carga_calculada < f.qty_entrega && !aut && f.carga < f.qty_entrega;
     return `<tr class="${corte ? 'corte' : ''} ${limitada ? 'limitada' : ''}">
       <td><div class="alertas">${(f.alertas || [f.alerta]).map(x => `<span class="tag ${TAG_ALERTA[x]}">${ICONO_ALERTA[x]} ${esc(x)}</span>`).join('')}</div></td>
-      <td class="num">${esc(f.sku)}</td><td>${esc(f.descripcion)}</td>
+      <td class="num">${esc(f.sku)}</td><td class="desc">${esc(f.descripcion)}</td>
       <td class="n">${fmt(f.qty_entrega)}</td><td class="n">${fmt(f.pendiente)}${f.ya_entregado > 0 ? `<small class="ya-ent" title="El pedido tiene ${fmt(f.pedida)} un. y ${fmt(f.ya_entregado)} ya están en entregas: aquí queda lo que falta">de ${fmt(f.pedida)} · ${fmt(f.ya_entregado)} ya en entrega</small>` : ''}</td>
       <td class="n">${f.sin_plan ? '—' : fmt(f.plan)}</td><td class="n">${f.sin_plan ? '—' : fmt(f.real)}</td><td class="n"${f.cruce_zsd ? ` title="Calzó con «${esc(f.cruce_zsd)}» del reporte ZSD001_03"` : ''}>${fmt(f.en_entrega)}</td>
       <td class="n">${f.sin_plan ? '—' : `<b${f.saldo < f.pendiente ? ' class="warn-t"' : ''}>${fmt(f.saldo)}</b>`}</td>
@@ -329,39 +327,38 @@ function vistaAnalisis(p){
   const e = edadAnalisis(a.generado_hora), q = a.sql_actualizado ? edadAnalisis(a.sql_actualizado) : null, st = a.sql_estado || {};
   const cargandoSql = !!UI.sqlCargando[p.pedido];
   const completos = a.completos || [], yaEnt = r.filas.reduce((x, f) => x + (f.ya_entregado || 0), 0);
-  const aviso = (yaEnt > 0 || completos.length) ? `<div class="aviso info"><div class="aviso-cuerpo"><b>Aquí solo se muestra lo que falta.</b>
-      <div class="small">Este pedido ya tiene entregas${yaEnt + completos.reduce((x, c) => x + c.ya_entregado, 0) ? ` (${fmt(yaEnt + completos.reduce((x, c) => x + c.ya_entregado, 0))} un. en total)` : ''}: se restan de lo pendiente, y las líneas ya completas no se listan.
-      La carga que se calcula es solo para lo que falta.</div>
-      ${completos.length ? `<details class="completos"><summary class="small">${completos.length} producto${completos.length === 1 ? '' : 's'} ya completo${completos.length === 1 ? '' : 's'} en entregas</summary>
-        <table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Pedido</th><th class="n">En entregas</th></tr></thead><tbody>
-        ${completos.map(c => `<tr><td class="num">${esc(c.sku)}</td><td>${esc(c.descripcion || '')}</td><td class="n">${fmt(c.pedida)}</td><td class="n">${fmt(c.ya_entregado)}</td></tr>`).join('')}</tbody></table></details>` : ''}</div></div>` : '';
-  return `${avisosAnalisis(p, a, r)}${aviso}<div class="fuentes" aria-label="De dónde salen los datos">
-      <div class="fuente"><span class="tag ink">SAP</span><span><span><b>Pedido, Qty en entrega y stock</b> <span class="muted">${e ? `${e.cuando} (${e.hace})` : `análisis del ${fmtFecha(a.generado)}`}</span>${e && e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}</span>
-        <small class="muted">Solo el stock y lo que hay en entrega en SAP piden «Volver a analizar».</small></span>
+  const totYa = yaEnt + completos.reduce((x, c) => x + c.ya_entregado, 0);
+  const aviso = (yaEnt > 0 || completos.length) ? `<details class="aviso info solo-falta"><summary><b>Aquí solo se muestra lo que falta</b>${totYa ? ` · ya hay ${fmt(totYa)} un. en entregas` : ''}${completos.length ? ` · ${completos.length} producto${completos.length === 1 ? '' : 's'} ya completo${completos.length === 1 ? '' : 's'}` : ''}</summary>
+      <div class="small" style="margin-top:6px">Lo que ya está en entregas se resta de lo pendiente y las líneas ya completas no se listan; la carga que se calcula es solo para lo que falta.</div>
+      ${completos.length ? `<div class="tabla-corta" style="margin-top:8px"><table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th class="n">Pedido</th><th class="n">En entregas</th></tr></thead><tbody>
+        ${completos.map(c => `<tr><td class="num">${esc(c.sku)}</td><td>${esc(c.descripcion || '')}</td><td class="n">${fmt(c.pedida)}</td><td class="n">${fmt(c.ya_entregado)}</td></tr>`).join('')}</tbody></table></div>` : ''}</details>` : '';
+  const sinLimites = !r.sin_plan && !r.filas.some(f => f.carga_calculada < f.qty_entrega);
+  return `${avisosAnalisis(p, a, r)}${aviso}<div class="fuentes compactas" aria-label="De dónde salen los datos">
+      <div class="fuente" title="Solo el stock y lo que hay en entrega en SAP piden «Volver a analizar»."><span class="tag ink">SAP</span><span class="fte-txt"><b>Pedido, Qty en entrega y stock</b> <span class="muted">${e ? `${e.cuando} (${e.hace})` : `análisis del ${fmtFecha(a.generado)}`}</span>${e && e.vieja ? ' <span class="tag warn">Pueden estar desactualizados</span>' : ''}</span>
         <button class="btn sm" data-act="abrirAnalisis">Volver a analizar</button></div>
-      <div class="fuente"><span class="tag ink">SQL</span><span><span><b>Plan SOP, disponibilidad, control de calidad y entregas</b> <span class="muted">${cargandoSql ? 'actualizando…' : q ? `actualizado ${q.cuando} (${q.hace})` : 'sin actualizar'}</span></span>
-        ${st.ok === false && !cargandoSql ? `<small class="warn-t">No se pudo consultar SQL Server (${esc(st.motivo || 'sin conexión')}): se muestran los datos de antes.</small>` : '<small class="muted">Se actualiza solo cada ~30 segundos mientras este análisis está abierto: el saldo SOP y el control de calidad se ven sin volver a SAP.</small>'}</span>
+      <div class="fuente" title="Se actualiza solo cada ~30 segundos mientras este análisis está abierto."><span class="tag ink">SQL</span><span class="fte-txt"><b>Plan SOP, disponibilidad y control de calidad</b> <span class="muted">${cargandoSql ? 'actualizando…' : q ? `actualizado ${q.cuando} (${q.hace})` : 'sin actualizar'}</span>
+        ${st.ok === false && !cargandoSql ? `<span class="warn-t"> · no se pudo consultar SQL Server (${esc(st.motivo || 'sin conexión')}): se muestran los datos de antes</span>` : ''}</span>
         <button class="btn sm" data-act="actualizarSql" data-ped="${esc(p.pedido)}" ${cargandoSql ? 'disabled' : ''}>${cargandoSql ? 'Actualizando…' : 'Actualizar'}</button></div>
     </div>
-    <div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <div class="small muted">cliente ${esc(a.cliente)}${a.oc_sap ? ` · OC <b class="code">${esc(a.oc_sap)}</b>` : ''} · grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''} · Saldo SOP = plan − real − Qty en entrega (igual que el Excel)</div>
+    <div class="an-resumen">
+      <div class="legend">
+        <div>Ocupación<b>${pct(r.ocupacion_total)}</b></div>
+        <div>Carga total<b>${fmt(r.filas.reduce((s, f) => s + f.carga, 0))}</b></div>
+        ${['Sin stock','Stock parcial','Limitado SOP','Completo'].map(k => `<div>${ICONO_ALERTA[k]} ${k}<b>${cuenta(k)}</b></div>`).join('')}
+        ${sinLimites ? '<div class="ok-t" title="Se carga lo que pide el pedido, sin recortes">✓ El plan SOP cubre todo</div>' : ''}
+      </div>
       <div class="row tight">
-        <a class="btn" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
-        <a class="btn quiet" data-exp-kam href="${URL_KAM(p.pedido)}?interno=true" download title="Libro completo para el equipo (control de calidad, otros stocks, detalle). No es para enviar al KAM">${ICON.descargar} Detalle interno</a>
-        <button class="btn primary" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
-    <div class="legend" style="margin:0 0 12px">
-      <div>Ocupación total<b>${pct(r.ocupacion_total)}</b></div>
-      <div>Carga total<b>${fmt(r.filas.reduce((s, f) => s + f.carga, 0))}</b></div>
-      ${['Sin stock','Stock parcial','Limitado SOP','Completo'].map(k => `<div>${ICONO_ALERTA[k]} ${k}<b>${cuenta(k)}</b></div>`).join('')}
-    </div>
-    <div class="scroll"><table class="tbl"><thead><tr>
+        <a class="btn sm" data-exp-kam href="${URL_KAM(p.pedido)}" download title="Excel con lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">${ICON.descargar} Estatus para KAM</a>
+        <a class="btn quiet sm" data-exp-kam href="${URL_KAM(p.pedido)}?interno=true" download title="Libro completo para el equipo (control de calidad, otros stocks, detalle). No es para enviar al KAM">${ICON.descargar} Detalle interno</a>
+        <button class="btn primary sm" data-flujo="cubicaje">Continuar a cubicaje</button></div></div>
+    <p class="an-meta small muted">grupo SOP ${esc(a.grupo_sop)}${(a.solicitantes || []).length > 1 ? ` (Qty en entrega de ${a.solicitantes.length} solicitantes del grupo)` : ''} · puesto ${esc(a.puesto)}${a.fecha ? ` · fecha de VL01N ${fmtFecha(a.fecha)} (la usan también las entregas)` : ''}</p>
+    <div class="scroll tabla-larga"><table class="tbl compacta"><thead><tr>
       <th>Alerta</th><th>SKU</th><th>Descripción</th><th class="n">Qty entrega</th><th class="n">Pendiente</th>
-      <th class="n">Plan SOP</th><th class="n">Real</th><th class="n">En entrega</th><th class="n">Saldo SOP</th>
-      <th class="n">Carga</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
+      <th class="n">Plan SOP</th><th class="n">Real</th><th class="n">En entrega</th><th class="n" title="Saldo SOP = plan − real − Qty en entrega (igual que el Excel)">Saldo SOP</th>
+      <th class="n" title="Se puede ajustar a mano: escribe la cantidad y presiona Enter. Subirla por sobre el plan SOP queda registrado a tu nombre.">Carga ✎</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
       <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
       <th class="n" title="Unidades en control de calidad (último stock cargado en SQL Server)">Control de calidad</th>
-    </tr></thead><tbody>${filas}</tbody></table></div>
-    <p class="small muted">La <b>Carga</b> se puede ajustar a mano: escribe la cantidad y presiona Enter o sal del campo. El botón de deshacer la devuelve al valor calculado. Subirla por sobre el plan SOP queda registrado a tu nombre.</p>`;
+    </tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 /* Resultados de Pedidos Ingresados dentro del diálogo: uno por línea, para elegir cuando una OC está en varios pedidos */
 const filaPedidoSap = x => `<li><button type="button" data-oc-pedido="${esc(x.pedido)}"><span class="code">${esc(x.pedido)}</span>
