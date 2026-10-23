@@ -354,7 +354,8 @@ function updateToggle(){var x=document.getElementById('colorToggle');if(x)x.text
 // Etiqueta de las cajas: descripcion (lectura en pantalla) o letra (se lee impresa en blanco y negro;
 // el detalle del PDF dice que producto es cada letra).
 let etiquetaLetra=false;
-function textoCaja(b){return etiquetaLetra?boxLetra(b):(DESC_BY_COD[b.cod]||b.cod||boxLetra(b));}
+// En el PDF (MODO_BN) las cajas SIEMPRE llevan su letra, sin depender de lo que se vea en pantalla ni de mensajes que lleguen mientras se genera.
+function textoCaja(b){return (etiquetaLetra||MODO_BN)?boxLetra(b):(DESC_BY_COD[b.cod]||b.cod||boxLetra(b));}
 function renderEtiquetaToggle(){
   var x=document.getElementById('etiquetaToggle');
   if(!x){
@@ -363,7 +364,7 @@ function renderEtiquetaToggle(){
     x.title='Para imprimir en blanco y negro conviene la letra: el detalle del PDF dice que producto es cada letra';
     var lg=document.getElementById('legend');
     if(lg&&lg.parentNode)lg.parentNode.insertBefore(x,lg);
-    x.onclick=function(){etiquetaLetra=!etiquetaLetra;buildScene(cur);renderEtiquetaToggle();};
+    x.onclick=function(){if(MODO_BN)return;etiquetaLetra=!etiquetaLetra;buildScene(cur);renderEtiquetaToggle();};
   }
   x.textContent=etiquetaLetra?'Cajas: con letra':'Cajas: con descripcion';
 }
@@ -732,7 +733,7 @@ const PDF={W:210,H:297,M:12,INK:[0,0,0],GRIS:[55,60,70],TENUE:[205,208,213],AZUL
    Los productos usan una paleta cuyos colores, al pasar a gris, quedan en tonos bien distintos entre si (del casi blanco al gris
    oscuro), cada producto lleva su LETRA grande en un circulo blanco con borde negro y las lineas se engrosan. Asi se distingue
    un producto de otro tanto en color como en una copia en gris. */
-let MODO_BN=false; const BN_NIVEL=new Map();
+let MODO_BN=false; const _msgPendientes=[]; const BN_NIVEL=new Map();
 const BN_PALETA=[[255,240,160],[232,120,46],[143,227,168],[194,91,86],[107,184,240],[47,75,140]];   // claro, medio, claro, medio, claro, oscuro: vecinos muy distintos en gris
 function colorBN(color){if(!BN_NIVEL.has(color))BN_NIVEL.set(color,BN_PALETA[BN_NIVEL.size%BN_PALETA.length]);return BN_NIVEL.get(color);}
 function tintaSobre(c){return (0.299*c[0]+0.587*c[1]+0.114*c[2])>140?[0,0,0]:[255,255,255];}   // letra negra sobre claros y blanca sobre oscuros
@@ -791,12 +792,14 @@ function shotWhite(azv,elv,w,h){
   return url;
 }
 async function exportPDF(soloActual){
+  if(MODO_BN)return;                                                     // ya hay un PDF en curso: un segundo clic no lo pisa
   var busy=document.getElementById('busy');busy.classList.add('on');busy.textContent='Generando PDF...';
-  await pdfPausa(60);
-  var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;}), cur0=cur;
-  var pS=palSel; palSel=null;                                           // el PDF no lleva el resalte del pallet
+  var cur0=cur, pS=palSel; palSel=null;                                  // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
   var eL=etiquetaLetra; etiquetaLetra=true; MODO_BN=true;                // para imprimir: cajas rotuladas siempre con su letra y colores que se distinguen en gris
+  try{
+  await pdfPausa(60);
+  var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;});
   // La planta (desde arriba) va primero: es la que deja ver todos los productos, sin que una caja tape a otra.
   // La camara no puede mirar exactamente en vertical (queda paralela al «arriba»): 1.53 rad es casi 88 grados.
   var VISTAS=[['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
@@ -815,8 +818,11 @@ async function exportPDF(soloActual){
     doc.save(pdfNombre(c,i,CAM.length));                                   // un archivo por camion, con su numero en el nombre
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
   }
-  MODO_BN=false;etiquetaLetra=eL;palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
-  busy.classList.remove('on');
+  }finally{                                                              // pase lo que pase, el visor vuelve a como estaba
+    MODO_BN=false;etiquetaLetra=eL;palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
+    busy.classList.remove('on');
+    var cola=_msgPendientes.splice(0);cola.forEach(function(m){procesarMensaje(m);});     // lo que la plataforma mando mientras se generaba el PDF
+  }
 }
 // Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja.
 // Si caben las dos vistas en la misma hoja van juntas; si no, cada una en su hoja con el detalle de carga.
@@ -936,10 +942,7 @@ function cargarDatos(d){
   az=cam.az;el=cam.el; if(_zoomUsuario)dist=cam.dist;
   pedirRender();
 }
-window.addEventListener('message',function(ev){
-  if(ev.source!==parent||ev.origin!==location.origin)return;
-  const m=ev.data;
-  if(!m)return;
+function procesarMensaje(m){
   if(m.tipo==='od-visor-datos')cargarDatos(typeof m.datos==='string'?JSON.parse(m.datos):m.datos);
   else if(m.tipo==='od-visor-camion'&&CAM[m.idx]){filtroTipo=null;filtroVal=null;buildScene(m.idx);renderTabs();renderStats();renderLegend();}
   else if(m.tipo==='od-visor-pallet'){palSel=(m.idx==null)?null:+m.idx;dibujarResalte();}
@@ -947,6 +950,14 @@ window.addEventListener('message',function(ev){
   else if(m.tipo==='od-visor-etiqueta'){var l=!!m.letra;if(l!==etiquetaLetra){etiquetaLetra=l;buildScene(cur);renderEtiquetaToggle();}}
   else if(m.tipo==='od-visor-libre')setLibre(!!m.on);
   else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);
+}
+window.addEventListener('message',function(ev){
+  if(ev.source!==parent||ev.origin!==location.origin)return;
+  const m=ev.data;
+  if(!m)return;
+  // Mientras se genera el PDF nada cambia lo que se esta dibujando (etiqueta, camion, filtro, datos): los mensajes esperan y se aplican al terminar
+  if(MODO_BN){ if(m.tipo!=='od-visor-pdf')_msgPendientes.push(m); return; }
+  procesarMensaje(m);
 });
 window.addEventListener('load',init);
 window.buildScene=buildScene;

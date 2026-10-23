@@ -81,3 +81,13 @@ def test_con_copia_local_no_se_consulta_la_red_en_cada_calculo(tmp_path, monkeyp
     assert preparar_carpeta(destino, origen) == []                # y no espera la red
     assert hecha.wait(2)
     assert len(llamadas) == 2
+
+
+def test_el_pdf_siempre_rotula_las_cajas_con_su_letra():
+    """El PDF no depende de lo que se vea en pantalla ni de mensajes que lleguen mientras se genera: en modo impresión las cajas
+    llevan siempre la letra, y los mensajes de la plataforma esperan a que termine."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "web" / "visor" / "Plantilla_Visor.html").read_text(encoding="utf-8")
+    assert "function textoCaja(b){return (etiquetaLetra||MODO_BN)?boxLetra(b)" in html
+    assert "if(MODO_BN){ if(m.tipo!=='od-visor-pdf')_msgPendientes.push(m); return; }" in html
+    assert "}finally{" in html and "if(MODO_BN)return;" in html            # un fallo o un segundo clic no dejan el visor a medias
