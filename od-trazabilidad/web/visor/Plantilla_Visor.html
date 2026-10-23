@@ -422,7 +422,7 @@ function init(){
 const _skuCache={};
 function skuMat(color,txt){
   txt=String(txt==null?'':txt).trim();
-  if(MODO_BN){const gr=grisBN(color);color='rgb('+gr[0]+','+gr[1]+','+gr[2]+')';}
+  if(MODO_BN){const gr=colorBN(color);color='rgb('+gr[0]+','+gr[1]+','+gr[2]+')';}
   const ckey=color+'|'+txt+(MODO_BN?'|bn':'');
   if(_skuCache[ckey]) return _skuCache[ckey];              // 1 textura por producto+color (no por caja)
   const S=512, pad=22, maxW=S-2*pad, maxH=S-2*pad;         // mayor resolucion = mas nitido
@@ -728,10 +728,14 @@ function fmt(n){return (Math.round((n||0)*10)/10).toLocaleString('es-CL');}
 // ---- PDF para operaciones: A4 vertical, un archivo por camion (sus dos vistas, cada una en su hoja con el detalle de carga).
 // Se lee tambien en blanco y negro: cada producto lleva su letra en un recuadro y las cajas del 3D van rotuladas.
 const PDF={W:210,H:297,M:12,INK:[0,0,0],GRIS:[55,60,70],TENUE:[205,208,213],AZUL:[0,0,0]};
-/* Modo impresion en blanco y negro (el PDF es para operaciones, que imprime en baja calidad): las cajas van en grises claros,
-   cada producto se reconoce por su LETRA grande, las lineas se engrosan y la foto sale en escala de grises. */
-let MODO_BN=false; const BN_NIVEL=new Map(); const BN_GRISES=[[240,240,240],[205,205,205],[165,165,165]];
-function grisBN(color){if(!BN_NIVEL.has(color))BN_NIVEL.set(color,BN_GRISES[BN_NIVEL.size%BN_GRISES.length]);return BN_NIVEL.get(color);}
+/* Modo impresion del PDF: sale A COLOR, pero pensado para imprimirse en blanco y negro (operaciones imprime en baja calidad).
+   Los productos usan una paleta cuyos colores, al pasar a gris, quedan en tonos bien distintos entre si (del casi blanco al gris
+   oscuro), cada producto lleva su LETRA grande en un circulo blanco con borde negro y las lineas se engrosan. Asi se distingue
+   un producto de otro tanto en color como en una copia en gris. */
+let MODO_BN=false; const BN_NIVEL=new Map();
+const BN_PALETA=[[255,240,160],[232,120,46],[143,227,168],[194,91,86],[107,184,240],[47,75,140]];   // claro, medio, claro, medio, claro, oscuro: vecinos muy distintos en gris
+function colorBN(color){if(!BN_NIVEL.has(color))BN_NIVEL.set(color,BN_PALETA[BN_NIVEL.size%BN_PALETA.length]);return BN_NIVEL.get(color);}
+function tintaSobre(c){return (0.299*c[0]+0.587*c[1]+0.114*c[2])>140?[0,0,0]:[255,255,255];}   // letra negra sobre claros y blanca sobre oscuros
 function pdfPausa(ms){return new Promise(r=>setTimeout(r,ms));}
 function pdfNombre(c,i,total){
   var san=function(t){return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'');};
@@ -761,11 +765,11 @@ function pdfAspectoVista(azv,elv){
   az=sav.az;el=sav.el;dist=sav.dist;ctr.copy(sav.ctr);camera.aspect=sav.asp;camera.updateProjectionMatrix();
   return (x1-x0)/(y1-y0);
 }
-// Escala de grises con mas contraste y lineas oscuras engrosadas (el minimo de los vecinos): una arista de 1 px se pierde en una
-// impresora de baja calidad; asi queda de unos 0,3 mm.
-function pdfGrises(src){
+// A color, con un poco mas de contraste y las lineas oscuras engrosadas (el minimo de los vecinos): una arista de 1 px se pierde en una
+// impresora de baja calidad; asi queda de unos 0,3 mm. No se pasa a gris: la impresora lo hace, y la paleta ya esta pensada para eso.
+function pdfNitida(src){
   var a=document.createElement('canvas');a.width=src.width;a.height=src.height;var g=a.getContext('2d');
-  g.filter='grayscale(1) contrast(1.3)';g.drawImage(src,0,0);g.filter='none';
+  g.filter='contrast(1.12) saturate(1.05)';g.drawImage(src,0,0);g.filter='none';
   var b=document.createElement('canvas');b.width=a.width;b.height=a.height;var q=b.getContext('2d');
   q.drawImage(a,0,0);q.globalCompositeOperation='darken';
   [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]].forEach(function(o){q.drawImage(a,o[0],o[1]);});
@@ -780,7 +784,7 @@ function shotWhite(azv,elv,w,h){
   _MAT_ARISTA.opacity=0.95; _MAT_ARISTA.color.setHex(0x0b1522);
   renderer.setPixelRatio(MODO_BN?1:1.5); renderer.setSize(w,h,false);
   pdfEncuadrar(azv,elv,w/h); renderer.render(scene,camera);
-  var url=MODO_BN?pdfGrises(renderer.domElement):renderer.domElement.toDataURL('image/jpeg',0.92);
+  var url=MODO_BN?pdfNitida(renderer.domElement):renderer.domElement.toDataURL('image/jpeg',0.92);
   _MAT_ARISTA.opacity=arOp; _MAT_ARISTA.color.setHex(arCol);
   scene.background=oldBg; floorMesh.material=oldFloor; az=sav.az; el=sav.el; dist=sav.dist; ctr.copy(sav.ctr);
   renderer.setPixelRatio(pr); onResize();
@@ -792,7 +796,7 @@ async function exportPDF(soloActual){
   var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;}), cur0=cur;
   var pS=palSel; palSel=null;                                           // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
-  var eL=etiquetaLetra; etiquetaLetra=true; MODO_BN=true;                // blanco y negro: cajas rotuladas siempre con su letra
+  var eL=etiquetaLetra; etiquetaLetra=true; MODO_BN=true;                // para imprimir: cajas rotuladas siempre con su letra y colores que se distinguen en gris
   // La planta (desde arriba) va primero: es la que deja ver todos los productos, sin que una caja tape a otra.
   // La camara no puede mirar exactamente en vertical (queda paralela al «arriba»): 1.53 rad es casi 88 grados.
   var VISTAS=[['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
@@ -800,7 +804,7 @@ async function exportPDF(soloActual){
     var i=idxs[k], c=CAM[i];
     busy.textContent='Generando PDF '+(k+1)+' de '+idxs.length+'...';
     await pdfPausa(60);
-    BN_NIVEL.clear();(c.items||[]).forEach(function(it,k){BN_NIVEL.set(it.color,BN_GRISES[k%BN_GRISES.length]);});   // el mismo gris en la tabla y en las cajas
+    BN_NIVEL.clear();(c.items||[]).forEach(function(it,k){BN_NIVEL.set(it.color,BN_PALETA[k%BN_PALETA.length]);});   // el mismo color en la tabla y en las cajas
     buildScene(i);
     var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     var lay=pdfDisposicion(c,VISTAS);
@@ -888,9 +892,9 @@ function pdfTabla(doc,c,lay){
     y+=6.5;
     g.forEach(function(it,k){
       var ym=y+k*rh+rh/2;
-      // letra en recuadro con el color del producto: negra sobre claros y blanca sobre oscuros, asi se lee tambien en blanco y negro
-      var col=grisBN(it.color);doc.setFillColor(col[0],col[1],col[2]);doc.setDrawColor(0,0,0);doc.setLineWidth(0.4);doc.roundedRect(x+1.3,ym-2.7,5.8,5.4,0.9,0.9,'FD');
-      doc.setTextColor(0,0,0);
+      // letra en recuadro con el color del producto: negra sobre claros y blanca sobre oscuros, asi se lee tambien en una copia en gris
+      var col=colorBN(it.color),tin=tintaSobre(col);doc.setFillColor(col[0],col[1],col[2]);doc.setDrawColor(0,0,0);doc.setLineWidth(0.4);doc.roundedRect(x+1.3,ym-2.7,5.8,5.4,0.9,0.9,'FD');
+      doc.setTextColor(tin[0],tin[1],tin[2]);
       doc.setFont('helvetica','bold');doc.setFontSize(8.6);doc.text(String(it.letra||''),x+4.2,ym+1.2,{align:'center'});
       // SKU en gris y descripcion, en la misma celda
       var fs=lay.dos?8:9.2, cod=String(it.cod||''), nm=String(it.desc||it.cod||'').replace(new RegExp('^'+cod.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*'),'')||cod;

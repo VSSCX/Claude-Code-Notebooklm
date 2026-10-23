@@ -758,7 +758,7 @@ function vistaCubicaje(p){
       ${cb.visor ? `<button class="btn sm" data-act="ensayoEntregas" title="Recorre VL01N sin guardar, para revisar antes de crear">Ensayo en SAP</button>
         <button class="btn primary sm" data-act="crearEntregas" title="Crea una entrega por camión en VL01N">Crear entregas en SAP</button>
         <a class="btn sm" href="/api/cubicaje/${encodeURIComponent(p.pedido)}/excel">Exportar a Excel</a>
-        <button class="btn sm" data-act="pdfPedido" data-ped="${esc(p.pedido)}" title="PDF para operaciones, un archivo por camión (blanco y negro, con vista desde arriba)">${ICON.descargar} Descargar PDF</button>
+        <button class="btn sm" data-act="pdfPedido" data-ped="${esc(p.pedido)}" title="PDF para operaciones, un archivo por camión (a color, pensado para imprimirse en blanco y negro; con vista desde arriba)">${ICON.descargar} Descargar PDF</button>
         <button class="btn sm" data-act="verVisorCub" aria-pressed="${!!UI.verVisorCub}">${UI.verVisorCub ? 'Ocultar visor 3D' : 'Ver visor 3D aquí'}</button>` : ''}</div>
     ${cb.camiones.length ? fichasCamion(p, cb) : ''}
     ${cb.visor && UI.verVisorCub ? `<div style="margin:10px 0 14px">${visorPedido(p, cb, 640)}</div>` : ''}
