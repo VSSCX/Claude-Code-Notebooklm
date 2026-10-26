@@ -49,6 +49,7 @@ function vistaBandeja(){
       const nombre = g.sinGrupo ? 'entrega ' + g.entregas[0].entrega : 'grupo ' + g.grupo;
       return `<div class="tarea" data-k="${esc(claveTareaGrupo(g, s.k))}"><div class="c1"><b>${g.sinGrupo ? 'Entrega ' + esc(g.entregas[0].entrega) : 'Grupo ' + esc(g.grupo)}</b><span class="num">${fmt(g.unidades)} un.</span>${botonCerrarTarea(claveTareaGrupo(g, s.k), nombre)}</div>
       <div class="c2">${esc(p.cliente || '—')} · ${g.pedidos.length > 1 ? g.pedidos.length + ' pedidos' : 'Pedido ' + esc(g.pedidos[0])} · ${g.entregas.length} entrega(s)${g.cita.fecha ? ` · ${fmtFecha(g.cita.fecha)} ${esc(g.cita.hora || '')}` : ''}</div>
+      ${(() => { const ns = notasDe(g.key), u = ns[ns.length - 1]; return u ? `<div class="c3 nota-ult" title="Última nota del grupo${u.usuario ? ' (' + esc(u.usuario) + ')' : ''}">${ICON.nota}<span>${esc(u.texto)}</span></div>` : ''; })()}
       <div class="row tight">${POR_ENTREGA.includes(s.k) ? ''
         : s.k === 'confirmada' ? `<button class="btn primary sm" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" data-forzar="1" title="Pide fecha, hora y referencia del grupo y las lleva a SAP">Confirmar cita</button>`
         : s.k === 'sap' ? `<button class="btn primary sm" data-act="citaGrupo" data-grupo="${esc(g.key)}" title="Pone la fecha, la hora y la referencia en SAP">Actualizar en SAP</button>

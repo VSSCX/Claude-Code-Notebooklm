@@ -137,6 +137,17 @@ class Archivo(Base):
     at: Mapped[datetime] = mapped_column(DateTime, default=ahora)
 
 
+class Nota(Base):
+    """Notas cortas de un grupo (por qué está donde está). `clave` es la misma que usa la web para el camión:
+    G<n° de grupo>, o C<camión compartido> / E<n° de entrega> mientras todavía no tiene grupo; al crearse el grupo pasan a G<n°>."""
+    __tablename__ = "notas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    clave: Mapped[str] = mapped_column(Unicode(60), index=True)
+    texto: Mapped[str] = mapped_column(Unicode(300))
+    usuario: Mapped[str] = mapped_column(Unicode(60), default="")
+    at: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
+
+
 class Medida(Base):
     """Base de Medidas cargada en la plataforma (reemplaza la lectura del archivo de red)."""
     __tablename__ = "medidas"

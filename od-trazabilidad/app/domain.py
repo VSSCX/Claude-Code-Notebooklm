@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import Archivo, Config, Entrega, Evento, LineaEntrega, LineaPedido, PasoEntrega, Pedido, ahora
+from .models import Archivo, Config, Entrega, Evento, LineaEntrega, LineaPedido, Nota, PasoEntrega, Pedido, ahora
 from .schemas import EntregaIn, PaqueteIn, PedidoIn
 
 EVENTOS = {
@@ -147,6 +147,8 @@ def estado(s: Session) -> dict:
         "config": {c.clave: json.loads(c.valor or "{}")
                    for c in s.scalars(select(Config).where(_config_liviana())).all()},
         "archivos": archivos, "version": version(s),
+        "notas": [{"id": n.id, "clave": n.clave, "texto": n.texto, "usuario": n.usuario, "at": _iso(n.at)}
+                  for n in s.scalars(select(Nota).order_by(Nota.at, Nota.id)).all()],
     }
 
 
@@ -213,9 +215,46 @@ def version(s: Session) -> str:
         partes.append(f"{n}:{_iso(mx)}")
     n_arch, mx_arch = s.execute(select(func.count(), func.max(Archivo.at)).select_from(Archivo)).one()
     partes.append(f"{n_arch}:{_iso(mx_arch)}")
+    n_not, mx_not, id_not = s.execute(select(func.count(), func.max(Nota.at), func.max(Nota.id)).select_from(Nota)).one()
+    partes.append(f"{n_not}:{_iso(mx_not)}:{id_not}")
     cfg = s.scalars(select(Config.valor).where(_config_liviana()).order_by(Config.clave)).all()
     partes.append(str(zlib.crc32("\x1f".join(cfg).encode())))
     return "|".join(partes)
+
+
+# ---------- notas de grupo ----------
+def clave_nota(e: Entrega) -> str:
+    """La misma clave que la web da al camión de esta entrega (ver calcularGrupos en base.js)."""
+    if e.grupo:
+        return "G" + e.grupo
+    if e.camion_ref:
+        return "C" + e.camion_ref + (f"/{e.categoria}" if e.categoria and e.categoria != "A" else "")
+    return "E" + e.entrega
+
+
+def agregar_nota(s: Session, clave: str, texto: str) -> Nota:
+    texto = " ".join(str(texto or "").split())
+    clave = str(clave or "").strip()
+    if not clave or len(clave) > 60:
+        raise ErrorNegocio("Falta el grupo de la nota.")
+    if not texto:
+        raise ErrorNegocio("Escribe la nota.")
+    if len(texto) > 300:
+        raise ErrorNegocio("La nota admite hasta 300 caracteres.")
+    n = Nota(clave=clave, texto=texto, usuario=(usuario_actual() or "")[:60])
+    s.add(n)
+    return n
+
+
+def mover_notas(s: Session, desde: set[str], hacia: str) -> int:
+    """Cuando un camión pasa a tener grupo (o lo pierde), sus notas lo siguen."""
+    desde = {c for c in desde if c != hacia}
+    if not desde:
+        return 0
+    n = 0
+    for nota in s.scalars(select(Nota).where(Nota.clave.in_(desde))).all():
+        nota.clave, n = hacia, n + 1
+    return n
 
 
 # ---------- escritura ----------

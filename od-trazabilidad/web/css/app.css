@@ -1065,3 +1065,30 @@ details.solo-falta > summary{cursor:pointer;font-size:var(--t-sm)}
 .tbl.compacta td.desc{white-space:normal;min-width:230px;max-width:340px}
 .fuentes.compactas .fuente > span:nth-child(2){display:block;flex:1 1 0;min-width:0}
 .fuentes.compactas .fuente{flex-wrap:nowrap}
+
+/* ---------- Notas del grupo: una línea discreta que se despliega ---------- */
+.grp-notas{margin-top:8px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper)}
+.grp-notas-t{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;padding:5px 10px;cursor:pointer;font-size:var(--t-sm);color:var(--ink-2);min-width:0}
+.grp-notas-t svg{width:15px;height:15px;flex:none;color:var(--muted)}
+.grp-notas-t .n-tit{font-weight:650;color:var(--ink);white-space:nowrap}
+.grp-notas-t .n-ult{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp-notas-t .n-ult.vacia{color:var(--muted)}
+.grp-notas-t .n-ref{flex:none;color:var(--muted);font-size:var(--t-xs)}
+.grp-notas-t .n-flecha{margin-left:auto;display:grid;flex:none}
+.grp-notas-t .n-flecha svg{transition:transform 160ms var(--ease-out)}
+.grp-notas.abierta .n-flecha svg{transform:rotate(180deg)}
+.grp-notas.abierta .grp-notas-t{border-bottom:1px solid var(--hair)}
+.grp-notas-t:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (hover:hover) and (pointer:fine){.grp-notas-t:hover{background:var(--paper-2)}}
+.grp-notas-c{padding:6px 10px 8px}
+.notas-lista{list-style:none;margin:0 0 6px;padding:0;max-height:150px;overflow:auto}
+.notas-lista li{display:flex;align-items:baseline;gap:8px;padding:3px 0;border-bottom:1px dashed var(--hair);font-size:var(--t-sm)}
+.notas-lista li:last-child{border-bottom:0}
+.notas-lista .n-ref{flex:none;color:var(--muted);font-size:var(--t-xs);white-space:nowrap}
+.notas-lista .n-txt{flex:1;min-width:0;overflow-wrap:anywhere}
+.notas-lista .btn.icon{padding:1px 5px;opacity:.55}
+.nota-nueva{display:flex;gap:6px}
+.nota-nueva input{flex:1;min-width:0;font-size:var(--t-sm);padding:4px 8px}
+.nota-ult{display:flex;align-items:center;gap:6px;margin:2px 0 4px;font-size:var(--t-xs);color:var(--ink-2);min-width:0}
+.nota-ult svg{width:13px;height:13px;flex:none;color:var(--muted)}
+.nota-ult span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

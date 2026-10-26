@@ -11,7 +11,7 @@ from .. import domain
 from ..db import get_session
 from ..integrations import acciones, bases
 
-from ..models import Archivo
+from ..models import Archivo, Nota
 from ..schemas import EntregaIn, PedidoIn
 from .comun import _commit, _sop_de
 
@@ -158,4 +158,25 @@ def borrar_archivo(aid: int, s: Session = Depends(get_session)):
         raise HTTPException(404, "Archivo no encontrado.")
     (acciones.DIR_ARCHIVOS / a.archivo).unlink(missing_ok=True)
     s.delete(a)
+    _commit(s)
+
+
+@router.post("/notas", status_code=201)
+def agregar_nota(body: dict, s: Session = Depends(get_session)):
+    """Nota corta de un grupo: queda con quién y cuándo, para entender por qué el grupo llegó hasta donde está."""
+    try:
+        n = domain.agregar_nota(s, body.get("clave"), body.get("texto"))
+    except domain.ErrorNegocio as err:
+        raise HTTPException(422, str(err)) from err
+    _commit(s)
+    s.refresh(n)
+    return {"id": n.id, "clave": n.clave, "texto": n.texto, "usuario": n.usuario, "at": domain._iso(n.at)}
+
+
+@router.delete("/notas/{nid}", status_code=204)
+def borrar_nota(nid: int, s: Session = Depends(get_session)):
+    n = s.get(Nota, nid)
+    if n is None:
+        raise HTTPException(404, "Nota no encontrada.")
+    s.delete(n)
     _commit(s)

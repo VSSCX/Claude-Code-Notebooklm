@@ -763,12 +763,15 @@ def sap_crear_grupo(body: dict, s: Session = Depends(get_session)):
         if r.grupo:
             from ..db import SessionLocal
             with SessionLocal() as ses:
+                antes = set()
                 for n in entregas:
                     e = ses.scalar(select(Entrega).where(Entrega.entrega == n))
                     if e is not None:
+                        antes.add(domain.clave_nota(e))
                         e.grupo = r.grupo
                         domain._log(e, f"Agrupada en {r.grupo} desde la plataforma", "web")
                         e.actualizado = domain.ahora()
+                domain.mover_notas(ses, antes, "G" + r.grupo)        # las notas del camión pasan al grupo recién creado
                 ses.commit()
         return {"grupo": r.grupo, "ensayo": ensayo, "mensaje": r.mensaje, "pasos": r.pasos,
                 "incidencias": r.incidencias}
@@ -952,10 +955,13 @@ def sap_borrar_grupo(body: dict, s: Session = Depends(get_session)):
         from ..db import SessionLocal
         with SessionLocal() as ses:
             if ok:
-                for e in ses.scalars(select(Entrega).where(Entrega.grupo == grupo)).all():
+                es = ses.scalars(select(Entrega).where(Entrega.grupo == grupo)).all()
+                for e in es:
                     e.grupo = ""
                     domain._log(e, f"Grupo {grupo} borrado en SAP", "web")
                     e.actualizado = domain.ahora()
+                if es:
+                    domain.mover_notas(ses, {"G" + grupo}, domain.clave_nota(es[0]))     # sin grupo, las notas vuelven al camión
                 ses.commit()
         if not ok:
             raise RuntimeError(mensaje)

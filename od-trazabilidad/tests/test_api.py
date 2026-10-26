@@ -1450,6 +1450,36 @@ def test_juntar_pedidos_con_entregas_ya_creadas_pide_volver_a_analizar(c, tmp_pa
     assert "4431" not in r.json()["detail"]                         # el otro no tiene entregas: no es problema
 
 
+def test_notas_de_grupo_se_guardan_y_acompanan_al_camion_cuando_se_crea_el_grupo(c, monkeypatch):
+    """Una nota corta por grupo: queda con quién y cuándo, viaja en /estado y, al crearse el grupo en SAP, pasa de la clave del
+    camión (E<entrega>) a la del grupo (G<n°>); si el grupo se borra, vuelve al camión."""
+    from app.integrations import sap_crear
+    c.put("/api/pedidos/4460", json={"pedido": "4460", "cliente": "PARIS", "lineas": [{"sku": "1", "qty": 5}]})
+    c.put("/api/entregas/8706000001", json={"entrega": "8706000001", "pedido": "4460", "lineas": [{"sku": "1", "qty": 5}]})
+    v0 = _estado(c)["version"]
+    assert c.post("/api/notas", json={"clave": "E8706000001", "texto": "   "}).status_code == 422
+    assert c.post("/api/notas", json={"clave": "", "texto": "hola"}).status_code == 422
+    assert c.post("/api/notas", json={"clave": "E8706000001", "texto": "x" * 301}).status_code == 422
+    r = c.post("/api/notas", json={"clave": "E8706000001", "texto": "  Cliente sin   andén hasta el lunes "})
+    assert r.status_code == 201 and r.json()["texto"] == "Cliente sin andén hasta el lunes"
+    nid = r.json()["id"]
+    est = _estado(c)
+    assert est["version"] != v0 and [n["texto"] for n in est["notas"]] == ["Cliente sin andén hasta el lunes"]
+
+    monkeypatch.setattr(sap_crear, "crear_grupo", lambda entregas, referencia="", ensayo=False, ses=None, cliente="", camion="1":
+                        sap_crear.Resultado(ok=True, ensayo=ensayo, grupo="1392999", mensaje="ok"))
+    t = _esperar_job(c, c.post("/api/sap/crear_grupo", json={"entregas": ["8706000001"], "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok"
+    assert [n["clave"] for n in _estado(c)["notas"]] == ["G1392999"]                 # la nota siguió al grupo
+
+    monkeypatch.setattr("app.integrations.sap.borrar_grupo", lambda g: (True, "ok"))
+    t = _esperar_job(c, c.post("/api/sap/borrar_grupo", json={"grupo": "1392999", "confirmar": "1392999"}).json()["id"])
+    assert t["estado"] == "ok" and [n["clave"] for n in _estado(c)["notas"]] == ["E8706000001"]
+
+    assert c.delete(f"/api/notas/{nid}").status_code == 204
+    assert c.delete(f"/api/notas/{nid}").status_code == 404 and _estado(c)["notas"] == []
+
+
 def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):
     from openpyxl import Workbook
     wb = Workbook()

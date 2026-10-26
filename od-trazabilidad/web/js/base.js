@@ -138,7 +138,7 @@ const COLS = ['pedidos','entregas','config'];
 let _rafRender = 0;
 function renderSoon(){ if (_rafRender) return; _rafRender = requestAnimationFrame(() => { _rafRender = 0; render(); }); }
 const Store = {
-  data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [],
+  data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [], notas: [],
   loaded: new Set(), offline: false, version: '', queues: new Map(),
   rev: 0,          // sube con cada cambio local: invalida los índices memoizados
   pendientes: 0,   // guardados en vuelo; mientras haya, el sondeo no pisa lo que se ve
@@ -153,7 +153,7 @@ const Store = {
       this.data.pedidos = new Map(st.pedidos.map(p => [safeId(p.pedido), p]));
       this.data.entregas = new Map(st.entregas.map(e => [safeId(e.entrega), e]));
       this.data.config = new Map(Object.entries(st.config || {}));
-      this.archivos = st.archivos || [];
+      this.archivos = st.archivos || []; this.notas = st.notas || [];
       this.version = st.version; this.offline = false; this.rev++;
       COLS.forEach(c => this.loaded.add(c));
       setSync('ok', 'Conectado al servidor');
@@ -319,6 +319,8 @@ function calcularGrupos(){
   }
   return [...m.values()];
 }
+/* Notas cortas de un camión (grupo): por qué llegó hasta donde está */
+const notasDe = clave => Store.notas.filter(n => n.clave === clave);
 const gruposDe = ped => grupos().filter(g => g.entregas.some(e => e.pedido === ped))
   .sort((a, b) => (a.cita.fecha || '9').localeCompare(b.cita.fecha || '9') || String(a.grupo).localeCompare(String(b.grupo)));
 const grupo1 = key => grupos().find(g => g.key === key);

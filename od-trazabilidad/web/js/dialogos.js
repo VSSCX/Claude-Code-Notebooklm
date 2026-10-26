@@ -480,6 +480,10 @@ document.addEventListener('click', ev => {
       const e = Store.list('entregas').find(x => safeId(x.entrega) === ent); if (!e) break;
       UI.sel = safeId(e.pedido); UI.plegadas.delete(ent); UI.sub = ''; cambiarSub('entregas');
       setTimeout(() => { const el = document.querySelector(`[data-k="e-${ent}"]`); if (el) el.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 60); break; }
+    case 'notasGrupo': { const k = t.dataset.grupo; UI.notasAbiertas.has(k) ? UI.notasAbiertas.delete(k) : UI.notasAbiertas.add(k); render();
+      if (UI.notasAbiertas.has(k)) setTimeout(() => { const i = document.querySelector(`[data-nota="${CSS.escape(k)}"]`); if (i) i.focus(); }, 30); break; }
+    case 'agregarNota': agregarNota(t.dataset.grupo); break;
+    case 'borrarNota': borrarNota(t.dataset.id); break;
     case 'plegarTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.add(safeId(x.entrega))); render(); break;
     case 'expandirTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.delete(safeId(x.entrega))); render(); break;
     case 'logEntrega': UI.entLog.has(ent) ? UI.entLog.delete(ent) : UI.entLog.add(ent); render(); break;
@@ -566,6 +570,7 @@ document.addEventListener('keydown', ev => {
   const el = ev.target;
   if (ev.key !== 'Enter') return;
   if (el.matches && el.matches('[name="lsOc"]')){ ev.preventDefault(); buscarPorOc(el.value.trim()); return; }
+  if (el.matches && el.matches('[data-nota]')){ ev.preventDefault(); agregarNota(el.dataset.nota); return; }
   if (el.matches && el.matches('[data-q]')){ ev.preventDefault(); UI.q = el.value; render(); }
   else if (el.matches && el.matches('[data-buscarmed]')){ ev.preventDefault(); UI.medidasBuscar = el.value; cargarMedidas(); }
   else if (el.matches && el.matches('[data-buscarkit]')){ ev.preventDefault(); UI.kitsBuscar = el.value; cargarKits(); }
@@ -576,6 +581,7 @@ document.addEventListener('toggle', ev => {
 /* Con el redibujado por diferencias ya no se pierde el foco: la lista filtra mientras escribes */
 document.addEventListener('input', ev => {
   if (ev.target.matches && ev.target.matches('[data-q]')){ UI.q = ev.target.value; renderSoon(); }
+  if (ev.target.matches && ev.target.matches('[data-nota]')) UI.notaBorrador[ev.target.dataset.nota] = ev.target.value;      // el borrador no se pierde al redibujar
 });
 document.addEventListener('change', async ev => {
   const el = ev.target;
@@ -631,4 +637,20 @@ async function actualizarBases(){
   toast('Consultando SQL Server…');
   try { const r = await api('POST', '/bases/actualizar'); toast(r.ok ? 'Bases actualizadas' : r.mensaje); }
   catch(e){ toast(e.message); }
+}
+
+/* ---- Notas de grupo ---- */
+async function agregarNota(clave){
+  const texto = (UI.notaBorrador[clave] || '').trim();
+  if (!texto) return toast('Escribe la nota');
+  try {
+    await api('POST', '/notas', {clave, texto}); delete UI.notaBorrador[clave];
+    const campo = document.querySelector(`[data-nota="${CSS.escape(clave)}"]`); if (campo) campo.value = '';      // el redibujado conserva lo escrito: se vacía aparte
+    await Store.refresh();
+  }
+  catch(e){ toast(e.message); return; }
+  setTimeout(() => { const i = document.querySelector(`[data-nota="${CSS.escape(clave)}"]`); if (i) i.focus(); }, 30);       // para dejar otra seguida
+}
+async function borrarNota(id){
+  try { await api('DELETE', '/notas/' + id); await Store.refresh(); } catch(e){ toast(e.message); }
 }

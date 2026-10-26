@@ -533,6 +533,24 @@ function entregaHTML(e){
   </article>`;
 }
 
+/* Notas del grupo: una línea con la última (o «Agregar nota»); se despliega para ver el historial y escribir otra */
+UI.notasAbiertas = new Set(); UI.notaBorrador = {};
+const fechaCorta = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('es-CL', {day: '2-digit', month: '2-digit'}) + ' ' + d.toTimeString().slice(0, 5); };
+function notasHTML(g){
+  const ns = notasDe(g.key), abierta = UI.notasAbiertas.has(g.key), ult = ns[ns.length - 1];
+  const llave = esc(g.key);
+  return `<div class="grp-notas ${abierta ? 'abierta' : ''}">
+    <button class="grp-notas-t" data-act="notasGrupo" data-grupo="${llave}" aria-expanded="${abierta}" title="Notas del grupo: por qué llegó hasta aquí">
+      ${ICON.nota}<span class="n-tit">Notas${ns.length ? ` <b class="num">${ns.length}</b>` : ''}</span>
+      ${!abierta ? (ult ? `<span class="n-ult">${esc(ult.texto)}</span><span class="n-ref">${esc(ult.usuario ? ult.usuario + ' · ' : '')}${fechaCorta(ult.at)}</span>` : '<span class="n-ult vacia">Agregar nota</span>') : ''}
+      <span class="n-flecha" aria-hidden="true">${ICON.chevronAbajo}</span></button>
+    ${abierta ? `<div class="grp-notas-c">
+      ${ns.length ? `<ul class="notas-lista">${ns.map(n => `<li><span class="n-ref">${esc(n.usuario ? n.usuario + ' · ' : '')}${fechaCorta(n.at)}</span><span class="n-txt">${esc(n.texto)}</span>
+        <button class="btn quiet sm icon" data-act="borrarNota" data-id="${n.id}" title="Borrar nota" aria-label="Borrar nota">${ICON.x}</button></li>`).join('')}</ul>` : ''}
+      <div class="nota-nueva"><input type="text" maxlength="300" data-nota="${llave}" value="${esc(UI.notaBorrador[g.key] || '')}" placeholder="Escribe una nota corta y presiona Enter" aria-label="Nueva nota del grupo" autocomplete="off">
+        <button class="btn sm" data-act="agregarNota" data-grupo="${llave}">Agregar</button></div></div>` : ''}
+  </div>`;
+}
 function grupoHTML(g){
   const c = g.cita || {};
   const otros = g.pedidos.length > 1;
@@ -569,6 +587,7 @@ function grupoHTML(g){
     ${rutaHTML(g)}
     <p class="grp-sig">${siguiente}</p>
     <p class="grp-meta small muted">${esc([g.vehiculo, g.carga, g.un, g.tipo, g.region].filter(Boolean).join(' · '))}</p>
+    ${notasHTML(g)}
     <div class="dk-act">
       <button class="btn sm" data-act="editarGrupo" data-grupo="${llave}">Editar camión</button>
       <button class="btn sm" data-act="reprogGrupo" data-grupo="${llave}" ${g.pasos.confirmada ? '' : 'disabled title="Solo para citas confirmadas"'}>Reprogramar cita</button>

@@ -177,6 +177,8 @@ RUTAS = [
     ("PUT", r"^/api/cubicaje-conjunto/[^/]+/categorias$", "cubicaje", "Cambió la categoría de grupo de un pedido del cubicaje conjunto", 0),
     ("POST", r"^/api/sap/borrar_entrega$", "sap", "Pidió borrar una entrega en SAP", 0),
     ("POST", r"^/api/sap/borrar_grupo$", "sap", "Pidió borrar un grupo en SAP", 0),
+    ("POST", r"^/api/notas$", "pedido", "Dejó una nota en un grupo", 0),
+    ("DELETE", r"^/api/notas/(\d+)$", "pedido", "Borró una nota de un grupo", 1),
     ("POST", r"^/api/archivos$", "pedido", "Subió un archivo", 0),
     ("PATCH", r"^/api/archivos/(\d+)$", "pedido", "Cambió un archivo", 0),
     ("DELETE", r"^/api/archivos/(\d+)$", "pedido", "Borró un archivo", 0),
