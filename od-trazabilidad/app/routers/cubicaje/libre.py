@@ -248,6 +248,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           # SDA va con caja master salvo que se indique lo contrario
                           caja_master=caja_efectiva,
                           piso_pallet=str(body.get("piso_pallet") or ""),
+                          mezclar_pallets=bool(body.get("mix")),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
                           pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
@@ -296,7 +297,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "letra": letra, "color": color}
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
-           "caja_master": caja_efectiva, "piso_pallet": piso_elegido,
+           "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": bool(body.get("mix")),
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,

@@ -12,8 +12,8 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from .sap import (BARRA_ESTADO, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
-                  _leer_celda, _mensaje_sap, _por_id, _presionar, anotar, conectar)
+from .sap import (BARRA_ESTADO, desde_el_inicio, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
+                  _esperar_objeto, _leer_celda, _mensaje_sap, _por_id, _presionar, anotar, conectar)
 
 FOCO = TABLA + "/ctxtLIPS-MATNR[1,3]"
 BTN_BORRAR = ("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02/"
@@ -120,7 +120,10 @@ def _detectar_col_qty(ses) -> int:
 
 
 def _recorrer_tabla(ses):
-    """Recorre la tabla de picking devolviendo (fila absoluta, fila visible, material)."""
+    """Recorre la tabla de picking devolviendo (fila absoluta, fila visible, material).
+
+    Avanza de pantalla en pantalla (antes subía una fila por vuelta y releía las mismas filas). La fila
+    absoluta se calcula con la posición en la que SAP dejó realmente el scroll, que no pasa del final."""
     tabla = _por_id(ses, TABLA)
     if tabla is None:
         return
@@ -128,8 +131,13 @@ def _recorrer_tabla(ses):
         maximo = int(tabla.verticalScrollbar.Maximum) or 100
     except Exception:  # noqa: BLE001
         maximo = 100
+    try:
+        visibles = max(int(tabla.verticalScrollbar.PageSize), FILAS_VISIBLES)
+    except Exception:  # noqa: BLE001
+        visibles = FILAS_VISIBLES
     vistas = set()
-    for scroll in range(maximo + 1):
+    pedida, anterior = 0, -1
+    while True:
         tabla = _por_id(ses, TABLA)
         if tabla is None:
             return
@@ -142,24 +150,32 @@ def _recorrer_tabla(ses):
             except Exception:  # noqa: BLE001
                 pass
         try:
-            tabla.verticalScrollbar.Position = scroll
+            tabla.verticalScrollbar.Position = pedida
         except Exception:  # noqa: BLE001
             pass
         _esperar(ses)
         time.sleep(PAUSA)
+        try:
+            real = int(tabla.verticalScrollbar.Position)
+        except Exception:  # noqa: BLE001
+            real = pedida
+        if real == anterior:
+            return                                  # SAP no dejó avanzar: ya se vio hasta el final
+        anterior = real
         vacia = True
-        for v in range(FILAS_VISIBLES):
+        for v in range(visibles):
             mat = _leer_celda(ses, "LIPS-MATNR", 1, v)
             if not mat:
                 break
             vacia = False
-            absoluta = scroll + v
+            absoluta = real + v
             if absoluta in vistas:
                 continue
             vistas.add(absoluta)
             yield absoluta, v, mat
-        if vacia:
+        if vacia or real >= maximo:
             return
+        pedida = min(real + visibles, maximo)
 
 
 def _borrar_no_deseadas(ses, deseados: dict, res: Resultado) -> None:
@@ -216,6 +232,7 @@ def _cerrar(res: Resultado) -> Resultado:
     return res
 
 
+@desde_el_inicio
 def crear_entrega(pedido: str, puesto: str, fecha: str, materiales: dict, fecha_cita: str = "",
                   hora_cita: str = "", ensayo: bool = False, ses=None) -> Resultado:
     """Crea UNA entrega en VL01N con los materiales y cantidades de un camión.
@@ -239,7 +256,7 @@ def crear_entrega(pedido: str, puesto: str, fecha: str, materiales: dict, fecha_
     ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVL01N"
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses, 8)
-    time.sleep(0.5)
+    _esperar_objeto(ses, "wnd[0]/usr/ctxtLIKP-VSTEL", 3)        # antes: pausa fija de 0,5 s
     _aceptar_popups(ses)
     res.paso("VL01N abierto")
 
@@ -292,7 +309,7 @@ def crear_entrega(pedido: str, puesto: str, fecha: str, materiales: dict, fecha_
         except Exception:  # noqa: BLE001
             pass
     _esperar(ses, 5)
-    time.sleep(0.5)
+    _esperar_objeto(ses, TABLA, 3)                              # antes: pausa fija de 0,5 s
     if _por_id(ses, TABLA) is None:
         res.mensaje = "VL01N no mostró las posiciones del pedido."
         return _cerrar(res)
@@ -386,6 +403,7 @@ def _numero_grupo(ses) -> str:
     return m.group(1) if m else ""
 
 
+@desde_el_inicio
 def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=None,
                 cliente: str = "", camion: str = "1") -> Resultado:
     """Crea UN grupo de transporte con las entregas de un camión (VL06).
@@ -511,6 +529,7 @@ def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=
     return _cerrar(res)
 
 
+@desde_el_inicio
 def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: str = "",
                      ensayo: bool = False, ses=None) -> Resultado:
     """Fecha, hora y referencia de un GRUPO, como el paso "Actualizar fecha" del Excel.
@@ -529,7 +548,7 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
         return _cerrar(res)
 
     ses = ses or conectar()
-    ses.findById("wnd[0]/tbar[0]/okcd").Text = "VG02"
+    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVG02"
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses)
     _aceptar_popups(ses)
@@ -626,6 +645,7 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
     return _cerrar(res)
 
 
+@desde_el_inicio
 def actualizar_fecha(entrega: str, fecha: str, hora: str = "", ensayo: bool = False,
                      ses=None) -> Resultado:
     """Cambia fecha y hora de cita de una entrega (VL02N)."""

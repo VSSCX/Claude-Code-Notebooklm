@@ -162,6 +162,7 @@ def _cubicar(numero, body: dict, s: Session):
         orientacion_pallet=ajustes["orientacion_pallet"],
         capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
         piso_pallet=str(body.get("piso_pallet") or ""),
+        mezclar_pallets=bool(body.get("mix")),
         calefones=set(body.get("calefones") or set().union(*(_calefones_de(c, s) for c in (distintos or [cliente])))),
         predistribuido=[FilaPredist(sucursal=f["sucursal"], sku=f["sku"], unidades=f["unidades"],
                                     por_bulto=int(f.get("por_bulto") or 0))
@@ -180,7 +181,7 @@ def _cubicar(numero, body: dict, s: Session):
            "generado": _date.today().isoformat(),
            "conjunto": {"id": cid, "pedidos": numeros, "clientes": clientes_pedidos,
                         "distintos": distintos, "reglas_de": cliente} if multi else None,
-           "caja_master": entrada.caja_master, "piso_pallet": entrada.piso_pallet,
+           "caja_master": entrada.caja_master, "piso_pallet": entrada.piso_pallet, "mezclar_pallets": entrada.mezclar_pallets,
            "pallet": list(entrada.pallet or (120.0, 100.0, 140.0)),
            "camiones": [{"numero": c.numero, "tipo": c.tipo, "L": c.L, "w": c.w, "h": c.h,
                          "vol_m3": c.vol_m3} for c in r.camiones],

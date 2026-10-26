@@ -109,8 +109,11 @@ def construir_bloques_predist(predist: list[FilaPredist], posiciones: list[Posic
     return bloques, sin_medidas, fuera_de_pedido
 
 
-def armar_pallets_por_sucursal(bloques: list[Bloque], hibrido: bool) -> tuple[list[Pallet], list, list]:
-    """Nivel 1 (mono-sucursal), nivel 2 (mono-SKU con los conchos) y nivel 3 (mix)."""
+def armar_pallets_por_sucursal(bloques: list[Bloque], hibrido: bool, mezclar: bool = True) -> tuple[list[Pallet], list, list]:
+    """Nivel 1 (mono-sucursal), nivel 2 (mono-SKU con los conchos) y nivel 3 (mix).
+
+    Con mezclar=False solo existe el nivel 1: el pallet que queda casi vacío de una sucursal sigue siendo de esa sucursal
+    (no se junta con otras ni se vuelve mix)."""
     sucursales = sorted({b.sucursal for b in bloques})
     pallets: list[Pallet] = []
     pool: list[list] = []            # [índice de bloque, unidades]
@@ -147,8 +150,8 @@ def armar_pallets_por_sucursal(bloques: list[Bloque], hibrido: bool) -> tuple[li
                 pend -= m
                 if actual.frac >= 1.0 - EPS_SDA:
                     actual = None
-        # El concho: solo si la sucursal hizo 2 o más pallets y el último quedó flojo
-        if len(pallets) - pal_ini >= 2:
+        # El concho: solo si la sucursal hizo 2 o más pallets y el último quedó flojo (y solo si se permite mezclar o es híbrido)
+        if (mezclar or hibrido) and len(pallets) - pal_ini >= 2:
             ult = pallets[-1]
             if ult.k > 0 and ult.frac < U_SDA - EPS_SDA:
                 for bi, n in ult.contenido:
@@ -335,7 +338,11 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
                                 usa_caja_master: bool, cliente: str, pasa_filtro=None,
                                 cam_offset: int = 0, hibrido: bool | None = None,
                                 orientacion: str = "excel", capacidad: str = "geometria",
-                                kits: dict | None = None, kits_mezclar: bool = False) -> Resultado:
+                                kits: dict | None = None, kits_mezclar: bool = False,
+                                mezclar: bool = False) -> Resultado:
+    """SDA predistribuido. Por defecto los pallets son de UNA sola sucursal (mono-sucursal): lo que queda casi solo en el
+    último pallet de una sucursal sigue siendo un pallet de esa sucursal. Con `mezclar` (el marcador Mix) los conchos de
+    varias sucursales se juntan en pallets compartidos para ahorrar espacio."""
     from .kits import armar_pallets_kit, separar_kits_predist
     res = Resultado(modo="SDA PREDISTRIBUIDO")
     restric = restricciones_sda()
@@ -360,7 +367,7 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     hibrido = es_cliente_hibrido(cliente) if hibrido is None else bool(hibrido)
     if hibrido:
         res.avisos.append(f"{cliente}: cliente híbrido, los conchos van a piso (sin pallets mix).")
-    pallets, _pool, piso = armar_pallets_por_sucursal(bloques, hibrido)
+    pallets, _pool, piso = armar_pallets_por_sucursal(bloques, hibrido, mezclar)
     if tabla:
         pallets = [p for p in pallets if sum(n for _, n in p.contenido) > 0]
         placements = {i: grilla_simple(_items_de_pallet(p, bloques), pack_L, pack_W)
@@ -368,7 +375,7 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     else:
         pallets, placements = validar_pallets(pallets, bloques, pack_L, pack_W, pal_H, restric,
                                               misma_sucursal=True)
-    if not hibrido and not tabla:       # las cajas que quedaron solas en un pallet se juntan entre sucursales
+    if mezclar and not hibrido and not tabla:       # con Mix, las cajas que quedaron solas en un pallet se juntan entre sucursales
         pallets, placements, ahorrados = consolidar_conchos(pallets, placements, bloques, pack_L, pack_W, pal_H, restric)
         if ahorrados > 0:
             res.avisos.append(f"Se juntaron en pallets compartidos las cajas que quedaban casi solas en su pallet "
@@ -385,6 +392,8 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     if not pallets and not piso:
         res.avisos.append("SDA Predistribuido: sin pallets resultantes.")
         return res
+    from .sda import ordenar_por_llenado
+    pallets, placements = ordenar_por_llenado(pallets, placements, bloques, pack_L * pack_W * pal_H)   # completos al fondo
 
     vehiculos = asignar_vehiculos(len(pallets))
     colocados, filas04, geo = ubicar_pallets(pallets, placements, bloques, vehiculos, pal_L, pal_W,

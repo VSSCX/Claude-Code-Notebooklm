@@ -1,5 +1,6 @@
 """SAP: leer, analizar, crear y borrar."""
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from .comun import _clave_analisis, _clave_cubicaje, _commit, _sop_de, solicitan
 
 
 router = APIRouter()
+_SQL_EN_SEGUNDO_PLANO = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sql-analisis")
 
 @router.post("/paquetes")
 def post_paquete(body: PaqueteIn, s: Session = Depends(get_session)):
@@ -215,29 +217,33 @@ def analizar(numero: str, body: dict):
             raise RuntimeError(f"El cliente {cliente} no tiene código de solicitante: agrégalo en Configuración → Clientes.")
         # Sin conexión a SQL Server el análisis sigue con SAP: lo que se pierde es el cruce con el plan SOP (y la
         # disponibilidad), y queda avisado en el resultado en vez de detener todo.
-        sin_sql: dict = {}
-        try:
-            plan = bases.plan_sop(grupo, fresco=True)           # el análisis siempre pregunta de nuevo
-        except Exception as e:  # noqa: BLE001
-            plan = None
-            sin_sql = {"plan": True, "motivo": _causa(e)}
-        try:
-            disp = bases.disponibilidad(fresco=True)
-        except Exception as e:  # noqa: BLE001
-            disp = {}
-            sin_sql["disponibilidad"] = True
-            sin_sql.setdefault("motivo", _causa(e))
-        calidad: dict = {}
-        if sin_sql.get("plan") and sin_sql.get("disponibilidad"):
-            sin_sql["control_calidad"] = True                    # el servidor no responde: no se espera otra vez
-        else:
+        # Las tres consultas salen juntas y en paralelo con la lectura de SAP (antes iban una tras otra antes de
+        # abrir SAP); se recogen justo antes de calcular. Cada una conserva su manejo de fallas.
+        def consultar_sql():
+            sin_sql: dict = {}
             try:
-                calidad = bases.control_calidad(fresco=True)
+                plan = bases.plan_sop(grupo, fresco=True)       # el análisis siempre pregunta de nuevo
             except Exception as e:  # noqa: BLE001
-                sin_sql["control_calidad"] = True
+                plan = None
+                sin_sql = {"plan": True, "motivo": _causa(e)}
+            try:
+                disp = bases.disponibilidad(fresco=True)
+            except Exception as e:  # noqa: BLE001
+                disp = {}
+                sin_sql["disponibilidad"] = True
                 sin_sql.setdefault("motivo", _causa(e))
-        if sin_sql.get("plan") or sin_sql.get("disponibilidad"):
-            avance("Sin conexión con SQL Server: se sigue con SAP, sin el plan SOP")
+            calidad: dict = {}
+            if sin_sql.get("plan") and sin_sql.get("disponibilidad"):
+                sin_sql["control_calidad"] = True                # el servidor no responde: no se espera otra vez
+            else:
+                try:
+                    calidad = bases.control_calidad(fresco=True)
+                except Exception as e:  # noqa: BLE001
+                    sin_sql["control_calidad"] = True
+                    sin_sql.setdefault("motivo", _causa(e))
+            return plan, disp, calidad, sin_sql
+
+        sql_en_curso = _SQL_EN_SEGUNDO_PLANO.submit(consultar_sql)
         if filas_med:
             med = {sku: {"desc": d, "max_camion": mc} for sku, d, mc in filas_med}
         else:
@@ -276,6 +282,9 @@ def analizar(numero: str, body: dict):
             filas_zsd = []
 
         avance("3/4 Calculando saldos y alertas")
+        plan, disp, calidad, sin_sql = sql_en_curso.result()
+        if sin_sql.get("plan") or sin_sql.get("disponibilidad"):
+            avance("Sin conexión con SQL Server: el análisis sigue sin el plan SOP")
         # OC del pedido: Pedidos Ingresados (SQL) y, si no aparece o no hay conexión, el mismo reporte ZSD001_03
         oc, oc_origen = ("" if sin_sql.get("plan") and sin_sql.get("disponibilidad") else bases.oc_de(numero)), "Pedidos Ingresados"
         if not oc:
@@ -333,7 +342,8 @@ def analizar(numero: str, body: dict):
                 anterior = _json.loads(previo_valor)
                 try:
                     _cubicar(numero, {"modo": anterior.get("modo"), "caja_master": anterior.get("caja_master", ""),
-                                      "piso_pallet": anterior.get("piso_pallet", "")}, ses)
+                                      "piso_pallet": anterior.get("piso_pallet", ""),
+                                      "mix": anterior.get("mezclar_pallets", False)}, ses)
                     recubicado = True
                 except HTTPException as e:
                     recubicado = str(e.detail)
@@ -511,10 +521,11 @@ def excel_analisis(numero: str, interno: bool = False, s: Session = Depends(get_
 
     if interno:
         we = wb.create_sheet("Entregas")
-        we.append(["N° entrega", "SKU", "Descripción", "Qty", "Suministro"])
-        for e in sorted(activas, key=lambda x: (x.suministro or 1, x.entrega)):
+        we.append(["Grupo", "N° entrega", "SKU", "Descripción", "Qty", "Suministro"])
+        # primero los grupos (por número; «Sin grupo» al final), después sus entregas y, de cada una, sus productos
+        for e in sorted(activas, key=lambda x: (not x.grupo, x.grupo, x.suministro or 1, x.entrega)):
             for l in e.lineas:
-                we.append([e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
+                we.append([e.grupo or "Sin grupo", e.entrega, l.sku, descr.get(l.sku, ""), l.qty, e.suministro or 1])
 
         wa = wb.create_sheet("Análisis SAP")
         wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
@@ -625,7 +636,8 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
         try:
             cubicaje = _cubicar(numero, {"modo": anterior.get("modo"),
                                          "caja_master": anterior.get("caja_master", ""),
-                                         "piso_pallet": anterior.get("piso_pallet", "")}, s)
+                                         "piso_pallet": anterior.get("piso_pallet", ""),
+                                         "mix": anterior.get("mezclar_pallets", False)}, s)
         except HTTPException as e:
             cubicaje = {"error": e.detail}
     return {**doc, "cubicaje": cubicaje}

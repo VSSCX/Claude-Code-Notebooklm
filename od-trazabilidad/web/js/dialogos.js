@@ -543,7 +543,13 @@ document.addEventListener('click', ev => {
     case 'cubicar': { const p = Store.get('pedidos', UI.sel);
       if (p) cubicar(p.pedido, {modo: modoElegido(UI.cubicaje[p.pedido]),
                                 caja_master: UI.cubOpts.caja_master,
-                                piso_pallet: UI.cubOpts.piso_pallet}); break; }
+                                piso_pallet: UI.cubOpts.piso_pallet,
+                                mix: UI.cubOpts.mix ?? (UI.cubicaje[p.pedido] || {}).mezclar_pallets}); break; }
+    case 'cubMix': { const p = Store.get('pedidos', UI.sel); if (!p) break;
+      const cb = UI.cubicaje[p.pedido] || {};
+      UI.cubOpts.mix = !(UI.cubOpts.mix ?? cb.mezclar_pallets);                       // el marcador recalcula al momento
+      cubicar(p.pedido, {modo: modoElegido(cb), caja_master: UI.cubOpts.caja_master, piso_pallet: UI.cubOpts.piso_pallet, mix: UI.cubOpts.mix}); break; }
+    case 'conjMix': { const o = UI.conjOpts = UI.conjOpts || {}; o.mix = !(o.mix ?? (UI.conjunto || {}).mezclar_pallets); cubicarJuntos(); break; }
     case 'analizarSap': analizarSap(); break;
     case 'resetCarga': { const p = Store.get('pedidos', UI.sel); if (p) ajustarCarga(p.pedido, t.dataset.sku, ''); break; }
     case 'leerSap': leerSap(); break;

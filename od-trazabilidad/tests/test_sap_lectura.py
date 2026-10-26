@@ -642,3 +642,126 @@ def test_incidencias_se_limpian_entre_operaciones():
     r = sap_crear.crear_entrega("4001", "PN01", "22.09.2026", {"900000001": 5},
                                 ensayo=True, ses=SesionCrear(filas(1)))
     assert "algo viejo" not in r.incidencias        # cada operación parte con el rastro limpio
+
+
+class _Orden:
+    """Anota cada comando escrito en el campo de transacciones."""
+    def __init__(self, historial):
+        self.historial = historial
+        self.CaretPosition = 0
+
+    @property
+    def Text(self):
+        return self.historial[-1] if self.historial else ""
+
+    @Text.setter
+    def Text(self, v):
+        self.historial.append(v)
+
+    def SetFocus(self):
+        pass
+
+
+def test_todos_los_scripts_terminan_en_el_inicio_de_sap_y_la_cita_parte_con_slash_n():
+    """Crear un grupo dejaba SAP en VG02 y el script de la cita (que escribía «VG02» sin /n) fallaba: ahora cada script parte con
+    /n y termina con /n, también cuando algo falla a la mitad."""
+    from app.integrations import sap_crear
+
+    class Sesion(SesionCrear):
+        def __init__(self):
+            super().__init__([], mensaje="ok")
+            self.ordenes = []
+
+        def findById(self, ident):
+            if ident == "wnd[0]/tbar[0]/okcd":
+                return _Orden(self.ordenes)
+            if ident in ("wnd[1]", "wnd[2]"):
+                raise KeyError(ident)
+            return super().findById(ident)
+
+    ses = Sesion()
+    sap_crear.actualizar_grupo("1392270", referencia="CITA-1", ses=ses)
+    assert ses.ordenes[0] == "/nVG02" and ses.ordenes[-1] == "/n"
+    ses = Sesion()
+    sap_crear.crear_grupo(["8705709527"], ensayo=True, ses=ses)
+    assert ses.ordenes[0].lower() == "/nvl06" and ses.ordenes[-1] == "/n"
+    ses = Sesion()
+    sap_crear.actualizar_fecha("8705709527", "26.09.2026", ses=ses)
+    assert ses.ordenes[0].lower() == "/nvl02n" and ses.ordenes[-1] == "/n"
+    ses = Sesion()
+    ok, _ = sap.borrar_grupo("1392270", ses=ses)
+    assert ses.ordenes[-1] == "/n"
+    # aunque el script se corte con un error, SAP queda en el inicio
+    ses = Sesion()
+    try:
+        sap_crear.crear_entrega("", "PN01", "22.09.2026", {"1": 1}, ses=ses)
+    finally:
+        assert ses.ordenes[-1] == "/n"
+
+
+def test_al_volver_al_inicio_no_se_acepta_ninguna_pregunta_de_borrar_o_grabar():
+    """Si queda un aviso abierto al terminar, se contesta No o se cierra: jamás se confirma un borrado ni se graba por apuro."""
+    pulsados = []
+
+    class Boton:
+        def __init__(self, nombre):
+            self.nombre = nombre
+
+        def press(self):
+            pulsados.append(self.nombre)
+
+    class Ses(SesionFake):
+        def __init__(self, texto):
+            super().__init__([], mensaje="")
+            self.texto, self.abierto, self.ordenes = texto, True, []
+
+        def findById(self, ident):
+            if ident == "wnd[0]/tbar[0]/okcd":
+                return _Orden(self.ordenes)
+            if ident == "wnd[1]":
+                if not self.abierto:
+                    raise KeyError(ident)
+                return Campo()
+            if ident == "wnd[1]/usr/txtSPOP-TEXTLINE1":
+                return Campo(self.texto)
+            if ident in ("wnd[1]/usr/btnSPOP-OPTION1", "wnd[1]/usr/btnSPOP-OPTION2"):
+                if not self.abierto:
+                    raise KeyError(ident)
+                b = Boton(ident[-7:])
+                orig = b.press
+                b.press = lambda: (orig(), setattr(self, "abierto", False))
+                return b
+            return super().findById(ident)
+
+    for texto, esperado in (("¿Desea borrar la entrega?", "OPTION2"), ("¿Desea grabar los datos antes de salir?", "OPTION2"),
+                            ("Se perderán los datos. ¿Salir?", "OPTION1")):
+        pulsados.clear()
+        sap.ir_a_inicio(Ses(texto))
+        assert pulsados and pulsados[0] == esperado, (texto, pulsados)
+
+
+class _ScrollQueNoPasaDelFinal(Scroll):
+    """SAP no deja pasar del final de la tabla: la posición pedida se recorta al máximo."""
+
+    @property
+    def Position(self):
+        return self._pos
+
+    @Position.setter
+    def Position(self, v):
+        self._pos = min(v, self.Maximum)
+        self.historia.append(v)
+
+
+@pytest.mark.parametrize("n", [1, 3, 4, 5, 9, 30])
+def test_crear_recorre_la_tabla_por_pantallas_y_ve_cada_fila_una_vez(n):
+    """El recorrido de VL01N avanza de a una pantalla (antes subía una fila por vuelta) y no pierde ninguna fila."""
+    f = filas(n)
+    ses = SesionFake(f)
+    ses.scroll = _ScrollQueNoPasaDelFinal(max(n - 4, 0), 4)
+    ses.tabla = Tabla(ses.scroll)
+    ses.findById(sap.PESTANA_PICKING)                        # el simulador muestra la tabla al abrir la pestaña
+    vistas = list(sap_crear._recorrer_tabla(ses))
+    assert [mat for _a, _v, mat in vistas] == [x[0] for x in f]
+    assert [a for a, _v, _m in vistas] == list(range(n))
+    assert len(ses.scroll.historia) <= n // 4 + 2          # una fila por vuelta eran n pasos

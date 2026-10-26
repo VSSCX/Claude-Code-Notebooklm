@@ -529,14 +529,15 @@ def test_sda_predist_las_cajas_que_quedan_solas_se_juntan_en_un_pallet_compartid
     """Seis sucursales con una sola caja cada una: antes eran seis pallets casi vacíos; ahora van juntas en un pallet mix y cada
     fila sigue diciendo de qué sucursal es."""
     pre = [FilaPredist(f"SUC-0{i}", "S135000785", 1) for i in range(1, 7)]
-    r = segmentar(_entrada_sda_pd(posiciones=[Posicion("S135000785", "ASPIRADORA STK15", 400, "4001", 5)], predistribuido=pre))
+    r = segmentar(_entrada_sda_pd(posiciones=[Posicion("S135000785", "ASPIRADORA STK15", 400, "4001", 5)], predistribuido=pre,
+                                  mezclar_pallets=True))                      # el marcador Mix encendido
     assert sum(f.unidades for f in r.filas04) == 6
     assert len(r.pallets) == 1 and r.pallets[0]["tipo"] == "Mix"
     assert sorted(f.sucursal for f in r.filas04 if f.pallet) == [f"SUC-0{i}" for i in range(1, 7)]
     assert any("pallets compartidos" in a for a in r.avisos)
     # una sucursal con carga de sobra conserva su pallet propio; las cajas sueltas de las demás se juntan
     pre = [FilaPredist("SUC-01", "S135000785", 300)] + [FilaPredist(f"SUC-0{i}", "S135000785", 1) for i in range(2, 6)]
-    r = segmentar(_entrada_sda_pd(predistribuido=pre))
+    r = segmentar(_entrada_sda_pd(predistribuido=pre, mezclar_pallets=True))
     assert sum(f.unidades for f in r.filas04) == 304
     monos = [p for p in r.pallets if p["tipo"] == "Mono-Suc"]
     assert monos and all(p["sucursal"] == "SUC-01" for p in monos)
@@ -545,6 +546,51 @@ def test_sda_predist_las_cajas_que_quedan_solas_se_juntan_en_un_pallet_compartid
     for f in r.filas04:
         por_suc[f.sucursal] = por_suc.get(f.sucursal, 0) + f.unidades
     assert por_suc == {"SUC-01": 300, "SUC-02": 1, "SUC-03": 1, "SUC-04": 1, "SUC-05": 1}
+
+
+def test_sda_predist_por_defecto_cada_pallet_es_de_una_sola_sucursal():
+    """Sin el marcador Mix, lo que queda casi vacío sigue siendo un pallet de su sucursal: no se vuelve mix."""
+    pre = [FilaPredist(f"SUC-0{i}", "S135000785", 1) for i in range(1, 7)]
+    r = segmentar(_entrada_sda_pd(predistribuido=pre))
+    assert len(r.pallets) == 6 and {p["tipo"] for p in r.pallets} == {"Mono-Suc"}
+    por_pallet = {}
+    for f in r.filas04:
+        por_pallet.setdefault(f.pallet, set()).add(f.sucursal)
+    assert all(len(s) == 1 for s in por_pallet.values()) and sum(f.unidades for f in r.filas04) == 6
+    assert not any("pallets compartidos" in a for a in r.avisos)
+
+
+def test_sda_predist_los_pallets_completos_van_al_fondo_y_los_vacios_hacia_la_puerta():
+    """SUC-01 tiene una sola caja (antes iba primero por orden alfabético); SUC-02 llena varios pallets. El pallet casi vacío
+    debe quedar al final (más cerca de la puerta) y los completos al fondo."""
+    pre = [FilaPredist("SUC-01", "S135000785", 1), FilaPredist("SUC-02", "S135000785", 300)]
+    r = segmentar(_entrada_sda_pd(predistribuido=pre, posiciones=[Posicion("S135000785", "ASPIRADORA STK15", 301, "4001", 5)]))
+    unidades = {}
+    for f in r.filas04:
+        if f.pallet:
+            unidades[f.pallet] = unidades.get(f.pallet, 0) + f.unidades
+    por_x = sorted(r.pallets, key=lambda p: (p["vehiculo"], p["x"]))
+    u = [unidades[p["numero"]] for p in por_x]
+    assert u == sorted(u, reverse=True) and u[-1] == 1                          # de más lleno a más vacío; la caja sola, al final
+    assert por_x[-1]["sucursal"] == "SUC-01" and sum(u) == 301
+
+
+def test_sda_stock_por_defecto_cada_pallet_es_de_un_solo_producto_y_el_marcador_mix_los_junta():
+    pos = [Posicion("S135000785", "ASPIRADORA STK15", 120, "4001", 5), Posicion("900081624", "MDWMT16W", 4, "4001", 6)]
+    r = segmentar(_entrada_sda(posiciones=pos))
+    skus = {}
+    for f in r.filas04:
+        if f.pallet:
+            skus.setdefault(f.pallet, set()).add(f.sku)
+    assert all(len(s) == 1 for s in skus.values()) and {p["tipo"] for p in r.pallets} == {"Mono"}
+    por_pallet = {}
+    for f in r.filas04:
+        if f.pallet:
+            por_pallet[f.pallet] = por_pallet.get(f.pallet, 0) + f.unidades
+    ultimo = max(skus)
+    assert skus[ultimo] == {"S135000785"} and por_pallet[ultimo] == 12             # el pallet más vacío (12 de 54) va al final
+    r2 = segmentar(_entrada_sda(posiciones=pos, mezclar_pallets=True))
+    assert sum(f.unidades for f in r2.filas04) == 124 and len(r2.pallets) <= len(r.pallets)
 
 
 def test_un_producto_que_no_entra_en_el_pallet_va_a_piso_y_se_avisa_con_sus_medidas():

@@ -40,6 +40,7 @@ class Entrada:
     pallet_por_producto: bool = False            # regla del cliente (FALABELLA, EASY): SDA Stock sin mezclar productos
     kits: dict = field(default_factory=dict)     # SKU de kit -> KitDef (cajas separadas que viajan juntas)
     kits_mezclar: bool = False                   # kits distintos en un mismo pallet (apagado: por validar)
+    mezclar_pallets: bool = False                # marcador Mix (SDA): junta lo que queda casi vacío en pallets compartidos; apagado = pallets mono (sucursal o producto)
 
 
 def _norm_cod_calefon(cod: str) -> str:
@@ -86,7 +87,7 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
                                   str(e.caja_master).upper() == "CON CAJA MASTER", e.pedidos,
                                   pasa_filtro, cam_offset, orientacion=e.orientacion_pallet,
                                   capacidad=e.capacidad_pallet, kits=e.kits, kits_mezclar=e.kits_mezclar,
-                                  por_producto=e.pallet_por_producto)
+                                  por_producto=e.pallet_por_producto, mezclar=e.mezclar_pallets)
     if modo == "SDA PREDISTRIBUIDO":
         from ..analisis import pallet_cliente
         if not e.predistribuido:
@@ -97,7 +98,7 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
                                            e.cliente, pasa_filtro, cam_offset, hibrido=e.hibrido,
                                            orientacion=e.orientacion_pallet,
                                            capacidad=e.capacidad_pallet, kits=e.kits,
-                                           kits_mezclar=e.kits_mezclar)
+                                           kits_mezclar=e.kits_mezclar, mezclar=e.mezclar_pallets)
     if modo == "MDA PREDISTRIBUIDO":
         if not e.predistribuido:
             raise ValueError("Falta la tabla Predistribuido (sucursal, SKU y unidades).")

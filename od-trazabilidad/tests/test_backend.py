@@ -1172,7 +1172,8 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[6] == "Limitado SOP" and f9000[7] == saldo
     assert f9000[8:12] == (5, 1, 2, 0) and f9000[12:15] == (20, "20-10-2026", 450)
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
-    assert wb["Entregas"][1][0].value == "N° entrega" and ent and all(len(x) == 5 for x in ent)
+    assert [c.value for c in wb["Entregas"][1]] == ["Grupo", "N° entrega", "SKU", "Descripción", "Qty", "Suministro"]
+    assert ent and all(len(x) == 6 and x[0] for x in ent)                 # cada línea trae su grupo (o «Sin grupo»)
     assert wb["Análisis SAP"][1][3].value == "Alerta" and wb["Análisis SAP"][1][4].value == "Qty pendiente"
     assert c.get("/api/analisis/9999999999/excel").status_code == 404
 

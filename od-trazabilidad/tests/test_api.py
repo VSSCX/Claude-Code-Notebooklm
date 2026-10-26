@@ -1480,6 +1480,16 @@ def test_notas_de_grupo_se_guardan_y_acompanan_al_camion_cuando_se_crea_el_grupo
     assert c.delete(f"/api/notas/{nid}").status_code == 404 and _estado(c)["notas"] == []
 
 
+def test_el_marcador_mix_viaja_al_cubicaje_y_se_conserva_al_recubicar(c, tmp_path, monkeypatch):
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4470")
+    assert c.post("/api/cubicaje/4470", json={"modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER"}).json()["mezclar_pallets"] is False
+    d = c.post("/api/cubicaje/4470", json={"modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER", "mix": True}).json()
+    assert d["mezclar_pallets"] is True
+    # el cubicaje libre también lo recibe
+    r = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1", "qty": 3}], "modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER", "mix": True})
+    assert r.status_code == 200 and r.json()["mezclar_pallets"] is True
+
+
 def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):
     from openpyxl import Workbook
     wb = Workbook()
@@ -1570,10 +1580,11 @@ def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_pat
     assert clis["FALABELLA"]["pallet_por_producto"] and clis["EASY"]["pallet_por_producto"]
     assert not clis["PARIS"]["pallet_por_producto"]
 
-    libre_paris = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "PARIS"}).json()
-    assert any(len(s) > 1 for s in _productos_por_pallet_api(libre_paris).values())      # PARIS sí mezcla (control)
+    # el marcador Mix pide mezclar; PARIS mezcla con él (control) y sin él deja pallets de un solo producto
+    libre_paris = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "PARIS", "mix": True}).json()
+    assert any(len(s) > 1 for s in _productos_por_pallet_api(libre_paris).values())
     for cli in ("FALABELLA", "EASY"):
-        d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": cli}).json()
+        d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": cli, "mix": True}).json()   # la regla manda sobre Mix
         prod = _productos_por_pallet_api(d)
         assert prod and all(len(s) == 1 for s in prod.values()), cli
         assert d["unidades"] == 10
@@ -1586,7 +1597,7 @@ def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_pat
     # se puede apagar desde Configuración
     r = c.put("/api/clientes/FALABELLA", json={"pallet_por_producto": False})
     assert r.json()["pallet_por_producto"] is False
-    d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "FALABELLA"}).json()
+    d = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "FALABELLA", "mix": True}).json()
     assert any(len(s) > 1 for s in _productos_por_pallet_api(d).values())
 
 
@@ -1794,10 +1805,11 @@ def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c
     assert cam["kilos"] == cam["pallets"][0]["kilos"] == d["kilos"] == 50.0
     assert cam["pallets"][0]["lineas"] == [{"sku": "1001", "descripcion": cam["pallets"][0]["lineas"][0]["descripcion"],
                                             "sucursal": "", "bultos": 4, "unidades": 10}]
-    # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva. Dos sucursales con muy poca carga comparten pallet
+    # por sucursal: cada pallet dice de qué sucursal es y cuánto lleva. Por defecto cada sucursal queda en su pallet
+    # (mono sucursal); compartirlo es cosa del marcador Mix
     r = c.post("/api/cubicaje-libre/reparto", json={"texto": "SUC A\t1001\t10\nSUC B\t1001\t3\n", "modo": "SDA PREDISTRIBUIDO"}).json()
     pal = {p["sucursal"]: (p["unidades"], p["bultos"]) for p in r["carga_por_camion"][0]["pallets"]}
-    assert pal == {"2 sucursales": (13, 7)}
+    assert pal == {"SUC A": (10, 4), "SUC B": (3, 3)}
     por_suc = {}
     for f in r["filas04"]:                                                                          # cada fila conserva su sucursal
         por_suc[f["sucursal"]] = por_suc.get(f["sucursal"], 0) + f["unidades"]

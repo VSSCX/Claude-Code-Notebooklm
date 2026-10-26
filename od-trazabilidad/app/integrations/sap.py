@@ -6,6 +6,8 @@ columna). Solo LEE: no crea, no modifica y no borra nada en SAP.
 
 Requisitos: Windows, pywin32 y una sesión SAP abierta con scripting habilitado.
 """
+import functools
+import inspect
 import logging
 import re
 import time
@@ -44,6 +46,7 @@ F_PENDIENTE = "RV50A-LFPMG"
 COL_DEFECTO = {F_MATERIAL: 1, F_ENTREGA: 4, F_PENDIENTE: 22}
 
 ESPERA_OCUPADO = 20.0      # segundos
+SONDEO = 0.02              # cada cuánto se pregunta si SAP terminó (antes 0,05: cada espera sumaba hasta 50 ms de más)
 REINTENTOS_CELDA = 5
 PAUSA_REINTENTO = 0.15
 REINTENTOS_FILA_SIGUIENTE = 3  # confirmaciones antes de dar por vacía una fila que sigue a otra con datos
@@ -138,7 +141,7 @@ def _esperar(ses, timeout: float = ESPERA_OCUPADO):
                 return
         except Exception:  # noqa: BLE001
             return
-        time.sleep(0.05)
+        time.sleep(SONDEO)
 
 
 def _numero(s: str) -> float:
@@ -179,6 +182,83 @@ def _cerrar_popup(ses):
             ventana.sendVKey(0)
         except Exception:  # noqa: BLE001
             pass
+
+
+def ir_a_inicio(ses=None) -> None:
+    """Deja SAP en su pantalla inicial (el menú de /n), sin guardar nada.
+
+    Todos los scripts parten y terminan ahí: así el siguiente no depende de en qué pantalla quedó el anterior (antes, crear un
+    grupo dejaba SAP en VG02 y el script de la cita fallaba al no encontrar la tabla). Nunca lanza: si no se puede, el script
+    siguiente igual parte con /n."""
+    try:
+        ses = ses or conectar()
+        for _ in range(3):                      # una ventana abierta impide escribir en el campo de comandos
+            ventana = _por_id(ses, "wnd[1]")
+            if ventana is None:
+                break
+            _salir_de_aviso(ses)
+        okcd = _por_id(ses, "wnd[0]/tbar[0]/okcd")
+        if okcd is None:
+            return
+        okcd.Text = "/n"
+        ses.findById("wnd[0]").sendVKey(0)
+        _esperar(ses, 5)
+        for _ in range(3):                      # «salir de la transacción»: se sale sin grabar
+            if _por_id(ses, "wnd[1]") is None:
+                break
+            _salir_de_aviso(ses)
+            _esperar(ses, 3)
+    except Exception as e:  # noqa: BLE001
+        log.debug("No se pudo volver al inicio de SAP: %s", e)
+
+
+def _salir_de_aviso(ses) -> None:
+    """Responde un aviso al salir sin grabar: «¿Grabar?» se contesta No; «Se perderán los datos, ¿salir?» se contesta Sí."""
+    texto = ""
+    for ident in ("wnd[1]/usr/txtSPOP-TEXTLINE1", "wnd[1]/usr/txtMESSTXT1", "wnd[1]/usr/txtSPOP-TEXTLINE2"):
+        o = _por_id(ses, ident)
+        if o is not None:
+            try:
+                texto += " " + str(o.Text).lower()
+            except Exception:  # noqa: BLE001
+                pass
+    # «Sí» solo cuando el aviso dice claramente que se sale y se pierden datos; ante cualquier otra pregunta (grabar, borrar,
+    # confirmar…) se contesta No o se cierra la ventana: al terminar un script nunca se acepta nada por apuro.
+    pierde = any(k in texto for k in ("perder", "pierd", "lost")) and not any(k in texto for k in ("grab", "guard", "sav", "borr", "elimin", "delet"))
+    orden = ("wnd[1]/usr/btnSPOP-OPTION1", "wnd[1]/tbar[0]/btn[0]") if pierde else \
+            ("wnd[1]/usr/btnSPOP-OPTION2", "wnd[1]/tbar[0]/btn[0]")
+    for ident in orden:
+        boton = _por_id(ses, ident)
+        if boton is not None:
+            try:
+                boton.press()
+                return
+            except Exception:  # noqa: BLE001
+                continue
+    try:
+        ses.findById("wnd[1]").close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def desde_el_inicio(fn):
+    """Cada script de SAP termina en la pantalla inicial, pase lo que pase (también si falló o se cortó a la mitad).
+    El comienzo ya lo da el /n del propio script al abrir su transacción."""
+    parametros = inspect.signature(fn).parameters
+
+    @functools.wraps(fn)
+    def envoltura(*args, **kwargs):
+        ses = None
+        if "ses" in parametros:
+            try:
+                ses = inspect.signature(fn).bind_partial(*args, **kwargs).arguments.get("ses")
+            except TypeError:
+                ses = kwargs.get("ses")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            ir_a_inicio(ses)
+    return envoltura
 
 
 _prefijo_celda: dict[str, str] = {}      # "txt" o "ctxt" que usa cada campo: se prueba primero el que ya funcionó
@@ -345,6 +425,7 @@ def _leer_tabla(ses, lectura: "Lectura") -> list[Posicion]:
     return list(vistos.values())
 
 
+@desde_el_inicio
 def leer_pedido(pedido: str, puesto: str, fecha: str, ses=None) -> Lectura:
     """Abre VL01N con el pedido y devuelve sus posiciones. fecha en dd.MM.yyyy."""
     ses = ses or conectar()
@@ -595,6 +676,7 @@ def publicar_export(origen, carpeta=None) -> dict:
     return {"ok": False, "ruta": str(destino), "motivo": motivo}
 
 
+@desde_el_inicio
 def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: str, nombre: str, avisar=None, publicado=None) -> list[dict]:
     """Ejecuta ZSD001_03, exporta el resultado y devuelve sus filas como diccionarios.
     SAP guarda en una carpeta LOCAL (corta, sin tildes, sin permisos de red que pidan confirmación) y de ahí se publica
@@ -899,21 +981,24 @@ def _esperar_objeto(ses, ident: str, seg: float) -> bool:
     while time.time() - t0 < seg:
         if _por_id(ses, ident) is not None:
             return True
-        time.sleep(0.05)
+        time.sleep(SONDEO)
     return False
 
 
-def _popup_almacen(ses, fila: str) -> tuple[int, int]:
-    """Abre el detalle de un almacén y devuelve (stock neto, reserva)."""
-    arbol = _por_id(ses, MMBE_ARBOL)
-    if arbol is None:
-        return 0, 0
-    try:
-        arbol.selectItem(fila, COL_STOCK)
-        arbol.ensureVisibleHorizontalItem(fila, COL_STOCK)
-        arbol.doubleClickItem(fila, COL_STOCK)
-    except Exception:  # noqa: BLE001
-        return 0, 0
+def _popup_almacen(ses, fila: str, arbol=None) -> tuple[int, int]:
+    """Abre el detalle de un almacén y devuelve (stock neto, reserva). `arbol` evita buscarlo de nuevo en cada almacén."""
+    for intento in (arbol, None):                # si el árbol guardado quedó viejo, se busca de nuevo una vez
+        obj = intento or _por_id(ses, MMBE_ARBOL)
+        if obj is None:
+            return 0, 0
+        try:
+            obj.selectItem(fila, COL_STOCK)
+            obj.ensureVisibleHorizontalItem(fila, COL_STOCK)
+            obj.doubleClickItem(fila, COL_STOCK)
+            break
+        except Exception:  # noqa: BLE001
+            if intento is None:
+                return 0, 0
     if not _esperar_objeto(ses, "wnd[1]", 8):
         return 0, 0
     stock = reserva = 0
@@ -933,6 +1018,7 @@ def _popup_almacen(ses, fila: str) -> tuple[int, int]:
     return stock, reserva
 
 
+@desde_el_inicio
 def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
     """Stock neto CD30, reserva CD30, stock neto EC01 y TP01 por SKU (centro CE02)."""
     if not skus:
@@ -942,16 +1028,17 @@ def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
         ses.findById("wnd[0]").maximize()
     except Exception:  # noqa: BLE001
         pass
+    t_ini = time.time()
     ses.findById("wnd[0]/tbar[0]/okcd").Text = "/NMMBE"
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses)
-    time.sleep(0.5)
+    _esperar_objeto(ses, "wnd[0]/usr/ctxtMS_WERKS-LOW", 3)          # antes: pausa fija de 0,5 s
     _texto(ses, "wnd[0]/usr/ctxtMS_WERKS-LOW", "CE02")
     ses.findById("wnd[0]").sendVKey(0)
     _esperar(ses)
 
     _presionar(ses, "wnd[0]/usr/btn%_MS_LGORT_%_APP_%-VALU_PUSH", 5)
-    time.sleep(0.4)
+    _esperar_objeto(ses, _multi_celda(0), 3)                         # antes: pausa fija de 0,4 s
     for i, alm in enumerate(("CD30", "EC01", "TP01")):
         _texto(ses, _multi_celda(i), alm)
     _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
@@ -968,21 +1055,25 @@ def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
                 obj.Selected = valor
             except Exception:  # noqa: BLE001
                 pass
-    time.sleep(0.2)
+    log.info("MMBE preparado en %.1f s", time.time() - t_ini)
 
     out = {}
     for n, sku in enumerate(skus, 1):
+        t_sku = time.time()
         if avance:
             avance(f"Consultando stock MMBE {n} de {len(skus)}")
         _texto(ses, "wnd[0]/usr/ctxtMS_MATNR-LOW", sku)
         ses.findById("wnd[0]/tbar[1]/btn[8]").press()
         _esperar(ses)
         _esperar_objeto(ses, MMBE_ARBOL, 12)
-        cd30, reserva = _popup_almacen(ses, FILA_CD30)
-        ec01, _ = _popup_almacen(ses, FILA_EC01)
-        tp01, _ = _popup_almacen(ses, FILA_TP01)
+        arbol = _por_id(ses, MMBE_ARBOL)             # el mismo árbol sirve para los tres almacenes de este SKU
+        cd30, reserva = _popup_almacen(ses, FILA_CD30, arbol)
+        ec01, _ = _popup_almacen(ses, FILA_EC01, arbol)
+        tp01, _ = _popup_almacen(ses, FILA_TP01, arbol)
         out[sku] = {"cd30": cd30, "reserva_cd30": reserva, "ec01": ec01, "tp01": tp01}
         _presionar(ses, "wnd[0]/tbar[0]/btn[3]", 5)   # volver a la selección
+        log.info("MMBE %s: %.1f s (%d de %d)", sku, time.time() - t_sku, n, len(skus))
+    log.info("MMBE terminado: %d SKU en %.1f s", len(skus), time.time() - t_ini)
     return out
 
 
@@ -997,6 +1088,7 @@ def _hay_popup(ses) -> bool:
     return _por_id(ses, "wnd[1]") is not None
 
 
+@desde_el_inicio
 def borrar_entrega(entrega: str, ses=None) -> tuple[bool, str]:
     """VL06 -> lista de entregas -> selecciona la entrega -> borrar -> confirmar."""
     ses = ses or conectar()
@@ -1045,6 +1137,7 @@ def borrar_entrega(entrega: str, ses=None) -> tuple[bool, str]:
     return ok, mensaje or f"Entrega {entrega} borrada."
 
 
+@desde_el_inicio
 def borrar_grupo(grupo: str, ses=None) -> tuple[bool, str]:
     """VG02 -> abre el grupo -> borrar -> confirmar."""
     ses = ses or conectar()

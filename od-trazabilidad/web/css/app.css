@@ -1092,3 +1092,11 @@ details.solo-falta > summary{cursor:pointer;font-size:var(--t-sm)}
 .nota-ult{display:flex;align-items:center;gap:6px;margin:2px 0 4px;font-size:var(--t-xs);color:var(--ink-2);min-width:0}
 .nota-ult svg{width:13px;height:13px;flex:none;color:var(--muted)}
 .nota-ult span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- Marcador «Mix» (SDA): un interruptor pequeño, no otro selector ---------- */
+.mix-marca{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 7px;border:1px solid var(--edge);border-radius:var(--r);background:var(--paper);color:var(--ink);font:inherit;font-size:var(--t-sm);font-weight:650;cursor:pointer;touch-action:manipulation;transition:background-color 100ms var(--ease-out),color 100ms var(--ease-out)}
+.mix-marca svg{width:15px;height:15px}
+.mix-marca[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.mix-marca:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.mix-marca:disabled{opacity:.5;cursor:not-allowed}
+@media (hover:hover) and (pointer:fine){.mix-marca[aria-pressed="false"]:not(:disabled):hover{background:var(--paper-3)}}

@@ -242,6 +242,7 @@ function vistaConjunto(){
     <label class="f">Modo${sel3('data-conjmodo', modos.map(m => ({v: m, t: m})), o.modo)}</label>
     <label class="f">Caja master${sel3('data-conjcm', [{v: '', t: ''}, {v: 'CON CAJA MASTER', t: 'CON CAJA MASTER'}, {v: 'SIN CAJA MASTER', t: 'SIN CAJA MASTER'}], o.caja_master)}</label>
     <label class="f">Piso / pallet${sel3('data-conjpiso', [{v: '', t: 'Default del modo'}, {v: 'PISO', t: 'PISO'}, {v: 'PALLET', t: 'PALLET'}], o.piso_pallet)}</label>
+    ${/SDA/.test(o.modo) || o.piso_pallet === 'PALLET' ? marcaMix(o.mix ?? d.mezclar_pallets, `data-act="conjMix" ${ents.length ? 'disabled' : ''}`) : ''}
     <button class="btn" data-act="cubicarJuntos" ${ents.length ? 'disabled title="Ya hay entregas creadas: volver a cubicar cambiaría los camiones"' : ''}>Volver a cubicar juntos</button></div>`;
 }
 async function entregasConjunto(ensayo){
@@ -739,6 +740,7 @@ function vistaCubicaje(p){
       <label class="f">Modo${sel3('data-cubmodo', modos.map(m => ({v:m, t:m})), modoElegido(cb))}</label>
       <label class="f">Caja master${sel3('data-cubcm', [{v:'', t:''}, {v:'CON CAJA MASTER', t:'CON CAJA MASTER'}, {v:'SIN CAJA MASTER', t:'SIN CAJA MASTER'}], UI.cubOpts.caja_master || cb.caja_master || '')}</label>
       <label class="f">Piso / pallet${sel3('data-cubh2', [{v:'', t:'Default del modo'}, {v:'PISO', t:'PISO'}, {v:'PALLET', t:'PALLET'}], UI.cubOpts.piso_pallet || cb.piso_pallet || '')}</label>
+      ${/SDA/.test(modoElegido(cb)) || (UI.cubOpts.piso_pallet || cb.piso_pallet) === 'PALLET' ? marcaMix(UI.cubOpts.mix ?? cb.mezclar_pallets, 'data-act="cubMix"') : ''}
       <button class="btn primary" data-act="cubicar">${cb.error || !cb.camiones ? 'Cubicar' : 'Volver a cubicar'}</button>
     </div>`;
   if (cb.error || !cb.camiones){

@@ -121,7 +121,7 @@ def _productos_por_pallet(res):
 def test_sin_la_restriccion_los_excedentes_de_varios_productos_se_mezclan():
     cache = {"a": _d(60, 40, 40, "A"), "b": _d(60, 40, 40, "B"), "c": _d(60, 40, 40, "C")}
     pos = [_pos("a", 30), _pos("b", 30), _pos("c", 30)]
-    res = cubicaje_sda_stock(pos, cache, 120, 100, 150, False, ["1"])
+    res = cubicaje_sda_stock(pos, cache, 120, 100, 150, False, ["1"], mezclar=True)
     assert any(len(s) > 1 for s in _productos_por_pallet(res).values())
 
 
