@@ -321,8 +321,9 @@ let filtroTipo=null, filtroVal=null;
 let palSel=null;            // pallet resaltado dentro del camion (vista "pallets en el camion")
 let resalte=null;
 function esc(s){return String(s).replace(/"/g,'&quot;');}
-function pasaFiltro(b){ if(!filtroTipo)return true; if(filtroTipo==='suc')return (b.suc||'')===filtroVal; if(filtroTipo==='cod')return (b.cod||'')===filtroVal||(b.cod||'')==='C'+filtroVal; return true; }
-function pasaFiltroPal(p){ if(filtroTipo!=='suc')return true; return (p.suc||'')===filtroVal; }
+let filtroTramo=null;     // solo para el PDF: rango de x (cm desde el fondo) del tramo que se esta fotografiando
+function pasaFiltro(b){ if(filtroTramo&&!(b.x+b.dx/2>=filtroTramo[0]&&b.x+b.dx/2<filtroTramo[1]))return false; if(!filtroTipo)return true; if(filtroTipo==='suc')return (b.suc||'')===filtroVal; if(filtroTipo==='cod')return (b.cod||'')===filtroVal||(b.cod||'')==='C'+filtroVal; return true; }
+function pasaFiltroPal(p){ if(filtroTramo&&!(p.x+p.dl/2>=filtroTramo[0]&&p.x+p.dl/2<filtroTramo[1]))return false; if(filtroTipo!=='suc')return true; return (p.suc||'')===filtroVal; }
 function setFiltro(tipo,val){
   if(tipo===null||tipo===''){filtroTipo=null;filtroVal=null;}
   else if(filtroTipo===tipo&&filtroVal===val){filtroTipo=null;filtroVal=null;}
@@ -744,8 +745,21 @@ function pdfNombre(c,i,total){
   return 'Cubicaje_'+ped+'_'+(esSoloPallet(c.tipo)?'Pallet':'Camion')+n+'de'+total+'_'+san(c.tipo||'')+'.pdf';
 }
 // Encuadre ajustado al camion y su carga: la foto aprovecha todo el ancho (antes el camion quedaba chico en una hoja vertical)
-function pdfEncuadrar(azv,elv,aspect){
-  var box=new THREE.Box3().setFromObject(group), c0=box.getCenter(new THREE.Vector3()), mn=box.min, mx=box.max, pts=[];
+/* Caja que se encuadra en cada foto: en las vistas de carga, solo las cajas del tramo (mas el piso bajo ellas), para que se vean
+   grandes y se puedan identificar; en la vista del camion completo, el camion con su cabina. */
+function pdfCajaVista(vista){
+  var c=CAM[cur], carga=vista&&vista[5]==='carga';
+  if(!carga||!c)return new THREE.Box3().setFromObject(group);
+  var rg=vista[4]==null?null:vista[4], x0=1e9,x1=-1e9,y0=1e9,y1=-1e9,z1=0;
+  (c.cajas||[]).forEach(function(b){
+    var m=b.x+b.dx/2; if(rg&&!(m>=rg[0]&&m<rg[1]))return;
+    x0=Math.min(x0,b.x);x1=Math.max(x1,b.x+b.dx);y0=Math.min(y0,b.y);y1=Math.max(y1,b.y+b.dy);z1=Math.max(z1,b.z+b.dz);});
+  if(x0>x1)return new THREE.Box3().setFromObject(group);
+  var P=6;                                                       // un poco de aire para que ninguna caja toque el borde de la foto
+  return new THREE.Box3(new THREE.Vector3(x0-P,0,y0-P),new THREE.Vector3(x1+P,z1,y1+P));    // x largo, y alto, z ancho
+}
+function pdfEncuadrar(azv,elv,aspect,vista){
+  var box=pdfCajaVista(vista), c0=box.getCenter(new THREE.Vector3()), mn=box.min, mx=box.max, pts=[];
   [mn.x,mx.x].forEach(function(x){[mn.y,mx.y].forEach(function(y){[mn.z,mx.z].forEach(function(z){pts.push(new THREE.Vector3(x,y,z));});});});
   camera.aspect=aspect;camera.updateProjectionMatrix();ctr.copy(c0);az=azv;el=elv;
   var lo=300,hi=40000;
@@ -756,8 +770,8 @@ function pdfEncuadrar(azv,elv,aspect){
   }
   dist=hi;applyCam();
 }
-function pdfAspectoVista(azv,elv){
-  var box=new THREE.Box3().setFromObject(group), c0=box.getCenter(new THREE.Vector3()), mn=box.min, mx=box.max, pts=[];
+function pdfAspectoVista(azv,elv,vista){
+  var box=pdfCajaVista(vista), c0=box.getCenter(new THREE.Vector3()), mn=box.min, mx=box.max, pts=[];
   [mn.x,mx.x].forEach(function(x){[mn.y,mx.y].forEach(function(y){[mn.z,mx.z].forEach(function(z){pts.push(new THREE.Vector3(x,y,z));});});});
   var sav={az:az,el:el,dist:dist,ctr:ctr.clone(),asp:camera.aspect};
   camera.aspect=1;camera.updateProjectionMatrix();ctr.copy(c0);az=azv;el=elv;dist=Math.max(mx.x-mn.x,mx.z-mn.z)*4;applyCam();camera.updateMatrixWorld(true);
@@ -776,7 +790,7 @@ function pdfNitida(src){
   [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]].forEach(function(o){q.drawImage(a,o[0],o[1]);});
   return b.toDataURL('image/jpeg',0.95);
 }
-function shotWhite(azv,elv,w,h){
+function shotWhite(azv,elv,w,h,vista){
   var oldBg=scene.background, pr=renderer.getPixelRatio(), oldFloor=floorMesh.material;
   var sav={az:az,el:el,dist:dist,ctr:ctr.clone()};
   scene.background=new THREE.Color(0xffffff); floorMesh.material=new THREE.ShadowMaterial({opacity:MODO_BN?0:0.16});
@@ -784,12 +798,45 @@ function shotWhite(azv,elv,w,h){
   var arOp=_MAT_ARISTA.opacity, arCol=_MAT_ARISTA.color.getHex();
   _MAT_ARISTA.opacity=0.95; _MAT_ARISTA.color.setHex(0x0b1522);
   renderer.setPixelRatio(MODO_BN?1:1.5); renderer.setSize(w,h,false);
-  pdfEncuadrar(azv,elv,w/h); renderer.render(scene,camera);
+  pdfEncuadrar(azv,elv,w/h,vista); renderer.render(scene,camera);
   var url=MODO_BN?pdfNitida(renderer.domElement):renderer.domElement.toDataURL('image/jpeg',0.92);
   _MAT_ARISTA.opacity=arOp; _MAT_ARISTA.color.setHex(arCol);
   scene.background=oldBg; floorMesh.material=oldFloor; az=sav.az; el=sav.el; dist=sav.dist; ctr.copy(sav.ctr);
   renderer.setPixelRatio(pr); onResize();
   return url;
+}
+/* Tramos de carga para el PDF: una carga larga se parte en tramos de unos 5 m (desde el fondo hacia la puerta) y cada uno va en su
+   propia foto, de cerca. El corte busca un lugar donde casi no haya cajas atravesadas; cada caja va en el tramo de su centro. */
+var PDF_TRAMO_CM=520;
+function pdfTramos(c){
+  var cajas=c.cajas||[], span=0; cajas.forEach(function(b){span=Math.max(span,b.x+b.dx);});
+  var n=Math.min(6,Math.ceil(span/PDF_TRAMO_CM)); if(n<2)return null;
+  var cortes=[0];
+  for(var i=1;i<n;i++){
+    var ideal=i*span/n, mejor=ideal, peor=1e9;
+    cajas.forEach(function(b){[b.x,b.x+b.dx].forEach(function(x){
+      if(Math.abs(x-ideal)>70)return;
+      var cruzan=0; cajas.forEach(function(o){if(o.x+1<x&&x<o.x+o.dx-1)cruzan++;});
+      var costo=cruzan*1000+Math.abs(x-ideal);
+      if(costo<peor){peor=costo;mejor=x;}
+    });});
+    cortes.push(mejor);
+  }
+  cortes.push(1e9);
+  var out=[];for(var k=0;k<n;k++)out.push([cortes[k],cortes[k+1]]);
+  return out;
+}
+function pdfVistasDe(c){
+  var tr=pdfTramos(c), cm=function(x){return (Math.round(x/10)/10).toFixed(1).replace('.',',');};
+  var maxX=0;(c.cajas||[]).forEach(function(b){maxX=Math.max(maxX,b.x+b.dx);});
+  if(!tr)return [['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24,null,'carga'],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50,0,null,'carga'],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50,0,null,'carga']];
+  var v=[['CAMIÓN COMPLETO, PLANTA',Math.PI/2,1.53,24,null,'camion']];
+  tr.forEach(function(r,k){
+    var rot='TRAMO '+(k+1)+' DE '+tr.length+'  ('+cm(r[0])+' a '+cm(Math.min(r[1],maxX))+' m desde el fondo)';
+    v.push([rot+'  ·  PLANTA',Math.PI/2,1.53,24,r,'carga']);
+    v.push([rot+'  ·  3/4 SUPERIOR',1.12,0.50,0,r,'carga']);
+  });
+  return v;
 }
 async function exportPDF(soloActual){
   if(MODO_BN)return;                                                     // ya hay un PDF en curso: un segundo clic no lo pisa
@@ -802,13 +849,13 @@ async function exportPDF(soloActual){
   var jsPDF=window.jspdf.jsPDF, idxs=soloActual?[cur]:CAM.map(function(_,i){return i;});
   // La planta (desde arriba) va primero: es la que deja ver todos los productos, sin que una caja tape a otra.
   // La camara no puede mirar exactamente en vertical (queda paralela al «arriba»): 1.53 rad es casi 88 grados.
-  var VISTAS=[['PLANTA, DESDE ARRIBA',Math.PI/2,1.53,24],['3/4 SUPERIOR, LADO IZQUIERDO',1.12,0.50],['3/4 SUPERIOR, LADO DERECHO',-2.02,0.50]];
   for(var k=0;k<idxs.length;k++){
     var i=idxs[k], c=CAM[i];
     busy.textContent='Generando PDF '+(k+1)+' de '+idxs.length+'...';
     await pdfPausa(60);
     BN_NIVEL.clear();(c.items||[]).forEach(function(it,k){BN_NIVEL.set(it.color,BN_PALETA[k%BN_PALETA.length]);});   // el mismo color en la tabla y en las cajas
-    buildScene(i);
+    var VISTAS=pdfVistasDe(c);
+    filtroTramo=null;buildScene(i);
     var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     var lay=pdfDisposicion(c,VISTAS);
     for(var pg=0;pg<lay.paginas.length;pg++){                              // cada hoja repite la cabecera y el detalle de carga
@@ -819,7 +866,7 @@ async function exportPDF(soloActual){
     if(k<idxs.length-1)await pdfPausa(700);                                // el navegador acepta una descarga tras otra con una pausa corta
   }
   }finally{                                                              // pase lo que pase, el visor vuelve a como estaba
-    MODO_BN=false;etiquetaLetra=eL;palSel=pS;filtroTipo=fT;filtroVal=fV;buildScene(cur0);
+    MODO_BN=false;etiquetaLetra=eL;palSel=pS;filtroTipo=fT;filtroVal=fV;filtroTramo=null;buildScene(cur0);
     busy.classList.remove('on');
     var cola=_msgPendientes.splice(0);cola.forEach(function(m){procesarMensaje(m);});     // lo que la plataforma mando mientras se generaba el PDF
   }
@@ -827,16 +874,16 @@ async function exportPDF(soloActual){
 // Cuantas filas caben: la tabla de carga se adapta a los productos y la foto toma el resto de la hoja.
 // Si caben las dos vistas en la misma hoja van juntas; si no, cada una en su hoja con el detalle de carga.
 function pdfDisposicion(c,vistas){
-  var n=(c.items||[]).length, dos=n>26, filas=dos?Math.ceil(n/2):n;
+  var n=(c.items||[]).length, dos=n>26||(vistas.length>3&&n>10), filas=dos?Math.ceil(n/2):n;     // con muchas fotos (carga larga) la tabla va en dos columnas y deja lugar a las fotos
   var rh=dos?4.8:(n<=10?6.4:(n<=18?5.6:4.9)), yTabla=51, altoTabla=6.5+filas*rh+8;
   var yFoto=yTabla+altoTabla+3, pie=PDF.H-16, iw=PDF.W-2*PDF.M, rot=6;
   // alto natural de cada vista a todo el ancho (v[3] = alto minimo; la planta es una franja baja y ancha)
-  var altos=vistas.map(function(v){return Math.max(v[3]||50,iw/pdfAspectoVista(v[1],v[2])*1.04);});
+  var altos=vistas.map(function(v){return Math.max(v[3]||50,iw/pdfAspectoVista(v[1],v[2],v)*1.04);});
   var cap=function(k){return pie-yFoto-k*rot-(k-1)*3;};                          // alto util con k vistas en la hoja
-  // Se reparten en hojas: caben juntas mientras no haya que achicarlas a menos de 80 %; si no, pasan a otra hoja
+  // Se reparten en hojas: caben juntas mientras no haya que achicarlas a menos de 70 %; si no, pasan a otra hoja
   var paginas=[], act=[], suma=0;
   vistas.forEach(function(v,k){
-    if(act.length&&(suma+altos[k])*0.8>cap(act.length+1)){paginas.push(act);act=[];suma=0;}
+    if(act.length&&(suma+altos[k])*0.7>cap(act.length+1)){paginas.push(act);act=[];suma=0;}
     act.push(k);suma+=altos[k];
   });
   paginas.push(act);
@@ -874,7 +921,8 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay,esc){
     doc.text('Vista '+(k+1)+'  ·  '+vista[0],M,yf+3.2);
     doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor.apply(doc,GRIS);
     doc.text('Cada caja lleva la letra de su producto',W-M,yf+3.2,{align:'right'});
-    var img=shotWhite(vista[1],vista[2],2000,Math.round(2000*ih/iw));
+    var rg=vista[4]||null; if(String(filtroTramo)!==String(rg)){filtroTramo=rg;buildScene(cur);}      // cada foto muestra solo su tramo
+    var img=shotWhite(vista[1],vista[2],2000,Math.round(2000*ih/iw),vista);
     doc.addImage(img,'JPEG',M,yf+lay.rot-1,iw,ih,undefined,'FAST');
     yf+=lay.rot+ih+3;
   });

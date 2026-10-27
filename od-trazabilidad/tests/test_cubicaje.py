@@ -855,3 +855,23 @@ def test_la_lista_del_visor_sigue_el_orden_de_carga_y_la_a_es_lo_primero():
     assert [i["cod"] for i in items] == ["C", "B", "A"]
     assert [i["letra"] for i in items] == ["A", "B", "C"]
     assert {c["cod"]: c["letra"] for c in d["camiones"][0]["cajas"]} == {"C": "A", "B": "B", "A": "C"}
+
+
+# ---------------------------------------------------------------- base: lo de arriba no puede tener más superficie que lo de abajo
+def _sobre_lavadora(w_arriba, celda):
+    from app.cubicaje import core
+    core.usar_celda(celda)
+    abajo = item("LAVADORA", 70, 77.5, 100, 1, peso=48)
+    arriba = item("ENCIMERA", 49, w_arriba, 15.9, 1, peso=14)
+    placed = []
+    pack([abajo, arriba], Box("chico", 100, 80, 125), MDA, placed)
+    core.usar_celda(2.0)
+    return {p.cod: p.z for p in placed}
+
+
+@pytest.mark.parametrize("celda", [1.0, 2.0])
+def test_no_se_coloca_encima_algo_con_mas_base_que_lo_de_abajo(celda):
+    # la encimera pesa menos y es más chica en superficie, pero se pasa 1,4 cm de ancho de la lavadora: no se apoya
+    assert _sobre_lavadora(78.9, celda) == {"LAVADORA": 0}
+    # con una base que cabe dentro de la de abajo sí se apoya
+    assert _sobre_lavadora(70.0, celda) == {"LAVADORA": 0, "ENCIMERA": 100}

@@ -539,9 +539,10 @@ CARGA_HOJA_03 = {"900081624": 7, "926565426": 25, "240086033": 200, "240094099":
 
 
 @pytest.mark.parametrize("celda, esperado", [
-    # (ocupación de cada camión, unidades por camión). 2 cm es la grilla del Excel (CELL = 2) y da su resultado.
-    (2, ([0.7898, 0.8229, 0.465], [140, 192, 135])),
-    (1, ([0.7898, 0.8572, 0.4308], [140, 200, 127])),         # más fino: acomoda distinto, por eso no coincide
+    # (ocupación de cada camión, unidades por camión). 2 cm es la grilla del Excel (CELL = 2) y da casi su resultado: la plataforma
+    # además no deja una base mayor sobre una menor, y el Excel sí, por eso la ocupación difiere en milésimas.
+    (2, ([0.7888, 0.8239, 0.465], [140, 192, 135])),
+    (1, ([0.7888, 0.8581, 0.4308], [140, 200, 127])),         # más fino: acomoda distinto, por eso no coincide
 ])
 def test_cubicaje_del_excel_coincide_con_la_grilla_de_2_cm(datos, celda, esperado):
     from fastapi.testclient import TestClient

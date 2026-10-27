@@ -25,6 +25,7 @@ def usar_celda(cm: float) -> None:
     CELL = 2.0 if cm not in (1.0, 2.0) else float(cm)
 MAX_CAND = 20000   # ReDim candIX(1 To 20000)
 PISO_PESO = 1e30   # el piso aguanta todo
+TOL_BASE = 0.5     # cm: lo de arriba puede pasarse de la base de lo de abajo hasta esto (medidas redondeadas), no más
 
 
 @dataclass
@@ -103,6 +104,8 @@ class _Estado:
     hm: np.ndarray = field(init=False)
     pesoTop: np.ndarray = field(init=False)
     sopTop: np.ndarray = field(init=False)
+    baseL: np.ndarray = field(init=False)      # largo y ancho de la base del producto que está arriba de cada celda
+    baseW: np.ndarray = field(init=False)
     cand: list = field(default_factory=lambda: [(0, 0)])
     # Franjas de gx donde un producto (según clave) no tiene ninguna posición válida.
     # Se mantienen hasta que una colocación toca sus filas (ver invalidar_franjas).
@@ -112,11 +115,14 @@ class _Estado:
         self.hm = np.zeros((self.nx, self.ny), dtype=float)
         self.pesoTop = np.full((self.nx, self.ny), PISO_PESO, dtype=float)
         self.sopTop = np.ones((self.nx, self.ny), dtype=bool)
+        self.baseL = np.full((self.nx, self.ny), PISO_PESO, dtype=float)       # el piso es base de cualquier cosa
+        self.baseW = np.full((self.nx, self.ny), PISO_PESO, dtype=float)
 
     def copia(self) -> "_Estado":
         otra = _Estado.__new__(_Estado)
         otra.nx, otra.ny = self.nx, self.ny
         otra.hm, otra.pesoTop, otra.sopTop = self.hm.copy(), self.pesoTop.copy(), self.sopTop.copy()
+        otra.baseL, otra.baseW = self.baseL.copy(), self.baseW.copy()
         otra.cand = list(self.cand)
         otra.vacias = {k: set(v) for k, v in self.vacias.items()}
         return otra
@@ -326,6 +332,8 @@ def _colocar_columnas_sku(it: Item, cL: float, cW: float, ch: float, restric: Re
         est.hm[bx:bx + bcx, by:by + bcy] = z_top
         est.pesoTop[bx:bx + bcx, by:by + bcy] = it.peso
         est.sopTop[bx:bx + bcx, by:by + bcy] = it.apilable
+        est.baseL[bx:bx + bcx, by:by + bcy] = bOL
+        est.baseW[bx:bx + bcx, by:by + bcy] = bOW
         est.invalidar_franjas(bx, bx + bcx)
         placed.append(Placement(
             cod=it.cod, desc=it.desc, ped=it.ped, container=0, fila=it.fila,
@@ -355,8 +363,8 @@ def _orientaciones(L: float, w: float, h: float, inc: bool, rot: bool) -> list[t
 
 
 def _soporte_ok(it: Item, restric: Restric, est: _Estado, gx: int, gy: int, cx: int, cy: int,
-                z: float) -> bool:
-    """Soporte >= 70%, todo lo de abajo apilable, no pesado sobre liviano."""
+                z: float, oL: float | None = None, oW: float | None = None) -> bool:
+    """Soporte >= 70%, todo lo de abajo apilable, no pesado sobre liviano y sin base mayor que la de abajo."""
     if (not it.apilable) and z > EPS:
         return False
     if z <= EPS:
@@ -373,6 +381,11 @@ def _soporte_ok(it: Item, restric: Restric, est: _Estado, gx: int, gy: int, cx: 
         min_peso = float(est.pesoTop[gx:gx + cx, gy:gy + cy][apoya].min()) if onn else PISO_PESO
         if it.peso > min_peso + 1e-6:
             return False
+    # lo de arriba no puede tener más base que lo de abajo: ni más largo ni más ancho que el producto que lo sostiene
+    if (oL if oL is not None else it.L) > float(est.baseL[gx:gx + cx, gy:gy + cy][apoya].min()) + TOL_BASE:
+        return False
+    if (oW if oW is not None else it.w) > float(est.baseW[gx:gx + cx, gy:gy + cy][apoya].min()) + TOL_BASE:
+        return False
     return True
 
 
@@ -390,7 +403,7 @@ def _mejor_colocacion(it: Item, ch: float, restric: Restric, est: _Estado):
             z = float(est.hm[ix:ix + cx, iy:iy + cy].max())
             if z + oH > ch + EPS:
                 continue
-            if not _soporte_ok(it, restric, est, ix, iy, cx, cy, z):
+            if not _soporte_ok(it, restric, est, ix, iy, cx, cy, z, oL, oW):
                 continue
             kx, ky = ix * CELL, iy * CELL
             better = False
@@ -503,6 +516,8 @@ def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
             return None
         sop = est.sopTop[a:b + cx - 1]
         peso = est.pesoTop[a:b + cx - 1]
+        base_l = est.baseL[a:b + cx - 1]
+        base_w = est.baseW[a:b + cx - 1]
         for z in alturas:
             apoya = hm >= z - EPS                 # z es el máximo de la ventana
             bien = (_suma_ventana(apoya, cx, cy) / cnt) >= 0.7
@@ -516,6 +531,9 @@ def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
                 liviano = apoya & (peso < it.peso - 1e-6)
                 if liviano.any():
                     bien &= _suma_ventana(liviano, cx, cy) == 0
+            chica = apoya & ((base_l < it.L - TOL_BASE) | (base_w < it.w - TOL_BASE))       # base menor que la de lo que va encima
+            if chica.any():
+                bien &= _suma_ventana(chica, cx, cy) == 0
             valido |= ok & (sub == z) & bien
     if not valido.any():
         return None

@@ -55,6 +55,8 @@ def _bf_referencia(it, ch, restric, est, x_min_cell):
             if restric.usaPeso:
                 liviano = apoya & (est.pesoTop < it.peso - 1e-6)
                 bien &= _suma_ventana(liviano, cx, cy)[gx0:] == 0
+            chica = apoya & ((est.baseL < it.L - core.TOL_BASE) | (est.baseW < it.w - core.TOL_BASE))
+            bien &= _suma_ventana(chica, cx, cy)[gx0:] == 0
             valido |= ok & (sub == z) & bien
     if not valido.any():
         return None
@@ -91,6 +93,8 @@ def _estado_aleatorio(rng, nx, ny, ch):
         est.hm[x:x + dx, y:y + dy] = np.maximum(est.hm[x:x + dx, y:y + dy], min(z, ch))
         est.pesoTop[x:x + dx, y:y + dy] = rng.choice([5.0, 20.0, 60.0])
         est.sopTop[x:x + dx, y:y + dy] = rng.random() < 0.8
+        est.baseL[x:x + dx, y:y + dy] = rng.choice([30.0, 61.5, 90.0, 200.0])
+        est.baseW[x:x + dx, y:y + dy] = rng.choice([30.0, 52.0, 66.0, 200.0])
     return est
 
 
