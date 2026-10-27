@@ -765,3 +765,30 @@ def test_crear_recorre_la_tabla_por_pantallas_y_ve_cada_fila_una_vez(n):
     assert [mat for _a, _v, mat in vistas] == [x[0] for x in f]
     assert [a for a, _v, _m in vistas] == list(range(n))
     assert len(ses.scroll.historia) <= n // 4 + 2          # una fila por vuelta eran n pasos
+
+
+def test_la_cita_del_grupo_sale_y_entra_desde_cero_por_cada_entrega_y_para_la_referencia():
+    from app.integrations import sap_crear
+
+    class Sesion(SesionCrear):
+        def __init__(self, entregas):
+            super().__init__([], mensaje="ok")
+            self.entregas, self.ordenes = entregas, []
+
+        def findById(self, ident):
+            if ident == "wnd[0]/tbar[0]/okcd":
+                return _Orden(self.ordenes)
+            if ident.startswith(sap_crear.VG02_TABLA):
+                fila = int(ident.rstrip("]").rsplit("[", 1)[1].split(",")[1])
+                if fila >= len(self.entregas):
+                    raise KeyError(ident)
+                return Campo(self.entregas[fila])
+            if ident in ("wnd[1]", "wnd[2]"):
+                raise KeyError(ident)
+            return super().findById(ident)
+
+    ses = Sesion(["8705700001", "8705700002", "8705700003"])
+    r = sap_crear.actualizar_grupo("1392270", "26.09.2026", "10:30:00", referencia="CITA-1", ses=ses)
+    assert r.ok
+    # tres entregas y la referencia: cuatro entradas a VG02, cada una precedida por un /n, y termina en el inicio
+    assert ses.ordenes == ["/nVG02", "/n", "/nVG02", "/n", "/nVG02", "/n", "/nVG02", "/n"]

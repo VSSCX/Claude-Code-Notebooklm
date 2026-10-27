@@ -12,7 +12,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from .sap import (BARRA_ESTADO, desde_el_inicio, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
+from .sap import (BARRA_ESTADO, desde_el_inicio, ir_a_inicio, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
                   _esperar_objeto, _leer_celda, _mensaje_sap, _por_id, _presionar, anotar, conectar)
 
 FOCO = TABLA + "/ctxtLIPS-MATNR[1,3]"
@@ -529,6 +529,49 @@ def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=
     return _cerrar(res)
 
 
+def _entrar_a_vg02(ses, grupo: str) -> str:
+    """Entra a VG02 desde cero (/n) y abre el grupo. Devuelve el error, o "" si quedó adentro."""
+    campo = None
+    for intento in range(2):                          # si no abre, se sale del todo y se entra una vez más
+        if intento:
+            ir_a_inicio(ses)
+        ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVG02"
+        ses.findById("wnd[0]").sendVKey(0)
+        _esperar(ses)
+        _aceptar_popups(ses)
+        campo = _por_id(ses, "wnd[0]/usr/ctxtVBSK-SAMMG")
+        if campo is not None:
+            break
+    if campo is None:
+        return "No se abrió VG02."
+    campo.Text = str(grupo)
+    try:
+        campo.CaretPosition = len(str(grupo))
+    except Exception:  # noqa: BLE001
+        pass
+    ses.findById("wnd[0]").sendVKey(0)
+    _esperar(ses)
+    _aceptar_popups(ses)
+    return _error_sap(ses)
+
+
+def _entregas_del_grupo(ses) -> list[str]:
+    """Entregas de la tabla de VG02, en orden (la tabla termina en la primera fila vacía)."""
+    out: list[str] = []
+    for fila in range(60):
+        celda = _por_id(ses, f"{VG02_TABLA}{fila}]")
+        if celda is None:
+            break
+        try:
+            entrega = str(celda.Text).strip()
+        except Exception:  # noqa: BLE001
+            entrega = ""
+        if not entrega:
+            break
+        out.append(entrega)
+    return out
+
+
 @desde_el_inicio
 def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: str = "",
                      ensayo: bool = False, ses=None) -> Resultado:
@@ -548,23 +591,7 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
         return _cerrar(res)
 
     ses = ses or conectar()
-    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVG02"
-    ses.findById("wnd[0]").sendVKey(0)
-    _esperar(ses)
-    _aceptar_popups(ses)
-    campo = _por_id(ses, "wnd[0]/usr/ctxtVBSK-SAMMG")
-    if campo is None:
-        res.mensaje = "No se abrió VG02."
-        return _cerrar(res)
-    campo.Text = str(grupo)
-    try:
-        campo.CaretPosition = len(str(grupo))
-    except Exception:  # noqa: BLE001
-        pass
-    ses.findById("wnd[0]").sendVKey(0)
-    _esperar(ses)
-    _aceptar_popups(ses)
-    err = _error_sap(ses)
+    err = _entrar_a_vg02(ses, grupo)
     if err:
         res.mensaje = err
         return _cerrar(res)
@@ -572,17 +599,22 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
 
     tocadas = 0
     if fecha or hora:
-        fila = 0
-        while True:
+        entregas = _entregas_del_grupo(ses)
+        if not entregas:
+            res.mensaje = f"El grupo {grupo} no tiene entregas en la tabla."
+            return _cerrar(res)
+        for fila, entrega in enumerate(entregas):
+            # cada entrega parte de cero: se sale de la transacción y se vuelve a entrar al grupo (la primera ya está dentro)
+            if fila:
+                ir_a_inicio(ses)
+                err = _entrar_a_vg02(ses, grupo)
+                if err:
+                    res.mensaje = f"{err} (entregas actualizadas antes de fallar: {tocadas})"
+                    return _cerrar(res)
             celda = _por_id(ses, f"{VG02_TABLA}{fila}]")
             if celda is None:
-                break
-            try:
-                entrega = str(celda.Text).strip()
-            except Exception:  # noqa: BLE001
-                entrega = ""
-            if not entrega:
-                break
+                res.mensaje = f"No se encontró la entrega {entrega} en la tabla del grupo (entregas actualizadas antes de fallar: {tocadas})."
+                return _cerrar(res)
             try:
                 celda.SetFocus()
                 celda.CaretPosition = len(entrega)
@@ -614,15 +646,15 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
                 _presionar(ses, "wnd[0]/tbar[0]/btn[11]", 20)  # guardar la entrega
                 _aceptar_popups(ses)
             tocadas += 1
-            fila += 1
-            if fila > 60:
-                break
-        if tocadas == 0:
-            res.mensaje = f"El grupo {grupo} no tiene entregas en la tabla."
-            return _cerrar(res)
         res.paso(f"Entregas con cita {'simulada' if ensayo else 'actualizada'}: {tocadas}")
 
     if referencia:
+        if tocadas:                                       # la referencia también entra desde cero al grupo
+            ir_a_inicio(ses)
+            err = _entrar_a_vg02(ses, grupo)
+            if err:
+                res.mensaje = err
+                return _cerrar(res)
         _presionar(ses, "wnd[0]/tbar[1]/btn[8]", 10)
         o = _por_id(ses, "wnd[0]/usr/txtVBSK-VTEXT")
         if o is None:
@@ -655,10 +687,16 @@ def actualizar_fecha(entrega: str, fecha: str, hora: str = "", ensayo: bool = Fa
         res.mensaje = "Falta el número de entrega."
         return _cerrar(res)
     ses = ses or conectar()
-    ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVL02N"
-    ses.findById("wnd[0]").sendVKey(0)
-    _esperar(ses, 8)
-    campo = _por_id(ses, "wnd[0]/usr/ctxtLIKP-VBELN")
+    campo = None
+    for intento in range(2):                          # si no abre, se sale del todo y se entra una vez más
+        if intento:
+            ir_a_inicio(ses)
+        ses.findById("wnd[0]/tbar[0]/okcd").Text = "/nVL02N"
+        ses.findById("wnd[0]").sendVKey(0)
+        _esperar(ses, 8)
+        campo = _por_id(ses, "wnd[0]/usr/ctxtLIKP-VBELN")
+        if campo is not None:
+            break
     if campo is None:
         res.mensaje = "VL02N no mostró el campo de entrega."
         return _cerrar(res)
