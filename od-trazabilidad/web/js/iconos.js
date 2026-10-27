@@ -29,6 +29,7 @@ const ICON = {
   servidor:   _svg('<path d="M4 5h16v6H4zM4 13h16v6H4z"/><path d="M8 8h.01M8 16h.01"/>'),
   bug:        _svg('<path d="M9 8a3 3 0 0 1 6 0v1H9z"/><path d="M7 9h10v5a5 5 0 0 1-10 0z"/><path d="M12 9v10M3 12h4M17 12h4M4 6l3 2M20 6l-3 2M4 19l3-2.5M20 19l-3-2.5"/>'),
   admin:      _svg('<path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6l8-3z"/><path d="M9 12l2.2 2.2L15.5 10"/>'),
+  producto:   _svg('<path d="M4 6h4v12H4zM10 6h3v12h-3zM15 6h5v12h-5z"/>'),
   mix:        _svg('<path d="M4 7h6v6H4zM14 11h6v6h-6z"/><path d="M10 10h4M12 8v4"/>'),
   nota:       _svg('<path d="M5 4h14v12l-5 5H5z"/><path d="M14 21v-5h5M8 9h8M8 13h4"/>'),
   /* navegación */

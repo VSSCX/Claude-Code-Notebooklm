@@ -811,3 +811,47 @@ def test_un_producto_mas_alto_que_el_pallet_se_coloca_y_se_dibuja():
     r = cubicaje_sda_stock([Posicion("f", "F", 6, "1", 5), Posicion("b", "B", 10, "1", 6)], cache, 120, 100, 150, False, ["1"])
     assert sum(f.unidades for f in r.filas04) == 16 and sum(p.n for p in r.placed) == 16
     assert sum(f.unidades for f in r.filas03) == 16
+
+
+# ---------------------------------------------------------------- MDA «por producto» y orden de carga en el visor
+def _carga_mixta():
+    return [item("A", 110, 90, 100, 7, ped="P"), item("B", 50, 50, 70, 60, ped="P"),
+            item("C", 30, 30, 40, 60, ped="P"), item("D", 40, 60, 30, 50, ped="P")]
+
+
+def _tramos(placed):
+    t = {}
+    for p in placed:
+        a = t.setdefault(p.cod, [p.x, p.x + p.oL])
+        a[0], a[1] = min(a[0], p.x), max(a[1], p.x + p.oL)
+    return t
+
+
+def test_mda_por_producto_carga_un_producto_tras_otro():
+    from app.cubicaje.mda import restricciones_mda
+    corriente, sec = [], []
+    cascada(_carga_mixta(), [CAM50], restricciones_mda(), corriente)
+    cascada(_carga_mixta(), [CAM50], restricciones_mda(por_producto=True), sec)
+    assert sum(p.n for p in corriente) == sum(p.n for p in sec) == 177          # no se pierde ni se agrega nada
+    t = _tramos(sec)
+    orden = sorted(t, key=lambda k: t[k][0])
+    assert orden == ["A", "B", "C", "D"]                                          # el más grande al fondo, después el siguiente
+    assert all(t[a][1] <= t[b][0] for a, b in zip(orden, orden[1:]))             # sin invadir al producto anterior
+    tc = _tramos(corriente)
+    assert any(tc[a][1] > tc[b][0] for a, b in zip(sorted(tc), sorted(tc)[1:]))  # el modo de siempre sí rellena huecos
+
+
+def test_la_lista_del_visor_sigue_el_orden_de_carga_y_la_a_es_lo_primero():
+    from app.cubicaje.mda import Camion
+    import json
+    from app.cubicaje.core import Placement
+    def pl(cod, x):
+        return Placement(cod=cod, desc=cod, ped="P", container=1, fila=0, x=x, y=0, z=0, oL=50, oW=50, oH=50,
+                         n=1, nivel=0, volM3=0.1, peso=1)
+    # el pedido trajo B primero, pero C es lo que queda al fondo y A lo último
+    placed = [pl("B", 100), pl("A", 400), pl("C", 0), pl("B", 150)]
+    d = json.loads(construir_json(placed, [Camion(1, "Camion 50", 620, 244, 230)]))
+    items = d["camiones"][0]["items"]
+    assert [i["cod"] for i in items] == ["C", "B", "A"]
+    assert [i["letra"] for i in items] == ["A", "B", "C"]
+    assert {c["cod"]: c["letra"] for c in d["camiones"][0]["cajas"]} == {"C": "A", "B": "B", "A": "C"}

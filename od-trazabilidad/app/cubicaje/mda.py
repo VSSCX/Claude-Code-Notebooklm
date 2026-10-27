@@ -80,13 +80,15 @@ class Resultado:
         return sum(f.unidades for f in self.filas03)
 
 
-def restricciones_mda() -> Restric:
-    """Las mismas banderas que fija Cubicaje_MDA."""
+def restricciones_mda(por_producto: bool = False) -> Restric:
+    """Las mismas banderas que fija Cubicaje_MDA. `por_producto` (marcador de prueba) carga producto tras producto:
+    cada uno es un bloque que solo puede invadir el espacio del anterior, así el siguiente no se cuela en todos los huecos."""
     return Restric(usaPeso=True, usaApilable=True, permiteRotar=False, permiteInclinar=False,
                    usaTopes=False, topeUnidades=0, ordenarPorVolumen=True, cargarDesdeFondo=True,
                    respetarOrden=True,        # pedido tras pedido, sin reordenar global
                    completarBloque=False,     # greedy: el voluminoso arranca desde el fondo
-                   motorBestFit=True)         # best-fit por columna (replica EasyCargo)
+                   motorBestFit=True,         # best-fit por columna (replica EasyCargo)
+                   bloquePorProducto=por_producto)
 
 
 def construir_items(posiciones: list[Posicion], pedidos: list[str], cache: dict[str, Dims],
@@ -191,7 +193,8 @@ def escribir_03(placed: list[Placement], n_cont: int, cont_box: list[int], boxes
 
 
 def cubicaje_mda(posiciones: list[Posicion], pedidos: list[str], cache: dict[str, Dims],
-                 boxes: list[Box], pasa_filtro=None, cam_offset: int = 0, kits: dict | None = None) -> Resultado:
+                 boxes: list[Box], pasa_filtro=None, cam_offset: int = 0, kits: dict | None = None,
+                 por_producto: bool = False) -> Resultado:
     """Cubicaje_MDA completo: items -> cascada de camiones -> filas de 03."""
     from .kits import cascada_con_kits, separar_kits
     res = Resultado(modo="MDA")
@@ -208,7 +211,7 @@ def cubicaje_mda(posiciones: list[Posicion], pedidos: list[str], cache: dict[str
         return res
 
     placed: list[Placement] = []
-    n_cont, cont_box, av_kit, sm_kit = cascada_con_kits(items, lineas_kit, cache, boxes, restricciones_mda(), placed)
+    n_cont, cont_box, av_kit, sm_kit = cascada_con_kits(items, lineas_kit, cache, boxes, restricciones_mda(por_producto), placed)
     res.avisos += av_kit
     res.sin_medidas += [x for x in sm_kit if x not in res.sin_medidas]
     res.placed = placed

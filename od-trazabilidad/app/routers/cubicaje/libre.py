@@ -249,6 +249,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           caja_master=caja_efectiva,
                           piso_pallet=str(body.get("piso_pallet") or ""),
                           mezclar_pallets=bool(body.get("mix")),
+                          mda_por_producto=bool(body.get("por_producto")),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
                           pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
@@ -264,17 +265,18 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
         "camiones": [], "filas": [], "filas04": [], "pallets_detalle": [], "placed": [],
         "avisos": [], "sin_medidas": [], "sin_ubicar": {}, "pallet": list(pallet), "unidades": 0}
     placed = base.pop("placed")
-    from ...cubicaje.visor import PALETA
+    from ...cubicaje.visor import PALETA, orden_de_carga
     from ...cubicaje.visor import letra as _letra
     # La letra y el color son los mismos que dibuja el visor: se asignan por orden de carga
     orden, n = {}, 0
     skus_carga = {domain.norm_sku(x.get("sku")) for x in lineas}
-    for pl in placed:
-        # la caja master (C + sku) se muestra con la letra de su producto
-        cod = pl.cod[1:] if pl.cod.startswith("C") and pl.cod[1:] in skus_carga else pl.cod
-        if cod not in orden:
-            orden[cod] = (_letra(n), PALETA[n % len(PALETA)])
-            n += 1
+    for c in sorted({pl.container for pl in placed}):
+        for cod0 in orden_de_carga(placed, c):                  # camión por camión, lo que se carga primero lleva la A
+            # la caja master (C + sku) se muestra con la letra de su producto
+            cod = cod0[1:] if cod0.startswith("C") and cod0[1:] in skus_carga else cod0
+            if cod not in orden:
+                orden[cod] = (_letra(n), PALETA[n % len(PALETA)])
+                n += 1
     detalle = {}
     siguiente = len(orden)          # los productos sin colocar siguen la serie: no repiten letra ni color
     for l in lineas:
@@ -297,7 +299,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "letra": letra, "color": color}
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
-           "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": bool(body.get("mix")),
+           "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": bool(body.get("mix")), "mda_por_producto": bool(body.get("por_producto")),
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,

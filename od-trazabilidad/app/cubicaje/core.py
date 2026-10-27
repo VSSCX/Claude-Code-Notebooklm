@@ -70,6 +70,7 @@ class Restric:                   # Public Type TRestric
     completarBloque: bool = False
     motorBestFit: bool = False
     bloquePorSuc: bool = False
+    bloquePorProducto: bool = False     # MDA «por producto»: cada producto de cada pedido es un bloque, como las sucursales
 
 
 @dataclass
@@ -191,12 +192,14 @@ def meter_en_camion(cL: float, cW: float, ch: float, items: list[Item], i_from: 
         for si in ordn:
             if items[si].qty <= 0:
                 continue
-            if restric.bloquePorSuc and items[si].suc != suc_prev:
+            clave = f"{items[si].ped}|{items[si].cod}" if restric.bloquePorProducto else items[si].suc
+            if (restric.bloquePorSuc or restric.bloquePorProducto) and clave != suc_prev:
                 if suc_prev != "":
                     fin_this = _frontera_x(est.hm)
                     fin_pp, fin_p = fin_p, fin_this
-                x_min_suc = fin_pp
-                suc_prev = items[si].suc
+                # sucursales: el bloque nuevo puede invadir al anterior; productos: arranca donde terminó el anterior
+                x_min_suc = _frontera_x(est.hm) if restric.bloquePorProducto else fin_pp
+                suc_prev = clave
             _colocar_columnas_sku(items[si], cL, cW, ch, restric, est, placed, acum, x_min_suc)
 
 

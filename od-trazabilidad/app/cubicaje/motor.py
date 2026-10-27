@@ -40,6 +40,7 @@ class Entrada:
     pallet_por_producto: bool = False            # regla del cliente (FALABELLA, EASY): SDA Stock sin mezclar productos
     kits: dict = field(default_factory=dict)     # SKU de kit -> KitDef (cajas separadas que viajan juntas)
     kits_mezclar: bool = False                   # kits distintos en un mismo pallet (apagado: por validar)
+    mda_por_producto: bool = False               # marcador «Por producto» (MDA, de prueba): carga producto tras producto, el más grande al fondo
     mezclar_pallets: bool = False                # marcador Mix (SDA): junta lo que queda casi vacío en pallets compartidos; apagado = pallets mono (sucursal o producto)
 
 
@@ -79,7 +80,8 @@ def _ejecutar_modo(modo: str, e: Entrada, pasa_filtro, cam_offset: int) -> Resul
                                    e.predistribuido if modo == "SDA PREDISTRIBUIDO" else None, pasa_filtro, cam_offset,
                                    kits=e.kits)
     if modo == "MDA":
-        return cubicaje_mda(e.posiciones, e.pedidos, e.medidas, e.camiones, pasa_filtro, cam_offset, kits=e.kits)
+        return cubicaje_mda(e.posiciones, e.pedidos, e.medidas, e.camiones, pasa_filtro, cam_offset, kits=e.kits,
+                            por_producto=e.mda_por_producto)
     if modo == "SDA STOCK":
         from ..analisis import pallet_cliente
         pal_L, pal_W, pal_H = e.pallet or pallet_cliente(e.cliente)

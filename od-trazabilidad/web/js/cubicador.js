@@ -82,7 +82,7 @@ const pctCub = x => (100 * (x || 0)).toFixed(1).replace('.', ',') + '%';
 
 function entradaDe(doc){
   return {cliente: doc.cliente || '', modo: doc.modo || 'MDA', vista: doc.vista || 'rampla',
-          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '', mix: !!doc.mezclar_pallets,
+          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '', mix: !!doc.mezclar_pallets, por_producto: !!doc.mda_por_producto,
           predistribuido: doc.predistribuido || [], grupos: doc.grupos || [], pedido: doc.pedido || '',
           lineas: (doc.lineas || []).map(l => ({sku: String(l.sku), qty: +l.qty || 0})),
           pallet_n: doc.pallet_visto || 0, pallet_camion: !!doc.pallet_camion};
@@ -269,6 +269,9 @@ function efectivoCub(inp){
    encendido, lo que queda casi vacío se junta en pallets compartidos para ahorrar espacio. Es solo un marcador, no un selector más. */
 const TXT_MIX = 'Mix: junta en pallets compartidos lo que queda casi vacío (ahorra espacio). Apagado: pallets de una sola sucursal o un solo producto; los completos van al fondo del camión y los más vacíos hacia la puerta.';
 const marcaMix = (activo, attrs) => `<button type="button" class="mix-marca" ${attrs} aria-pressed="${!!activo}" title="${esc(TXT_MIX)}">${ICON.mix}<span>Mix</span></button>`;
+/* Marcador «Por producto» (MDA, de prueba): carga un producto tras otro, el más grande al fondo, en vez de rellenar todos los huecos con lo que venga. */
+const TXT_PROD = 'Por producto: carga un producto tras otro, el más grande al fondo y después el siguiente, sin repartirlos por todos los huecos. Apagado: el cubicaje de siempre, que aprovecha cada hueco.';
+const marcaProducto = (activo, attrs) => `<button type="button" class="mix-marca" ${attrs} aria-pressed="${!!activo}" title="${esc(TXT_PROD)}">${ICON.producto}<span>Por producto</span></button>`;
 function cambiarOpcionCub(campo, valor){
   const c = UI.cubIn;
   if (campo === 'caja_master') c.caja_master = valor;
@@ -279,6 +282,7 @@ function cambiarOpcionCub(campo, valor){
   else if (campo === 'carga') c.piso_pallet = valor;
   else if (campo === 'destino') c.destino = valor;
   else if (campo === 'mix') c.mix = !!valor;
+  else if (campo === 'por_producto') c.por_producto = !!valor;
   else if (campo === 'pallet_modo') c.pallet_camion = valor === 'camion';
   if (campo === 'pallet_modo'){ UI.cubCam = 0; pedirCalculo(); return; }
   if (campo === 'modo' || campo === 'carga' || campo === 'destino'){
@@ -524,6 +528,7 @@ function vistaCubicador(){
       <div class="opt"><span>Modo de cubicaje</span>${seg('modo', inp.modo, MODOS_CUB)}</div>
       <div class="opt"><span>Carga</span>${seg('carga', inp.piso_pallet || '', [['', 'Según modo', 'Lo que diga el modo: MDA a piso, SDA en pallets'], ['PISO', 'A piso', 'Fuerza la carga a piso, aunque el modo sea SDA'], ['PALLET', 'En pallets', 'Fuerza la carga en pallets, aunque el modo sea MDA']])}</div>
       ${ef.pallets ? `<div class="opt"><span>Pallets</span>${marcaMix(inp.mix, 'data-cub="mix"')}</div>` : ''}
+      ${!ef.pallets && !ef.pred ? `<div class="opt"><span>Carga a piso</span>${marcaProducto(inp.por_producto, 'data-cub="por_producto"')}</div>` : ''}
       <div class="opt"><span>Destino</span>${seg('destino', inp.destino || '', [['', 'Según modo', 'Lo que diga el modo'], ['STOCK', 'Stock', 'Toda la carga junta'], ['SUCURSAL', 'Por sucursal', 'Se separa por sucursal según el reparto del cliente']])}</div>
       ${ef.pideCaja ? `<div class="opt"><span>Caja master</span>${seg('caja_master', inp.caja_master || '', [['CON CAJA MASTER', 'Con'], ['SIN CAJA MASTER', 'Sin']])}</div>` : ''}
       <div class="opt"><span>Ver</span>${seg('vista', inp.vista || 'rampla', VISTAS)}</div>
@@ -645,6 +650,7 @@ document.addEventListener('click', ev => {
     Visor.filtro(UI.cubFiltro); render();
   }
   else if (d.cub === 'mix'){ cambiarOpcionCub('mix', !UI.cubIn.mix); }
+  else if (d.cub === 'por_producto'){ cambiarOpcionCub('por_producto', !UI.cubIn.por_producto); }
   else if (d.cub === 'vaciar'){ vaciarCub(); }
   else if (d.cub === 'quitar-reparto'){ quitarRepartoCub(); }
   else if (d.cub === 'reparto-abrir'){ UI.cubRepAbierto = !UI.cubRepAbierto; render(); }

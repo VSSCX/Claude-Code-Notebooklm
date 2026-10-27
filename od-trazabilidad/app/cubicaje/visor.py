@@ -27,13 +27,26 @@ def _js(s: str) -> str:
     return t.replace("\r", " ").replace("\n", " ").replace("\t", " ")
 
 
-def _letras_colores(placed: list[Placement]):
-    letras, colores, n = {}, {}, 0
+def orden_de_carga(placed: list[Placement], c: int) -> list[str]:
+    """SKUs de un camión en el orden en que se cargan: primero el que queda más al fondo (x menor), después el siguiente."""
+    primero: dict[str, tuple] = {}
     for p in placed:
-        if p.cod not in letras:
-            letras[p.cod] = letra(n)
-            colores[p.cod] = PALETA[n % len(PALETA)]
-            n += 1
+        if p.container == c:
+            llave = (p.x, p.z, p.y)
+            if p.cod not in primero or llave < primero[p.cod]:
+                primero[p.cod] = llave
+    return sorted(primero, key=lambda cod: primero[cod])      # estable: a igual posición manda el orden de colocación
+
+
+def _letras_colores(placed: list[Placement]):
+    """Una letra y un color por SKU, en orden de carga (camión por camión): la A es lo primero que se carga."""
+    letras, colores, n = {}, {}, 0
+    for c in sorted({p.container for p in placed}):
+        for cod in orden_de_carga(placed, c):
+            if cod not in letras:
+                letras[cod] = letra(n)
+                colores[cod] = PALETA[n % len(PALETA)]
+                n += 1
     return letras, colores
 
 
@@ -63,7 +76,8 @@ def construir_json(placed: list[Placement], camiones, es_sda: bool = False,
 def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=14.5, por_caja=None) -> str:
     vol_cap = cam.L * cam.w * cam.h / 1_000_000.0
     vol_tot = peso_tot = 0.0
-    items, orden, cajas = {}, [], []
+    items, cajas = {}, []
+    orden = orden_de_carga(placed, c)               # la lista del visor y del PDF sigue el orden de carga del camión
     for p in placed:
         if p.container != c:
             continue
@@ -71,7 +85,6 @@ def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=1
         peso_tot += p.peso
         if p.cod not in items:
             items[p.cod] = [0, 0.0]
-            orden.append(p.cod)
         items[p.cod][0] += p.n
         items[p.cod][1] += p.peso
         for u in range(p.n):

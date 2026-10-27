@@ -1490,6 +1490,14 @@ def test_el_marcador_mix_viaja_al_cubicaje_y_se_conserva_al_recubicar(c, tmp_pat
     assert r.status_code == 200 and r.json()["mezclar_pallets"] is True
 
 
+def test_el_marcador_por_producto_viaja_al_cubicaje_mda(c, tmp_path, monkeypatch):
+    _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4471")
+    assert c.post("/api/cubicaje/4471", json={"modo": "MDA"}).json()["mda_por_producto"] is False
+    assert c.post("/api/cubicaje/4471", json={"modo": "MDA", "por_producto": True}).json()["mda_por_producto"] is True
+    r = c.post("/api/cubicaje-libre", json={"lineas": [{"sku": "1", "qty": 3}], "modo": "MDA", "por_producto": True})
+    assert r.status_code == 200 and r.json()["mda_por_producto"] is True
+
+
 def _excel_kits(tmp_path, filas, nombre="kits.xlsx"):
     from openpyxl import Workbook
     wb = Workbook()
