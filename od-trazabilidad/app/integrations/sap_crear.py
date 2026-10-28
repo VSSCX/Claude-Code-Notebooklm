@@ -529,6 +529,27 @@ def crear_grupo(entregas: list, referencia: str = "", ensayo: bool = False, ses=
     return _cerrar(res)
 
 
+def _abrir_picking(ses, campo: str, intentos: int = 4) -> bool:
+    """Deja abierta la pestaña de PICKING de la entrega y espera a que aparezca `campo` (fecha u hora de picking).
+
+    SAP recuerda la última pestaña que se usó y a veces abre la de pedido: ahí los campos de picking no existen y antes el
+    script seguía de largo sin escribir nada. Se elige la pestaña de picking cada vez y se espera su campo; si no aparece
+    se reintenta (cerrando un aviso que tape la pantalla) y, si sigue sin aparecer, se devuelve False."""
+    for i in range(intentos):
+        pest = _por_id(ses, PESTANA_PICKING)
+        if pest is not None:
+            try:
+                pest.Select()
+            except Exception as e:  # noqa: BLE001
+                anotar("No se pudo abrir la pestaña de picking", e)
+            _esperar(ses, 5)
+        if _esperar_objeto(ses, campo, 1.0 + 0.5 * i):
+            return True
+        _cerrar_popup(ses)
+        time.sleep(0.3 * (i + 1))
+    return False
+
+
 def _entrar_a_vg02(ses, grupo: str) -> str:
     """Entra a VG02 desde cero (/n) y abre el grupo. Devuelve el error, o "" si quedó adentro."""
     campo = None
@@ -624,17 +645,32 @@ def actualizar_grupo(grupo: str, fecha: str = "", hora: str = "", referencia: st
             _esperar(ses)
             _aceptar_popups(ses)
             _presionar(ses, "wnd[0]/tbar[1]/btn[25]", 10)
+            if not _abrir_picking(ses, VG02_FECHA if fecha else VG02_HORA):
+                res.mensaje = (f"No se pudo abrir la pestaña de picking de la entrega {entrega} "
+                               f"(entregas actualizadas antes de fallar: {tocadas}).")
+                return _cerrar(res)                      # nada se escribió ni se grabó: el inicio de SAP descarta la pantalla
             for ident, valor in ((VG02_FECHA, fecha), (VG02_HORA, hora)):
                 if not valor:
                     continue
                 o = _por_id(ses, ident)
-                if o is not None:
-                    try:
-                        o.Text = valor
-                        o.SetFocus()
-                        o.CaretPosition = 2
-                    except Exception:  # noqa: BLE001
-                        pass
+                if o is None:
+                    res.mensaje = (f"No se encontró el campo de {'fecha' if ident == VG02_FECHA else 'hora'} de picking en la "
+                                   f"entrega {entrega} (entregas actualizadas antes de fallar: {tocadas}).")
+                    return _cerrar(res)
+                try:
+                    o.Text = valor
+                    o.SetFocus()
+                    o.CaretPosition = 2
+                except Exception as e:  # noqa: BLE001
+                    anotar(f"No se pudo escribir {valor} en la entrega {entrega}", e)
+                try:
+                    escrito = str(o.Text).strip()
+                except Exception:  # noqa: BLE001
+                    escrito = valor
+                if escrito != valor:                      # no se graba una entrega con una cita que SAP no aceptó
+                    res.mensaje = (f"SAP no dejó escribir {'la fecha' if ident == VG02_FECHA else 'la hora'} de picking {valor} en la "
+                                   f"entrega {entrega} (quedó '{escrito}'; entregas actualizadas antes de fallar: {tocadas}).")
+                    return _cerrar(res)
             for _ in range(4):
                 ses.findById("wnd[0]").sendVKey(0)
                 _esperar(ses, 3)
@@ -707,13 +743,9 @@ def actualizar_fecha(entrega: str, fecha: str, hora: str = "", ensayo: bool = Fa
     if err:
         res.mensaje = err
         return _cerrar(res)
-    pest = _por_id(ses, PESTANA_PICKING)
-    if pest is not None:
-        try:
-            pest.Select()
-        except Exception:  # noqa: BLE001
-            pass
-    _esperar(ses, 5)
+    if not _abrir_picking(ses, ID_FECHA if fecha else ID_HORA):
+        res.mensaje = f"No se pudo abrir la pestaña de picking de la entrega {entrega}."
+        return _cerrar(res)
     escritos = []
     for ident, valor, nombre in ((ID_FECHA, fecha, "fecha"), (ID_HORA, hora, "hora")):
         if not valor:

@@ -792,3 +792,70 @@ def test_la_cita_del_grupo_sale_y_entra_desde_cero_por_cada_entrega_y_para_la_re
     assert r.ok
     # tres entregas y la referencia: cuatro entradas a VG02, cada una precedida por un /n, y termina en el inicio
     assert ses.ordenes == ["/nVG02", "/n", "/nVG02", "/n", "/nVG02", "/n", "/nVG02", "/n"]
+
+
+class _SesionConPestanas(SesionCrear):
+    """VG02 con la entrega abierta en la pestaña de PEDIDO: los campos de picking solo existen cuando se elige la de picking."""
+    def __init__(self, entregas, selecciones_que_funcionan=1):
+        super().__init__([], mensaje="ok")
+        from app.integrations import sap_crear
+        self.sc, self.entregas = sap_crear, entregas
+        self.picking_abierto, self.intentos = False, 0
+        self.tolera = selecciones_que_funcionan
+        self.campos, self.guardados = {}, 0
+
+    def findById(self, ident):
+        sc = self.sc
+        if ident.startswith(sc.VG02_TABLA):
+            fila = int(ident.rstrip("]").rsplit("[", 1)[1].split(",")[1])
+            if fila >= len(self.entregas):
+                raise KeyError(ident)
+            return Campo(self.entregas[fila])
+        if ident == sap.PESTANA_PICKING:
+            ses = self
+
+            class Pestana:
+                def Select(self_):
+                    ses.intentos += 1
+                    if ses.intentos >= ses.tolera:
+                        ses.picking_abierto = True
+            return Pestana()
+        if ident in (sc.VG02_FECHA, sc.VG02_HORA):
+            if not self.picking_abierto:
+                raise KeyError(ident)
+            return self.campos.setdefault(ident, Campo())
+        if ident == "wnd[0]/tbar[0]/btn[11]":
+            self.guardados += 1
+            return Campo()
+        if ident in ("wnd[1]", "wnd[2]"):
+            raise KeyError(ident)
+        return super().findById(ident)
+
+
+def test_la_cita_del_grupo_elige_siempre_la_pestana_de_picking():
+    """Si SAP abre la pestaña de pedido, el script la cambia a la de picking en vez de seguir sin escribir nada."""
+    from app.integrations import sap_crear
+    ses = _SesionConPestanas(["8705700001"])
+    r = sap_crear.actualizar_grupo("1392270", "30.10.2026", "12:00:00", ses=ses)
+    assert r.ok and ses.guardados == 1
+    assert ses.campos[sap_crear.VG02_FECHA].Text == "30.10.2026" and ses.campos[sap_crear.VG02_HORA].Text == "12:00:00"
+
+
+def test_la_cita_del_grupo_reintenta_si_la_pestana_tarda_y_falla_si_nunca_abre():
+    from app.integrations import sap_crear
+    ses = _SesionConPestanas(["8705700001"], selecciones_que_funcionan=3)      # abre al tercer intento
+    r = sap_crear.actualizar_grupo("1392270", "30.10.2026", ses=ses)
+    assert r.ok and ses.intentos == 3 and ses.guardados == 1
+    ses = _SesionConPestanas(["8705700001"], selecciones_que_funcionan=99)     # nunca abre
+    r = sap_crear.actualizar_grupo("1392270", "30.10.2026", ses=ses)
+    assert not r.ok and "pestaña de picking" in r.mensaje and ses.guardados == 0     # y no graba a ciegas
+
+
+def test_la_fecha_de_una_entrega_tambien_elige_la_pestana_de_picking():
+    from app.integrations import sap_crear
+    ses = _SesionConPestanas([])
+    ses_f = ses.findById
+    ses.findById = lambda ident: Campo() if ident == "wnd[0]/usr/ctxtLIKP-VBELN" else (
+        Campo() if ident in (sap_crear.ID_FECHA, sap_crear.ID_HORA) and ses.picking_abierto else ses_f(ident))
+    r = sap_crear.actualizar_fecha("8705709527", "30.10.2026", "12:00:00", ensayo=True, ses=ses)
+    assert r.ok and ses.picking_abierto
