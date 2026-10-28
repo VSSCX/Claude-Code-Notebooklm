@@ -320,7 +320,7 @@ def test_borrar_entrega_confirma_y_reporta():
     assert ok and "borrada" in msg.lower()
     assert "CONFIRMA" in ses.usados                     # confirmó el popup de SAP
     assert "wnd[0]/usr/ctxtIT_VBELN-LOW" in ses.usados  # filtró por la entrega
-    assert ses.usados.count("wnd[0]/tbar[0]/btn[3]") == 3   # vuelve al menú
+    assert ses.usados.count("wnd[0]/tbar[0]/btn[3]") == 0   # ya no retrocede a ciegas (podía llegar al aviso de cerrar sesión): vuelve al inicio con /n
 
 
 def test_borrar_entrega_sin_resultado_no_borra():
@@ -711,9 +711,9 @@ def test_al_volver_al_inicio_no_se_acepta_ninguna_pregunta_de_borrar_o_grabar():
             pulsados.append(self.nombre)
 
     class Ses(SesionFake):
-        def __init__(self, texto):
+        def __init__(self, texto, titulo=""):
             super().__init__([], mensaje="")
-            self.texto, self.abierto, self.ordenes = texto, True, []
+            self.texto, self.titulo, self.abierto, self.ordenes = texto, titulo, True, []
 
         def findById(self, ident):
             if ident == "wnd[0]/tbar[0]/okcd":
@@ -721,7 +721,7 @@ def test_al_volver_al_inicio_no_se_acepta_ninguna_pregunta_de_borrar_o_grabar():
             if ident == "wnd[1]":
                 if not self.abierto:
                     raise KeyError(ident)
-                return Campo()
+                return Campo(self.titulo)
             if ident == "wnd[1]/usr/txtSPOP-TEXTLINE1":
                 return Campo(self.texto)
             if ident in ("wnd[1]/usr/btnSPOP-OPTION1", "wnd[1]/usr/btnSPOP-OPTION2"):
@@ -733,10 +733,13 @@ def test_al_volver_al_inicio_no_se_acepta_ninguna_pregunta_de_borrar_o_grabar():
                 return b
             return super().findById(ident)
 
-    for texto, esperado in (("¿Desea borrar la entrega?", "OPTION2"), ("¿Desea grabar los datos antes de salir?", "OPTION2"),
-                            ("Se perderán los datos. ¿Salir?", "OPTION1")):
+    for texto, titulo, esperado in (("¿Desea borrar la entrega?", "", "OPTION2"), ("¿Desea grabar los datos antes de salir?", "", "OPTION2"),
+                                    ("Se perderán los datos. ¿Salir?", "Salir de la transacción", "OPTION1"),
+                                    # el aviso de cerrar la sesión de SAP jamás se confirma
+                                    ("Si cierra la sesión se perderán los datos. ¿Salir?", "Cerrar sesión", "OPTION2"),
+                                    ("Se perderán los datos. ¿Salir?", "Log off", "OPTION2")):
         pulsados.clear()
-        sap.ir_a_inicio(Ses(texto))
+        sap.ir_a_inicio(Ses(texto, titulo))
         assert pulsados and pulsados[0] == esperado, (texto, pulsados)
 
 
@@ -859,3 +862,40 @@ def test_la_fecha_de_una_entrega_tambien_elige_la_pestana_de_picking():
         Campo() if ident in (sap_crear.ID_FECHA, sap_crear.ID_HORA) and ses.picking_abierto else ses_f(ident))
     r = sap_crear.actualizar_fecha("8705709527", "30.10.2026", "12:00:00", ensayo=True, ses=ses)
     assert r.ok and ses.picking_abierto
+
+
+def test_los_scripts_nunca_aceptan_el_aviso_de_cerrar_sesion_de_sap():
+    """Terminar un script es terminar la transacción, no cerrar SAP: si aparece el aviso de Log off, se contesta No."""
+    from app.integrations import sap_crear
+    pulsados = []
+
+    class Boton:
+        def __init__(self, nombre):
+            self.nombre = nombre
+
+        def press(self):
+            pulsados.append(self.nombre)
+
+    class Ses(SesionFake):
+        def __init__(self):
+            super().__init__([], mensaje="")
+            self.abierto = True
+
+        def findById(self, ident):
+            if ident == "wnd[1]":
+                if not self.abierto:
+                    raise KeyError(ident)
+                return Campo("Cerrar sesión")
+            if ident == "wnd[1]/usr/txtSPOP-TEXTLINE1":
+                return Campo("Si cierra la sesión se perderán los datos.")
+            if ident in ("wnd[1]/usr/btnSPOP-OPTION1", "wnd[1]/usr/btnSPOP-OPTION2", "wnd[1]/tbar[0]/btn[0]"):
+                if not self.abierto:
+                    raise KeyError(ident)
+                b = Boton(ident.rsplit("/", 1)[1])
+                orig = b.press
+                b.press = lambda: (orig(), setattr(self, "abierto", False))
+                return b
+            return super().findById(ident)
+
+    sap_crear._aceptar_popups(Ses())
+    assert pulsados == ["btnSPOP-OPTION2"]               # contestó No, no Sí

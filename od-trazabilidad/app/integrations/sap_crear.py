@@ -12,7 +12,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from .sap import (BARRA_ESTADO, desde_el_inicio, ir_a_inicio, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
+from .sap import (BARRA_ESTADO, _avisa_cierre_de_sap, _salir_de_aviso, _texto_de_aviso, desde_el_inicio, ir_a_inicio, limpiar_incidencias, FILAS_VISIBLES, PESTANA_PICKING, TABLA, _cerrar_popup, _esperar,
                   _esperar_objeto, _leer_celda, _mensaje_sap, _por_id, _presionar, anotar, conectar)
 
 FOCO = TABLA + "/ctxtLIPS-MATNR[1,3]"
@@ -53,6 +53,9 @@ def norm_material(mat: str) -> str:
 def _aceptar_popups(ses, veces: int = 5):
     for _ in range(veces):
         if _por_id(ses, "wnd[1]") is None:
+            return
+        if _avisa_cierre_de_sap(_texto_de_aviso(ses)):         # el aviso de cerrar sesión no se acepta jamás: se contesta No
+            _salir_de_aviso(ses)
             return
         for ident in (POPUP_SI, "wnd[1]/tbar[0]/btn[0]", "wnd[1]/usr/btnBUTTON_1"):
             if _por_id(ses, ident) is not None:

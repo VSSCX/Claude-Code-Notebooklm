@@ -212,8 +212,8 @@ def ir_a_inicio(ses=None) -> None:
         log.debug("No se pudo volver al inicio de SAP: %s", e)
 
 
-def _salir_de_aviso(ses) -> None:
-    """Responde un aviso al salir sin grabar: «¿Grabar?» se contesta No; «Se perderán los datos, ¿salir?» se contesta Sí."""
+def _texto_de_aviso(ses) -> str:
+    """Título y texto del aviso abierto (wnd[1]), en minúsculas."""
     texto = ""
     for ident in ("wnd[1]/usr/txtSPOP-TEXTLINE1", "wnd[1]/usr/txtMESSTXT1", "wnd[1]/usr/txtSPOP-TEXTLINE2"):
         o = _por_id(ses, ident)
@@ -222,11 +222,32 @@ def _salir_de_aviso(ses) -> None:
                 texto += " " + str(o.Text).lower()
             except Exception:  # noqa: BLE001
                 pass
-    # «Sí» solo cuando el aviso dice claramente que se sale y se pierden datos; ante cualquier otra pregunta (grabar, borrar,
-    # confirmar…) se contesta No o se cierra la ventana: al terminar un script nunca se acepta nada por apuro.
-    pierde = any(k in texto for k in ("perder", "pierd", "lost")) and not any(k in texto for k in ("grab", "guard", "sav", "borr", "elimin", "delet"))
+    try:
+        texto += " " + str(ses.findById("wnd[1]").Text).lower()          # el título también: «Cerrar sesión», «Log off»
+    except Exception:  # noqa: BLE001
+        pass
+    return texto
+
+
+def _avisa_cierre_de_sap(texto: str) -> bool:
+    """¿El aviso pregunta si se cierra la sesión o se sale de SAP? Eso nunca se confirma."""
+    return any(k in texto for k in ("sesi", "log off", "logoff", "log out", "cerrar", "salir del sistema", "exit system", "sistema"))
+
+
+def _salir_de_aviso(ses) -> None:
+    """Responde un aviso al salir sin grabar: «¿Grabar?» se contesta No; «Se perderán los datos, ¿salir de la transacción?» se contesta Sí.
+
+    Nunca se confirma nada que hable de cerrar la sesión o salir del sistema (el aviso de Log off): ahí siempre se contesta No
+    o se cancela. Terminar un script es terminar la transacción, no cerrar SAP."""
+    texto = _texto_de_aviso(ses)
+    cierra_sap = _avisa_cierre_de_sap(texto)
+    # «Sí» solo cuando el aviso dice claramente que se sale de la TRANSACCIÓN y se pierden datos; ante cualquier otra pregunta (grabar,
+    # borrar, confirmar, cerrar sesión…) se contesta No o se cierra la ventana: al terminar un script nunca se acepta nada por apuro.
+    pierde = (any(k in texto for k in ("perder", "pierd", "lost")) and any(k in texto for k in ("transacci", "transaction"))
+              and not cierra_sap
+              and not any(k in texto for k in ("grab", "guard", "sav", "borr", "elimin", "delet")))
     orden = ("wnd[1]/usr/btnSPOP-OPTION1", "wnd[1]/tbar[0]/btn[0]") if pierde else \
-            ("wnd[1]/usr/btnSPOP-OPTION2", "wnd[1]/tbar[0]/btn[0]")
+            ("wnd[1]/usr/btnSPOP-OPTION2", "wnd[1]/tbar[0]/btn[12]", "wnd[1]/tbar[0]/btn[0]")
     for ident in orden:
         boton = _por_id(ses, ident)
         if boton is not None:
@@ -1131,8 +1152,6 @@ def borrar_entrega(entrega: str, ses=None) -> tuple[bool, str]:
                        (f" Dice: {msg}" if msg else ""))
     _presionar(ses, POPUP_SI, 30)
     mensaje = _mensaje_sap(ses)
-    for _ in range(3):
-        _presionar(ses, "wnd[0]/tbar[0]/btn[3]", 5)       # volver al menú
     ok = "borrad" in mensaje.lower() or "elimin" in mensaje.lower() or mensaje == ""
     return ok, mensaje or f"Entrega {entrega} borrada."
 
@@ -1163,6 +1182,5 @@ def borrar_grupo(grupo: str, ses=None) -> tuple[bool, str]:
                        (f" Dice: {_mensaje_sap(ses)}" if _mensaje_sap(ses) else ""))
     _presionar(ses, POPUP_SI, 30)
     mensaje = _mensaje_sap(ses)
-    _presionar(ses, "wnd[0]/tbar[0]/btn[15]", 5)          # salir
     ok = "borrad" in mensaje.lower() or "elimin" in mensaje.lower() or mensaje == ""
     return ok, mensaje or f"Grupo {grupo} borrado."
