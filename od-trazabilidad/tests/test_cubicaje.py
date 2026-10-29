@@ -875,3 +875,55 @@ def test_no_se_coloca_encima_algo_con_mas_base_que_lo_de_abajo(celda):
     assert _sobre_lavadora(78.9, celda) == {"LAVADORA": 0}
     # con una base que cabe dentro de la de abajo sí se apoya
     assert _sobre_lavadora(70.0, celda) == {"LAVADORA": 0, "ENCIMERA": 100}
+
+
+# ---------------------------------------------------------------- soporte: nada queda con la mitad en el aire
+CARGA_REAL_PDF = [   # (sku, unidades, largo, ancho, alto, peso total): el pedido de las encimeras y lavadoras
+    ("240095689", 10, 66.6, 91.1, 178, 950), ("240094164", 10, 60, 57, 170, 560), ("240095687", 5, 66.6, 91.1, 178, 475),
+    ("240095669", 5, 46, 52, 88, 130), ("946522180", 5, 84, 12.3, 49.5, 31.5), ("240087840", 5, 63.5, 65, 194, 280),
+    ("900277019", 5, 68.5, 63.5, 165, 275), ("900277015", 5, 60.3, 52, 152.8, 215), ("240094831", 5, 49, 78.9, 15.9, 70),
+    ("240095924", 5, 70, 77.5, 106.3, 240), ("240087172", 10, 59.2, 57.5, 147.4, 400), ("240086649", 5, 64, 64, 86.5, 223),
+    ("240094834", 5, 49, 65.8, 15.9, 55), ("240092078", 10, 34.7, 34.7, 66.2, 96), ("900276746", 5, 55.9, 64.8, 16.2, 42.5),
+    ("240095016", 5, 38.5, 98.5, 39.8, 55.5), ("240086034", 10, 61, 57.5, 100.5, 360), ("240091827", 5, 35, 68.5, 56, 89),
+    ("900276747", 5, 55.9, 64.8, 16.2, 50), ("900276667", 5, 64.5, 59, 88.5, 215), ("240094986", 5, 67.2, 64.5, 66.7, 125),
+    ("240094987", 5, 62.6, 64.5, 66.7, 119.5)]
+
+
+def _apoyo_de_cada_colocacion(placed):
+    """Fracción de la base de cada caja que descansa sobre algo (las que van sobre el piso no cuentan)."""
+    out = []
+    for p in placed:
+        if p.z <= 0.5:
+            continue
+        area = 0.0
+        for q in placed:
+            if q is p:
+                continue
+            for k in range(q.n):
+                if abs(q.z + (k + 1) * q.oH - p.z) <= 0.6:
+                    ox = min(p.x + p.oL, q.x + q.oL) - max(p.x, q.x)
+                    oy = min(p.y + p.oW, q.y + q.oW) - max(p.y, q.y)
+                    if ox > 0 and oy > 0:
+                        area += ox * oy
+        out.append((p.cod, area / (p.oL * p.oW)))
+    return out
+
+
+@pytest.mark.parametrize("celda", [1.0, 2.0])
+@pytest.mark.parametrize("ordenar", [True, False])
+def test_ninguna_caja_queda_con_parte_de_su_base_en_el_aire(celda, ordenar):
+    from app.cubicaje import core
+    core.usar_celda(celda)
+    try:
+        its = [item(s, L, w, h, q, peso=pt / q, ped="LIBRE") for s, q, L, w, h, pt in CARGA_REAL_PDF]
+        if ordenar:
+            its.sort(key=lambda i: -(i.L * i.w * i.h))
+        placed = []
+        cascada(its, [Box("Rampla 53", 1540, 245, 235)], MDA, placed)
+    finally:
+        core.usar_celda(2.0)
+    assert sum(p.n for p in placed) == 135
+    apoyos = _apoyo_de_cada_colocacion(placed)
+    # antes bajaba hasta 0,70; lo que queda de diferencia es el redondeo de la grilla (1 cm en la plataforma, 2 cm en el Excel)
+    piso = 0.95 if celda == 1.0 else 0.93
+    assert apoyos and min(a for _, a in apoyos) >= piso, [x for x in apoyos if x[1] < piso]

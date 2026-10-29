@@ -49,7 +49,7 @@ def _bf_referencia(it, ch, restric, est, x_min_cell):
         for z in alturas:
             apoya = est.hm >= z - EPS
             onn = _suma_ventana(apoya, cx, cy)[gx0:]
-            bien = (onn / cnt) >= 0.7
+            bien = (onn / cnt) >= core.SOPORTE_MIN
             if restric.usaApilable:
                 bien &= _suma_ventana(apoya & ~est.sopTop, cx, cy)[gx0:] == 0
             if restric.usaPeso:

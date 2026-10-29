@@ -2,7 +2,7 @@
 
 Heightmap (skyline 3D) columna-primero. Para cada producto busca la mejor
 posición sobre el relieve ya cargado, apila una columna del mismo SKU y registra
-una colocación (TPlacement) por columna. Reglas físicas: apilado, soporte >= 70%
+una colocación (TPlacement) por columna. Reglas físicas: apilado, soporte >= 97 %
 de la base, no-pesado-sobre-liviano, no-apilable-nada-encima.
 
 Se conservan los nombres del VBA en los comentarios para poder auditar línea a línea.
@@ -25,6 +25,7 @@ def usar_celda(cm: float) -> None:
     CELL = 2.0 if cm not in (1.0, 2.0) else float(cm)
 MAX_CAND = 20000   # ReDim candIX(1 To 20000)
 PISO_PESO = 1e30   # el piso aguanta todo
+SOPORTE_MIN = 0.97  # fracción de la base de lo de arriba que tiene que apoyar sobre lo de abajo (antes 0,70: dejaba hasta un tercio en el aire)
 TOL_BASE = 0.5     # cm: lo de arriba puede pasarse de la base de lo de abajo hasta esto (medidas redondeadas), no más
 
 
@@ -364,7 +365,7 @@ def _orientaciones(L: float, w: float, h: float, inc: bool, rot: bool) -> list[t
 
 def _soporte_ok(it: Item, restric: Restric, est: _Estado, gx: int, gy: int, cx: int, cy: int,
                 z: float, oL: float | None = None, oW: float | None = None) -> bool:
-    """Soporte >= 70%, todo lo de abajo apilable, no pesado sobre liviano y sin base mayor que la de abajo."""
+    """Soporte >= SOPORTE_MIN (97 %), todo lo de abajo apilable, no pesado sobre liviano y sin base mayor que la de abajo."""
     if (not it.apilable) and z > EPS:
         return False
     if z <= EPS:
@@ -373,7 +374,7 @@ def _soporte_ok(it: Item, restric: Restric, est: _Estado, gx: int, gy: int, cx: 
     apoya = np.abs(hm - z) <= EPS
     cnt = hm.size
     onn = int(apoya.sum())
-    if cnt == 0 or onn / cnt < 0.7:
+    if cnt == 0 or onn / cnt < SOPORTE_MIN:
         return False
     if restric.usaApilable and not bool(est.sopTop[gx:gx + cx, gy:gy + cy][apoya].all()):
         return False
@@ -520,7 +521,7 @@ def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
         base_w = est.baseW[a:b + cx - 1]
         for z in alturas:
             apoya = hm >= z - EPS                 # z es el máximo de la ventana
-            bien = (_suma_ventana(apoya, cx, cy) / cnt) >= 0.7
+            bien = (_suma_ventana(apoya, cx, cy) / cnt) >= SOPORTE_MIN
             # Cada restriccion solo descarta posiciones si existe alguna celda de apoyo que la
             # viole; si no hay ninguna, la suma por ventana es cero en toda la grilla y se omite.
             if restric.usaApilable:
