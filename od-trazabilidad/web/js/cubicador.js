@@ -82,7 +82,7 @@ const pctCub = x => (100 * (x || 0)).toFixed(1).replace('.', ',') + '%';
 
 function entradaDe(doc){
   return {cliente: doc.cliente || '', modo: doc.modo || 'MDA', vista: doc.vista || 'rampla',
-          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '', mix: !!doc.mezclar_pallets, por_producto: !!doc.mda_por_producto,
+          caja_master: doc.caja_master || '', piso_pallet: doc.piso_pallet || '', destino: doc.destino || '', mix: !!doc.mezclar_pallets, por_producto: !!doc.mda_por_producto, flujo: doc.flujo || '',
           predistribuido: doc.predistribuido || [], grupos: doc.grupos || [], pedido: doc.pedido || '',
           lineas: (doc.lineas || []).map(l => ({sku: String(l.sku), qty: +l.qty || 0})),
           pallet_n: doc.pallet_visto || 0, pallet_camion: !!doc.pallet_camion};
@@ -272,6 +272,10 @@ const marcaMix = (activo, attrs) => `<button type="button" class="mix-marca" ${a
 /* Marcador «Por producto» (MDA, de prueba): carga un producto tras otro, el más grande al fondo, en vez de rellenar todos los huecos con lo que venga. */
 const TXT_PROD = 'Por producto: carga un producto tras otro, el más grande al fondo y después el siguiente, sin repartirlos por todos los huecos. Apagado: el cubicaje de siempre, que aprovecha cada hueco.';
 const marcaProducto = (activo, attrs) => `<button type="button" class="mix-marca" ${attrs} aria-pressed="${!!activo}" title="${esc(TXT_PROD)}">${ICON.producto}<span>Por producto</span></button>`;
+/* Falabella tiene dos flujos de órdenes: Tradis (pallet 120×100×180, un producto o una sucursal por pallet) y Otro Fala
+   (pallet 130×130×180, caben más productos juntos). El selector solo aparece con ese cliente. */
+const FLUJOS_FALA = [['TRADIS', 'Tradis', 'Pallet 120 × 100 × 180: un producto o una sucursal por pallet'],
+                     ['OTRO', 'Otro Fala', 'Pallet 130 × 130 × 180: caben más productos en un mismo pallet (en prueba)']];
 function cambiarOpcionCub(campo, valor){
   const c = UI.cubIn;
   if (campo === 'caja_master') c.caja_master = valor;
@@ -283,6 +287,7 @@ function cambiarOpcionCub(campo, valor){
   else if (campo === 'destino') c.destino = valor;
   else if (campo === 'mix') c.mix = !!valor;
   else if (campo === 'por_producto') c.por_producto = !!valor;
+  else if (campo === 'flujo'){ c.flujo = valor; c.mix = valor === 'OTRO'; }       // Otro Fala junta productos en el pallet: Mix queda encendido (se puede apagar)
   else if (campo === 'pallet_modo') c.pallet_camion = valor === 'camion';
   if (campo === 'pallet_modo'){ UI.cubCam = 0; pedirCalculo(); return; }
   if (campo === 'modo' || campo === 'carga' || campo === 'destino'){
@@ -527,6 +532,7 @@ function vistaCubicador(){
         ${cls.map(n => `<option ${n === inp.cliente ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
       <div class="opt"><span>Modo de cubicaje</span>${seg('modo', inp.modo, MODOS_CUB)}</div>
       <div class="opt"><span>Carga</span>${seg('carga', inp.piso_pallet || '', [['', 'Según modo', 'Lo que diga el modo: MDA a piso, SDA en pallets'], ['PISO', 'A piso', 'Fuerza la carga a piso, aunque el modo sea SDA'], ['PALLET', 'En pallets', 'Fuerza la carga en pallets, aunque el modo sea MDA']])}</div>
+      ${/^FALABELLA$/i.test(inp.cliente || '') ? `<div class="opt"><span>Flujo Falabella</span>${seg('flujo', inp.flujo || 'TRADIS', FLUJOS_FALA)}</div>` : ''}
       ${ef.pallets ? `<div class="opt"><span>Pallets</span>${marcaMix(inp.mix, 'data-cub="mix"')}</div>` : ''}
       ${!ef.pallets && !ef.pred ? `<div class="opt"><span>Carga a piso</span>${marcaProducto(inp.por_producto, 'data-cub="por_producto"')}</div>` : ''}
       <div class="opt"><span>Destino</span>${seg('destino', inp.destino || '', [['', 'Según modo', 'Lo que diga el modo'], ['STOCK', 'Stock', 'Toda la carga junta'], ['SUCURSAL', 'Por sucursal', 'Se separa por sucursal según el reparto del cliente']])}</div>
@@ -554,7 +560,8 @@ function vistaCubicador(){
   const cam = soloPallet ? null : camiones.find(v => v.numero === c.pallet_vehiculo);
   const resumen = soloPallet && c.pallet_visto ? `<div class="resumen">
       <div class="res-linea">Pallet <b class="num">${c.pallet_visto}</b> de <b class="num">${(c.pallets_disponibles || []).length}</b>
-        <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>${pesoResumen(c)}
+        ${c.pallet_resumen ? `<span class="sep"></span><b class="num">${fmt(c.pallet_resumen.unidades)}</b> unidades<span class="sep"></span><b class="num">${fmt(c.pallet_resumen.bultos)}</b> bultos` : ''}
+        <span class="sep"></span>ocupación del pallet <b class="num">${pctCub(ocupMax)}</b>${pesoResumen(c.pallet_resumen && c.pallet_resumen.kilos > 0 ? {kilos: c.pallet_resumen.kilos} : c)}
         <span class="sep"></span>pallet <span class="num">${(c.pallet || []).join(' × ')} cm</span></div></div>`
     : camiones.length ? `<div class="resumen">
       <div class="res-linea"><b class="num">${camiones.length}</b> ${soloPallet ? 'pallet' : (camiones.length === 1 ? 'camión' : 'camiones')}
@@ -607,7 +614,7 @@ function vistaCubicador(){
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
       <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>
-        ${herramientasVisor()}
+        ${herramientasVisor(c.visor_json)}
         ${UI.cubCalculando || UI.cubOcupado ? '<i class="calc-bar"></i><span class="calc-tag">Calculando…</span>' : ''}
       </div>
       ${soloPallet ? '' : detalleCarga(c, UI.cubCam)}

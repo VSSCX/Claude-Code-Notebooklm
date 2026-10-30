@@ -183,6 +183,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     ajustes = _aplicar_ajustes(s)
     regla = cli_mod.buscar(s, cliente) if cliente else None
     pallet = tuple(cli_mod.doc(regla)["pallet"]) if regla else (120.0, 100.0, 140.0)
+    flujo = cli_mod.flujo_falabella(cliente, body.get("flujo"))
+    if flujo == "OTRO":
+        pallet = cli_mod.PALLET_OTRO_FALA
     med_filas = med_mod.filas_para_cubicaje(s)
     if not med_filas:
         raise HTTPException(422, "No hay Base de Medidas cargada: impórtala en SAP y archivos.")
@@ -252,7 +255,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           mda_por_producto=bool(body.get("por_producto")),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
-                          pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
+                          pallet_por_producto=bool(regla.pallet_por_producto) and flujo != "OTRO" if regla else False,
                           orientacion_pallet=ajustes["orientacion_pallet"],
                           capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
                           kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")))
@@ -300,6 +303,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
            "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": bool(body.get("mix")), "mda_por_producto": bool(body.get("por_producto")),
+           "flujo": flujo,
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "destino": str(body.get("destino") or ""),
            "generado": _date.today().isoformat(), "ajustes": ajustes,
@@ -354,6 +358,9 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
             doc["pallets_disponibles"] = todos
             doc["pallet_camion"] = bool(body.get("pallet_camion"))
             doc["pallet_vehiculo"] = (geo or {}).get("vehiculo", 0)       # camión donde va el pallet elegido
+            doc["pallet_resumen"] = next(({"unidades": pp.get("unidades", 0), "bultos": pp.get("bultos", 0), "kilos": pp.get("kilos", 0)}
+                                          for cc in doc.get("carga_por_camion") or [] for pp in cc.get("pallets") or []
+                                          if pp.get("pallet") == n_pal), None)      # lo que lleva ESE pallet, no toda la carga
         if vista == "pallet" and not body.get("pallet_camion"):
             # Se aísla el pallet elegido: sus cajas se mueven al origen y se dibuja su tarima
             dx = geo["x"] if geo else 0.0

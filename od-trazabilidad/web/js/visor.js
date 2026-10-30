@@ -12,6 +12,13 @@ const Visor = {
     try { localStorage.setItem('od_etiqueta', this.etiqueta); } catch(e){ /* sin almacenamiento: vale para esta sesión */ }
     this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'});
   },
+  /* Color de las cajas cuando hay sucursales (flujo predistribuido): por sucursal (lo que el visor hace de entrada) o por producto. */
+  color: (() => { try { return localStorage.getItem('od_color') === 'prod' ? 'prod' : 'suc'; } catch(e){ return 'suc'; } })(),
+  colorear(modo){
+    this.color = modo === 'prod' ? 'prod' : 'suc';
+    try { localStorage.setItem('od_color', this.color); } catch(e){ /* vale para esta sesión */ }
+    this.mandar({tipo: 'od-visor-color', suc: this.color === 'suc'});
+  },
   /* Vista libre (el ojo): la cámara gira por completo, se mueve y entra al camión. Dura lo que la sesión. */
   libre: false,
   verLibre(on){ this.libre = !!on; this.mandar({tipo: 'od-visor-libre', on: this.libre}); },
@@ -35,6 +42,7 @@ const Visor = {
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
       this.mandar({tipo: 'od-visor-etiqueta', letra: this.etiqueta === 'letra'}, f);
+      this.mandar({tipo: 'od-visor-color', suc: this.color === 'suc'}, f);
       if (this.libre) this.mandar({tipo: 'od-visor-libre', on: true}, f);
       const libre = f.dataset.visor === 'libre';
       this.camion(libre ? UI.cubCam : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
@@ -74,16 +82,21 @@ function camionVacioJSON(vista){
     {idx: 1, tipo, L, W, H, volTot: 0, volCap: +(L * W * H / 1e6).toFixed(2), ocupVol: 0, pesoTot: 0, items: [], cajas: [], pallets: []}]});
 }
 
-/* Interruptor pequeño sobre el visor: "Cajas  [Descripción | Letra]" */
-function herramientasVisor(){
-  const e = Visor.etiqueta;
+/* Interruptores pequeños sobre el visor: "Cajas [Descripción | Letra]" y, si la carga trae sucursales, "Color [Producto | Sucursal]" */
+function herramientasVisor(visorJson){
+  const e = Visor.etiqueta, hayCol = /"suc":"[^"]/.test(visorJson || ''), col = Visor.color;
   return `<div class="vis-tools" role="group" aria-label="Texto sobre las cajas"><span>Cajas</span><div class="seg sm">
     <button type="button" data-vis-etiqueta="desc" aria-pressed="${e === 'desc'}">Descripción</button>
     <button type="button" data-vis-etiqueta="letra" aria-pressed="${e === 'letra'}" title="La letra de cada producto se lee en una impresión en blanco y negro">Letra</button></div>
+    ${hayCol ? `<span>Color</span><div class="seg sm" role="group" aria-label="Color de las cajas">
+      <button type="button" data-vis-color="prod" aria-pressed="${col === 'prod'}" title="Cada producto con su color">Producto</button>
+      <button type="button" data-vis-color="suc" aria-pressed="${col === 'suc'}" title="Cada sucursal con su color">Sucursal</button></div>` : ''}
     <button type="button" class="vis-ojo" data-vis-libre aria-pressed="${Visor.libre}" aria-label="Vista libre del camión" title="Vista libre: gira por completo, mueve con clic derecho o Shift y acércate hasta entrar al camión">${ICON.ojo}</button></div>`;
 }
 document.addEventListener('click', ev => {
   const b = ev.target.closest && ev.target.closest('[data-vis-etiqueta]');
   if (b){ Visor.etiquetar(b.dataset.visEtiqueta); render(); return; }
+  const k = ev.target.closest && ev.target.closest('[data-vis-color]');
+  if (k){ Visor.colorear(k.dataset.visColor); render(); return; }
   if (ev.target.closest && ev.target.closest('[data-vis-libre]')){ Visor.verLibre(!Visor.libre); render(); }
 });

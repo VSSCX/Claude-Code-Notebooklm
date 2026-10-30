@@ -948,6 +948,7 @@ function procesarMensaje(m){
   else if(m.tipo==='od-visor-pallet'){palSel=(m.idx==null)?null:+m.idx;dibujarResalte();}
   else if(m.tipo==='od-visor-filtro'){filtroTipo=m.cod?'cod':null;filtroVal=m.cod||null;buildScene(cur);renderLegend();}
   else if(m.tipo==='od-visor-etiqueta'){var l=!!m.letra;if(l!==etiquetaLetra){etiquetaLetra=l;buildScene(cur);renderEtiquetaToggle();}}
+  else if(m.tipo==='od-visor-color'){if(HAS_SUC&&colorBySuc!==!!m.suc){colorBySuc=!!m.suc;buildScene(cur);renderLegend();updateToggle();}}
   else if(m.tipo==='od-visor-libre')setLibre(!!m.on);
   else if(m.tipo==='od-visor-pdf')exportPDF(!!m.soloActual);
 }

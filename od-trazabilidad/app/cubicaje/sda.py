@@ -409,14 +409,30 @@ class FilaSDA:
     sucursal: str = ""
 
 
-def asignar_vehiculos(total_pallets: int) -> list[Vehiculo]:
-    """AsignarVeh: rampla si quedan más de 12 pallets, si no camión 50."""
+def columnas_de_pallets(ancho_vehiculo: float, pal_L: float) -> int:
+    """Cuántos pallets caben a lo ancho del vehículo (el pallet viaja con su lado `pal_L` cruzado): 2 de 120 en una rampla de 245,
+    1 de 130 (2 x 130 = 260 no entra)."""
+    return max(int((ancho_vehiculo + 0.5) // max(pal_L, 1.0)), 1)
+
+
+def capacidad_de_pallets(largo: float, ancho: float, pal_L: float, pal_W: float) -> int:
+    """Pallets que caben en un vehículo: columnas a lo ancho por filas a lo largo."""
+    return columnas_de_pallets(ancho, pal_L) * max(int((largo + 0.5) // max(pal_W, 1.0)), 1)
+
+
+def asignar_vehiculos(total_pallets: int, pal_L: float | None = None, pal_W: float | None = None) -> list[Vehiculo]:
+    """AsignarVeh: rampla si quedan más pallets de los que caben en un camión 50, si no camión 50.
+
+    Con las medidas del pallet la capacidad sale de la geometría (120 x 100: 30 en la rampla y 12 en el camión; 130 x 130: 11 y 4).
+    Sin ellas se usan los topes de siempre."""
     vehiculos: list[Vehiculo] = []
     restante, usados = total_pallets, 0
+    cap_cam = CAP_CAM50 if pal_L is None else capacidad_de_pallets(CAMION50[1], CAMION50[2], pal_L, pal_W)
+    cap_ramp = CAP_RAMPLA if pal_L is None else capacidad_de_pallets(RAMPLA[1], RAMPLA[2], pal_L, pal_W)
     while restante > 0:
-        if restante > CAP_CAM50:
+        if restante > cap_cam:
             tipo, L, w, h = RAMPLA
-            cap = min(restante, CAP_RAMPLA)
+            cap = min(restante, cap_ramp)
         else:
             tipo, L, w, h = CAMION50
             cap = restante
@@ -567,9 +583,10 @@ def ubicar_pallets(pallets: list[Pallet], placements: dict[int, list[Placement]]
         n_pal = i + 1
         veh = next((v for v in vehiculos if v.pal_desde <= n_pal <= v.pal_hasta), vehiculos[0])
         idx_en_veh = n_pal - veh.pal_desde
-        fila, col = divmod(idx_en_veh, 2)
+        cols = columnas_de_pallets(veh.w, pal_L)
+        fila, col = divmod(idx_en_veh, cols)
         cap_v = veh.pal_hasta - veh.pal_desde + 1
-        n_filas = max((cap_v + 1) // 2, 1)
+        n_filas = max(-(-cap_v // cols), 1)
         gap_x = GAPX
         if n_filas > 1:
             gap_x = min(max((veh.L - n_filas * pal_W) / (n_filas - 1), 0.0), GAPX)
@@ -577,8 +594,8 @@ def ubicar_pallets(pallets: list[Pallet], placements: dict[int, list[Placement]]
         # El VBA deja 5 cm entre las dos columnas de pallets; en un camión angosto eso
         # dibuja el segundo pallet fuera del camión (2 x 120 + 5 = 245 > 244). Se achica
         # la separación al espacio real: cambia solo el dibujo, no la carga.
-        gap_y = min(GAPY, max(veh.w - 2 * pal_L, 0.0))
-        mar_y = max((veh.w - 2 * pal_L - gap_y) / 2.0, 0.0)
+        gap_y = min(GAPY, max((veh.w - cols * pal_L) / (cols - 1), 0.0)) if cols > 1 else 0.0
+        mar_y = max((veh.w - cols * pal_L - (cols - 1) * gap_y) / 2.0, 0.0)
         y0 = mar_y + col * (pal_L + gap_y)
         tipo_pal = p.tipo or ("Mono" if p.k == 1 else "Mix")
         geo[n_pal] = {"veh": veh.numero, "x": x0, "y": y0}
@@ -725,7 +742,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
         return res
     pallets, placements = ordenar_por_llenado(pallets, placements, bloques, pal_L * pal_W * pal_H)   # completos al fondo
 
-    vehiculos = asignar_vehiculos(len(pallets)) or [Vehiculo(1, *CAMION50, 0, -1)]
+    vehiculos = asignar_vehiculos(len(pallets), pal_L, pal_W) or [Vehiculo(1, *CAMION50, 0, -1)]
     colocados, filas04, geo = ubicar_pallets(pallets, placements, bloques, vehiculos, pal_L, pal_W,
                                              girar=(pack_L, pack_W) != (pal_L, pal_W))
     piso_pl, piso_filas, vehiculos = cargar_piso(piso, bloques, vehiculos, geo, pal_W,

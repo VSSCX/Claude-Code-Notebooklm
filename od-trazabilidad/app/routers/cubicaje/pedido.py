@@ -146,6 +146,7 @@ def _cubicar(numero, body: dict, s: Session):
 
     ajustes = _aplicar_ajustes(s)
     regla = cli_mod.buscar(s, cliente)
+    flujo = cli_mod.flujo_falabella(cliente, body.get("flujo"))
     kits = kits_mod.definiciones(s)
     entrada = Entrada(
         kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")),
@@ -156,9 +157,9 @@ def _cubicar(numero, body: dict, s: Session):
         pedidos=numeros, medidas=cargar_cache_dims(med_filas),
         camiones=leer_camiones(camiones_cfg),
         caja_master=caja_master_defecto(body, regla, modo),
-        pallet=tuple(cli_mod.doc(regla)["pallet"]) if regla else None,
+        pallet=cli_mod.PALLET_OTRO_FALA if flujo == "OTRO" else (tuple(cli_mod.doc(regla)["pallet"]) if regla else None),
         hibrido=regla.hibrido if regla else None,
-        pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
+        pallet_por_producto=bool(regla.pallet_por_producto) and flujo != "OTRO" if regla else False,
         orientacion_pallet=ajustes["orientacion_pallet"],
         capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
         piso_pallet=str(body.get("piso_pallet") or ""),
@@ -183,6 +184,7 @@ def _cubicar(numero, body: dict, s: Session):
            "conjunto": {"id": cid, "pedidos": numeros, "clientes": clientes_pedidos,
                         "distintos": distintos, "reglas_de": cliente} if multi else None,
            "caja_master": entrada.caja_master, "piso_pallet": entrada.piso_pallet, "mezclar_pallets": entrada.mezclar_pallets, "mda_por_producto": entrada.mda_por_producto,
+           "flujo": flujo,
            "pallet": list(entrada.pallet or (120.0, 100.0, 140.0)),
            "camiones": [{"numero": c.numero, "tipo": c.tipo, "L": c.L, "w": c.w, "h": c.h,
                          "vol_m3": c.vol_m3} for c in r.camiones],

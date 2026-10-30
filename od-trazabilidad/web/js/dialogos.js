@@ -541,21 +541,15 @@ document.addEventListener('click', ev => {
       const ta = document.querySelector('[data-predist]');
       if (p && ta) guardarPredist(p.pedido, ta.value); break; }
     case 'cubicar': { const p = Store.get('pedidos', UI.sel);
-      if (p) cubicar(p.pedido, {modo: modoElegido(UI.cubicaje[p.pedido]),
-                                caja_master: UI.cubOpts.caja_master,
-                                piso_pallet: UI.cubOpts.piso_pallet,
-                                mix: UI.cubOpts.mix ?? (UI.cubicaje[p.pedido] || {}).mezclar_pallets,
-                                por_producto: UI.cubOpts.por_producto ?? (UI.cubicaje[p.pedido] || {}).mda_por_producto}); break; }
+      if (p) cubicar(p.pedido, opcionesCub(UI.cubicaje[p.pedido] || {})); break; }
     case 'cubMix': { const p = Store.get('pedidos', UI.sel); if (!p) break;
       const cb = UI.cubicaje[p.pedido] || {};
       UI.cubOpts.mix = !(UI.cubOpts.mix ?? cb.mezclar_pallets);                       // el marcador recalcula al momento
-      cubicar(p.pedido, {modo: modoElegido(cb), caja_master: UI.cubOpts.caja_master, piso_pallet: UI.cubOpts.piso_pallet, mix: UI.cubOpts.mix,
-                         por_producto: UI.cubOpts.por_producto ?? cb.mda_por_producto}); break; }
+      cubicar(p.pedido, opcionesCub(cb)); break; }
     case 'cubProducto': { const p = Store.get('pedidos', UI.sel); if (!p) break;
       const cb = UI.cubicaje[p.pedido] || {};
       UI.cubOpts.por_producto = !(UI.cubOpts.por_producto ?? cb.mda_por_producto);
-      cubicar(p.pedido, {modo: modoElegido(cb), caja_master: UI.cubOpts.caja_master, piso_pallet: UI.cubOpts.piso_pallet,
-                         mix: UI.cubOpts.mix ?? cb.mezclar_pallets, por_producto: UI.cubOpts.por_producto}); break; }
+      cubicar(p.pedido, opcionesCub(cb)); break; }
     case 'conjProducto': { const o = UI.conjOpts = UI.conjOpts || {}; o.por_producto = !(o.por_producto ?? (UI.conjunto || {}).mda_por_producto); cubicarJuntos(); break; }
     case 'conjMix': { const o = UI.conjOpts = UI.conjOpts || {}; o.mix = !(o.mix ?? (UI.conjunto || {}).mezclar_pallets); cubicarJuntos(); break; }
     case 'analizarSap': analizarSap(); break;
@@ -617,6 +611,7 @@ document.addEventListener('change', async ev => {
   else if (el.matches('[data-cubmodo]')){ UI.cubOpts.modo = el.value; render(); }
   else if (el.matches('[data-cubcm]')){ UI.cubOpts.caja_master = el.value; }
   else if (el.matches('[data-cubh2]')){ UI.cubOpts.piso_pallet = el.value; }
+  else if (el.matches('[data-cubflujo]')){ UI.cubOpts.flujo = el.value; UI.cubOpts.mix = el.value === 'OTRO'; }
   else if (el.matches('[data-carga]')){ const p = Store.get('pedidos', UI.sel); if (p) await ajustarCarga(p.pedido, el.dataset.carga, el.value); }
   else if (el.matches('[data-file]') && el.files[0] && /\.json$/i.test(el.files[0].name)){
     recibirPaquete(await el.files[0].text());

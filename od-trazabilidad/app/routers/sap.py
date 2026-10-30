@@ -344,7 +344,8 @@ def analizar(numero: str, body: dict):
                     _cubicar(numero, {"modo": anterior.get("modo"), "caja_master": anterior.get("caja_master", ""),
                                       "piso_pallet": anterior.get("piso_pallet", ""),
                                       "mix": anterior.get("mezclar_pallets", False),
-                                      "por_producto": anterior.get("mda_por_producto", False)}, ses)
+                                      "por_producto": anterior.get("mda_por_producto", False),
+                                      "flujo": anterior.get("flujo", "")}, ses)
                     recubicado = True
                 except HTTPException as e:
                     recubicado = str(e.detail)
@@ -639,7 +640,8 @@ def ajustar_carga(numero: str, body: dict, s: Session = Depends(get_session)):
                                          "caja_master": anterior.get("caja_master", ""),
                                          "piso_pallet": anterior.get("piso_pallet", ""),
                                          "mix": anterior.get("mezclar_pallets", False),
-                                         "por_producto": anterior.get("mda_por_producto", False)}, s)
+                                         "por_producto": anterior.get("mda_por_producto", False),
+                                         "flujo": anterior.get("flujo", "")}, s)
         except HTTPException as e:
             cubicaje = {"error": e.detail}
     return {**doc, "cubicaje": cubicaje}

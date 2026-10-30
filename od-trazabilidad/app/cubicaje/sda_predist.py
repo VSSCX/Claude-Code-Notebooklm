@@ -395,7 +395,7 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     from .sda import ordenar_por_llenado
     pallets, placements = ordenar_por_llenado(pallets, placements, bloques, pack_L * pack_W * pal_H)   # completos al fondo
 
-    vehiculos = asignar_vehiculos(len(pallets))
+    vehiculos = asignar_vehiculos(len(pallets), pal_L, pal_W)
     colocados, filas04, geo = ubicar_pallets(pallets, placements, bloques, vehiculos, pal_L, pal_W,
                                              girar=(pack_L, pack_W) != (pal_L, pal_W))
     for f, (p, bi) in zip(filas04, [(p, bi) for p in pallets for bi, n in p.contenido if n > 0]):

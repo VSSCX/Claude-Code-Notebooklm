@@ -927,3 +927,28 @@ def test_ninguna_caja_queda_con_parte_de_su_base_en_el_aire(celda, ordenar):
     # antes bajaba hasta 0,70; lo que queda de diferencia es el redondeo de la grilla (1 cm en la plataforma, 2 cm en el Excel)
     piso = 0.95 if celda == 1.0 else 0.93
     assert apoyos and min(a for _, a in apoyos) >= piso, [x for x in apoyos if x[1] < piso]
+
+
+# ---------------------------------------------------------------- capacidad de pallets por geometría
+def test_la_capacidad_de_pallets_sale_de_la_geometria_del_pallet():
+    from app.cubicaje.sda import asignar_vehiculos, capacidad_de_pallets, columnas_de_pallets
+    assert capacidad_de_pallets(1540, 245, 120, 100) == 30 and capacidad_de_pallets(620, 244, 120, 100) == 12   # lo de siempre
+    assert columnas_de_pallets(245, 130) == 1 and capacidad_de_pallets(1540, 245, 130, 130) == 11 and capacidad_de_pallets(620, 244, 130, 130) == 4
+    v = asignar_vehiculos(12, 130, 130)                                   # 12 pallets grandes: no caben en un camión 50 (4)
+    assert [(x.tipo, x.pal_desde, x.pal_hasta) for x in v] == [("Rampla", 1, 11), ("Camion 50", 12, 12)]
+    assert [(x.tipo, x.pal_desde, x.pal_hasta) for x in asignar_vehiculos(12, 120, 100)] == [("Camion 50", 1, 12)]
+
+
+def test_los_pallets_de_130_van_en_una_columna_centrada_y_dentro_del_camion():
+    from app.cubicaje.sda import cubicaje_sda_stock
+    cache = cargar_cache_dims([["1001", "1001 CAJA", 1, 60, 50, 40, 5, "Y", "N", "N", 500, 40]])
+    pos = [Posicion(sku="1001", desc="1001 CAJA", carga=2000, pedido="P1", fila=1)]
+    r = cubicaje_sda_stock(pos, cache, 130, 130, 180, False, ["P1"], mezclar=True)
+    assert r.pallets and r.camiones
+    for p in r.pallets:
+        assert p["y"] >= 0 and p["y"] + p["dw"] <= 245.0 and p["x"] + p["dl"] <= 1540.0 + 1e-6      # ningún pallet fuera del camión
+    por_camion = {}
+    for p in r.pallets:
+        por_camion.setdefault(p["vehiculo"], []).append(p)
+    assert all(len({round(q["x"]) for q in ps}) == len(ps) for ps in por_camion.values())             # una sola columna: x distintos
+    assert max(len(ps) for ps in por_camion.values()) <= 11

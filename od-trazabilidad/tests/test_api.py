@@ -1609,6 +1609,28 @@ def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_pat
     assert any(len(s) > 1 for s in _productos_por_pallet_api(d).values())
 
 
+def test_falabella_tiene_dos_flujos_tradis_y_otro_fala_con_pallets_distintos(c, tmp_path, monkeypatch):
+    """Tradis: pallet 120x100x180, un producto por pallet. Otro Fala: pallet 130x130x180 sin esa regla; el slicer solo existe en Falabella."""
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    with open(_archivo_medidas(tmp_path, [["1001", "1001 CAJA CHICA", 1, 30, 30, 30, 5, "Y", "N", "N", 500, 40],
+                                          ["1002", "1002 CAJA LARGA", 1, 40, 20, 20, 5, "Y", "N", "N", 500, 40]]), "rb") as fh:
+        c.post("/api/medidas/importar", files={"file": ("Base de Medidas.xlsm", fh.read())})
+    cuerpo = {"lineas": [{"sku": "1001", "qty": 5}, {"sku": "1002", "qty": 5}], "modo": "SDA STOCK", "caja_master": "SIN CAJA MASTER",
+              "cliente": "FALABELLA"}
+    tradis = c.post("/api/cubicaje-libre", json=cuerpo).json()
+    assert tradis["flujo"] == "TRADIS" and tradis["pallet"] == [120.0, 100.0, 180.0]
+    assert all(len(s) == 1 for s in _productos_por_pallet_api(tradis).values())
+    otro = c.post("/api/cubicaje-libre", json={**cuerpo, "flujo": "OTRO", "mix": True}).json()
+    assert otro["flujo"] == "OTRO" and otro["pallet"] == [130.0, 130.0, 180.0] and otro["unidades"] == 10
+    assert any(len(s) > 1 for s in _productos_por_pallet_api(otro).values())          # en Otro Fala sí se mezclan productos
+    # otros clientes no tienen flujo y el campo no les cambia nada
+    paris = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "PARIS", "flujo": "OTRO"}).json()
+    assert paris["flujo"] == "" and paris["pallet"] == [120.0, 100.0, 150.0]
+
+
 def test_las_entregas_se_crean_con_la_fecha_del_analisis_y_no_con_la_de_hoy(c, tmp_path, monkeypatch):
     """PARIS emite órdenes que rigen desde la semana siguiente: VL01N necesita esa fecha de selección, no la de hoy."""
     from datetime import date, timedelta
