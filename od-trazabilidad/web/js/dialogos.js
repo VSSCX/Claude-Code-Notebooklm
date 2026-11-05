@@ -611,7 +611,7 @@ document.addEventListener('change', async ev => {
   else if (el.matches('[data-cubmodo]')){ UI.cubOpts.modo = el.value; render(); }
   else if (el.matches('[data-cubcm]')){ UI.cubOpts.caja_master = el.value; }
   else if (el.matches('[data-cubh2]')){ UI.cubOpts.piso_pallet = el.value; }
-  else if (el.matches('[data-cubflujo]')){ UI.cubOpts.flujo = el.value; UI.cubOpts.mix = el.value === 'OTRO'; }
+  else if (el.matches('[data-cubflujo]')){ UI.cubOpts.flujo = el.value; }
   else if (el.matches('[data-carga]')){ const p = Store.get('pedidos', UI.sel); if (p) await ajustarCarga(p.pedido, el.dataset.carga, el.value); }
   else if (el.matches('[data-file]') && el.files[0] && /\.json$/i.test(el.files[0].name)){
     recibirPaquete(await el.files[0].text());

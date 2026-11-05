@@ -1610,7 +1610,7 @@ def test_falabella_y_easy_en_sda_stock_cubican_un_producto_por_pallet(c, tmp_pat
 
 
 def test_falabella_tiene_dos_flujos_tradis_y_otro_fala_con_pallets_distintos(c, tmp_path, monkeypatch):
-    """Tradis: pallet 120x100x180, un producto por pallet. Otro Fala: pallet 130x130x180 sin esa regla; el slicer solo existe en Falabella."""
+    """Tradis: pallet 120x100x180. Otro Fala: pallet 130x130x180. En los dos: un producto por pallet (stock) y una sucursal (predistribuido), sin mezclas."""
     from app.config import settings
     _cargar_medidas_basicas(c, tmp_path)
     plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
@@ -1623,9 +1623,19 @@ def test_falabella_tiene_dos_flujos_tradis_y_otro_fala_con_pallets_distintos(c, 
     tradis = c.post("/api/cubicaje-libre", json=cuerpo).json()
     assert tradis["flujo"] == "TRADIS" and tradis["pallet"] == [120.0, 100.0, 180.0]
     assert all(len(s) == 1 for s in _productos_por_pallet_api(tradis).values())
+    # Otro Fala cambia solo el pallet: sigue siendo un producto por pallet, aunque se pida Mix
     otro = c.post("/api/cubicaje-libre", json={**cuerpo, "flujo": "OTRO", "mix": True}).json()
     assert otro["flujo"] == "OTRO" and otro["pallet"] == [130.0, 130.0, 180.0] and otro["unidades"] == 10
-    assert any(len(s) > 1 for s in _productos_por_pallet_api(otro).values())          # en Otro Fala sí se mezclan productos
+    assert otro["mezclar_pallets"] is False
+    assert all(len(s) == 1 for s in _productos_por_pallet_api(otro).values())
+    # predistribuido: una sucursal por pallet, también con Mix pedido
+    pred = c.post("/api/cubicaje-libre", json={**cuerpo, "modo": "SDA PREDISTRIBUIDO", "mix": True, "predistribuido": [
+        {"sucursal": "SUC A", "sku": "1001", "qty": 3}, {"sucursal": "SUC B", "sku": "1001", "qty": 2}]}).json()
+    suc_por_pallet = {}
+    for f in pred["filas04"]:
+        if f["pallet"] > 0:
+            suc_por_pallet.setdefault(f["pallet"], set()).add(f["sucursal"])
+    assert suc_por_pallet and all(len(s) == 1 for s in suc_por_pallet.values())
     # otros clientes no tienen flujo y el campo no les cambia nada
     paris = c.post("/api/cubicaje-libre", json={**cuerpo, "cliente": "PARIS", "flujo": "OTRO"}).json()
     assert paris["flujo"] == "" and paris["pallet"] == [120.0, 100.0, 150.0]

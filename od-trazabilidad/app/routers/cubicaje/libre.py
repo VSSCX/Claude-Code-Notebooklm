@@ -186,6 +186,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     flujo = cli_mod.flujo_falabella(cliente, body.get("flujo"))
     if flujo == "OTRO":
         pallet = cli_mod.PALLET_OTRO_FALA
+    mezcla = bool(body.get("mix")) and not (regla and regla.pallet_por_producto)       # Falabella y Easy no mezclan dentro del pallet
     med_filas = med_mod.filas_para_cubicaje(s)
     if not med_filas:
         raise HTTPException(422, "No hay Base de Medidas cargada: impórtala en SAP y archivos.")
@@ -251,11 +252,11 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           # SDA va con caja master salvo que se indique lo contrario
                           caja_master=caja_efectiva,
                           piso_pallet=str(body.get("piso_pallet") or ""),
-                          mezclar_pallets=bool(body.get("mix")),
+                          mezclar_pallets=mezcla,
                           mda_por_producto=bool(body.get("por_producto")),
                           calefones=_calefones_de(cliente, s), predistribuido=pre, pallet=pallet,
                           hibrido=regla.hibrido if regla else None,
-                          pallet_por_producto=bool(regla.pallet_por_producto) and flujo != "OTRO" if regla else False,
+                          pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
                           orientacion_pallet=ajustes["orientacion_pallet"],
                           capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
                           kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")))
@@ -302,7 +303,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                             "letra": letra, "color": color}
     doc = {**base, "cliente": cliente, "modo": modo_elegido, "vista": vista, "lineas": lineas,
            "detalle_lineas": detalle,
-           "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": bool(body.get("mix")), "mda_por_producto": bool(body.get("por_producto")),
+           "caja_master": caja_efectiva, "piso_pallet": piso_elegido, "mezclar_pallets": mezcla, "mda_por_producto": bool(body.get("por_producto")),
            "flujo": flujo,
            "predistribuido": body.get("predistribuido") or [], "pedido": body.get("pedido") or "",
            "destino": str(body.get("destino") or ""),

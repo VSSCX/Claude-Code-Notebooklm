@@ -243,7 +243,7 @@ function vistaConjunto(){
     <label class="f">Caja master${sel3('data-conjcm', [{v: '', t: ''}, {v: 'CON CAJA MASTER', t: 'CON CAJA MASTER'}, {v: 'SIN CAJA MASTER', t: 'SIN CAJA MASTER'}], o.caja_master)}</label>
     ${/^FALABELLA$/i.test(o.cliente || d.conjunto.reglas_de || '') ? `<label class="f">Flujo Falabella${sel3('data-conjflujo', FLUJOS_FALA.map(([v, t]) => ({v, t})), o.flujo ?? (d.flujo || 'TRADIS'))}</label>` : ''}
     <label class="f">Piso / pallet${sel3('data-conjpiso', [{v: '', t: 'Default del modo'}, {v: 'PISO', t: 'PISO'}, {v: 'PALLET', t: 'PALLET'}], o.piso_pallet)}</label>
-    ${/SDA/.test(o.modo) || o.piso_pallet === 'PALLET' ? marcaMix(o.mix ?? d.mezclar_pallets, `data-act="conjMix" ${ents.length ? 'disabled' : ''}`)
+    ${(/SDA/.test(o.modo) || o.piso_pallet === 'PALLET') && !sinMezcla(o.cliente || d.conjunto.reglas_de) ? marcaMix(o.mix ?? d.mezclar_pallets, `data-act="conjMix" ${ents.length ? 'disabled' : ''}`)
       : o.modo === 'MDA' ? marcaProducto(o.por_producto ?? d.mda_por_producto, `data-act="conjProducto" ${ents.length ? 'disabled' : ''}`) : ''}
     <button class="btn" data-act="cubicarJuntos" ${ents.length ? 'disabled title="Ya hay entregas creadas: volver a cubicar cambiaría los camiones"' : ''}>Volver a cubicar juntos</button></div>`;
 }
@@ -301,7 +301,7 @@ document.addEventListener('change', ev => {
   else if (el.matches('[data-conjcli]')){ (UI.conjOpts = UI.conjOpts || {}).cliente = el.value; }
   else if (el.matches('[data-conjcm]')){ (UI.conjOpts = UI.conjOpts || {}).caja_master = el.value; }
   else if (el.matches('[data-conjpiso]')){ (UI.conjOpts = UI.conjOpts || {}).piso_pallet = el.value; }
-  else if (el.matches('[data-conjflujo]')){ const o = UI.conjOpts = UI.conjOpts || {}; o.flujo = el.value; o.mix = el.value === 'OTRO'; }
+  else if (el.matches('[data-conjflujo]')){ const o = UI.conjOpts = UI.conjOpts || {}; o.flujo = el.value; }
 });
 
 const TABS_PEDIDO = [['analisis', 'Análisis'], ['cubicaje', 'Cubicador'], ['entregas', 'Entregas'], ['grupos', 'Grupos'], ['pendientes', 'Pendientes']];
@@ -747,7 +747,7 @@ function vistaCubicaje(p){
       <label class="f">Caja master${sel3('data-cubcm', [{v:'', t:''}, {v:'CON CAJA MASTER', t:'CON CAJA MASTER'}, {v:'SIN CAJA MASTER', t:'SIN CAJA MASTER'}], UI.cubOpts.caja_master || cb.caja_master || '')}</label>
       <label class="f">Piso / pallet${sel3('data-cubh2', [{v:'', t:'Default del modo'}, {v:'PISO', t:'PISO'}, {v:'PALLET', t:'PALLET'}], UI.cubOpts.piso_pallet || cb.piso_pallet || '')}</label>
       ${/^FALABELLA$/i.test(p.cliente || cb.cliente || '') ? `<label class="f">Flujo Falabella${sel3('data-cubflujo', FLUJOS_FALA.map(([v, t]) => ({v, t})), UI.cubOpts.flujo ?? (cb.flujo || 'TRADIS'))}</label>` : ''}
-      ${/SDA/.test(modoElegido(cb)) || (UI.cubOpts.piso_pallet || cb.piso_pallet) === 'PALLET' ? marcaMix(UI.cubOpts.mix ?? cb.mezclar_pallets, 'data-act="cubMix"')
+      ${(/SDA/.test(modoElegido(cb)) || (UI.cubOpts.piso_pallet || cb.piso_pallet) === 'PALLET') && !sinMezcla(p.cliente || cb.cliente) ? marcaMix(UI.cubOpts.mix ?? cb.mezclar_pallets, 'data-act="cubMix"')
         : modoElegido(cb) === 'MDA' ? marcaProducto(UI.cubOpts.por_producto ?? cb.mda_por_producto, 'data-act="cubProducto"') : ''}
       <button class="btn primary" data-act="cubicar">${cb.error || !cb.camiones ? 'Cubicar' : 'Volver a cubicar'}</button>
     </div>`;

@@ -159,11 +159,11 @@ def _cubicar(numero, body: dict, s: Session):
         caja_master=caja_master_defecto(body, regla, modo),
         pallet=cli_mod.PALLET_OTRO_FALA if flujo == "OTRO" else (tuple(cli_mod.doc(regla)["pallet"]) if regla else None),
         hibrido=regla.hibrido if regla else None,
-        pallet_por_producto=bool(regla.pallet_por_producto) and flujo != "OTRO" if regla else False,
+        pallet_por_producto=bool(regla.pallet_por_producto) if regla else False,
         orientacion_pallet=ajustes["orientacion_pallet"],
         capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
         piso_pallet=str(body.get("piso_pallet") or ""),
-        mezclar_pallets=bool(body.get("mix")),
+        mezclar_pallets=bool(body.get("mix")) and not (regla and regla.pallet_por_producto),     # Falabella y Easy no mezclan dentro del pallet
         mda_por_producto=bool(body.get("por_producto")),
         calefones=set(body.get("calefones") or set().union(*(_calefones_de(c, s) for c in (distintos or [cliente])))),
         predistribuido=[FilaPredist(sucursal=f["sucursal"], sku=f["sku"], unidades=f["unidades"],

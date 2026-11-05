@@ -15,12 +15,13 @@ from ..models import Cliente, ahora
 
 
 PALLET_POR_PRODUCTO = ("FALABELLA", "EASY")        # SDA Stock: un producto por pallet, sin mezclas
-PALLET_OTRO_FALA = (130.0, 130.0, 180.0)           # «Otro Fala» (en prueba): pallet más grande, caben más productos juntos
+PALLET_OTRO_FALA = (130.0, 130.0, 180.0)           # «Otro Fala» (en prueba): pallet más grande; igual que Tradis, sin mezclas dentro del pallet
 
 
 def flujo_falabella(cliente: str, flujo: str = "") -> str:
-    """Los dos flujos de órdenes de Falabella: TRADIS (pallet 120x100x180, un producto o una sucursal por pallet) y OTRO
-    («Otro Fala», pallet 130x130x180 sin la regla de un producto por pallet). Para cualquier otro cliente no hay flujo ("")."""
+    """Los dos flujos de órdenes de Falabella: TRADIS (pallet 120x100x180) y OTRO («Otro Fala», pallet 130x130x180). En los dos, el pallet es de
+    un solo producto en SDA Stock y de una sola sucursal en predistribuido: solo lo que va encima puede ser de otro producto.
+    Para cualquier otro cliente no hay flujo ("")."""
     if str(cliente or "").strip().upper() != "FALABELLA":
         return ""
     return "OTRO" if str(flujo or "").strip().upper() == "OTRO" else "TRADIS"
