@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#12171C">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0D10">
+<title>Trazabilidad de pedidos · Order Desk</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%2312171C'/%3E%3Cpath d='M6 8h2v16H6zM10 8h1v16h-1zM13 8h3v16h-3zM18 8h1v16h-1zM21 8h2v16h-2zM25 8h1v16h-1z' fill='%23FDFDFC'/%3E%3C/svg%3E">
+<link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="entrando">
+<div class="app">
+  <aside class="rail">
+    <div class="rail-brand"><span>Order Desk</span><b>Trazabilidad de pedidos</b></div>
+    <nav class="rail-nav" id="nav" aria-label="Secciones"></nav>
+    <div class="rail-foot" id="sync" role="status" aria-live="polite"></div>
+  </aside>
+  <div class="stage"><main id="app" tabindex="-1"></main></div>
+</div>
+<div id="entrada" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="/vendor/morphdom.min.js"></script>
+<script src="/js/iconos.js"></script>
+<script src="/js/barcode.js"></script>
+<script src="/js/base.js"></script>
+<script src="/js/visor.js"></script>
+<script src="/js/pedidos.js"></script>
+<script src="/js/cubicador.js"></script>
+<script src="/js/proyeccion.js"></script>
+<script src="/js/sap.js"></script>
+<script src="/js/cuentas.js"></script>
+<script src="/js/admin.js"></script>
+<script src="/js/dialogos.js"></script>
+</body>
+</html>
