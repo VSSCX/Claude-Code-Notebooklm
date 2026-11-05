@@ -1641,6 +1641,27 @@ def test_falabella_tiene_dos_flujos_tradis_y_otro_fala_con_pallets_distintos(c, 
     assert paris["flujo"] == "" and paris["pallet"] == [120.0, 100.0, 150.0]
 
 
+def test_el_cubicador_libre_con_rampla_usa_un_camion_50_para_lo_que_sobra(c, tmp_path):
+    """Con «Rampla 53» elegida se cubica como en un pedido: una rampla llena y, si lo que sobra cabe, un camión 50 (no otra rampla)."""
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    with open(_archivo_medidas(tmp_path, [["1001", "1001 CAJA CHICA", 1, 30, 30, 30, 5, "Y", "N", "N", 3000, 40]]), "rb") as fh:
+        c.post("/api/medidas/importar", files={"file": ("Base de Medidas.xlsm", fh.read())})
+    # la rampla lleva 51 x 8 x 7 = 2.856 cajas de 30 cm; sobran 100, que caben de sobra en un camión 50
+    base = {"lineas": [{"sku": "1001", "qty": 2956}], "modo": "MDA", "cliente": "PARIS"}
+    d = c.post("/api/cubicaje-libre", json={**base, "vista": "rampla"}).json()
+    assert [x["tipo"] for x in d["camiones"]] == ["Rampla 53", "Camion 50"], [x["tipo"] for x in d["camiones"]]
+    assert d["unidades"] == 2956
+    # una carga chica con «Rampla 53» elegida sigue yendo en una rampla (no se cambia sola a camión 50)
+    chica = c.post("/api/cubicaje-libre", json={**base, "lineas": [{"sku": "1001", "qty": 100}], "vista": "rampla"}).json()
+    assert [x["tipo"] for x in chica["camiones"]] == ["Rampla 53"]
+    # con «Camión 50» elegido son solo camiones 50
+    d50 = c.post("/api/cubicaje-libre", json={**base, "vista": "camion50"}).json()
+    assert {x["tipo"] for x in d50["camiones"]} == {"Camion 50"}
+
+
 def test_las_entregas_se_crean_con_la_fecha_del_analisis_y_no_con_la_de_hoy(c, tmp_path, monkeypatch):
     """PARIS emite órdenes que rigen desde la semana siguiente: VL01N necesita esa fecha de selección, no la de hoy."""
     from datetime import date, timedelta

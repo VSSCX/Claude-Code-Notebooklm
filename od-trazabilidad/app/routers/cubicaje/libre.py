@@ -10,7 +10,7 @@ from ...db import get_session
 from ...integrations import clientes as cli_mod
 from ...integrations import kits as kits_mod
 from ...integrations import medidas as med_mod
-from ..comun import _aplicar_ajustes, _calefones_de, _clave_analisis, camiones_vista
+from ..comun import _aplicar_ajustes, _calefones_de, _clave_analisis, camiones_defecto, camiones_vista
 from ...cubicaje import resumen as resumen_carga
 from ._comun import (
     _commit,
@@ -205,7 +205,8 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
     elif vista == "camion50":
         camiones = leer_camiones([list(camiones_vista(s)["camion50"])])
     else:
-        camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
+        # Con la rampla elegida se cubica como en un pedido: ramplas mientras haga falta y un camión 50 para lo que sobra
+        camiones = leer_camiones(camiones_defecto(s))
 
     kits = kits_mod.definiciones(s)
     posiciones = []
@@ -261,7 +262,12 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                           capacidad_pallet=ajustes.get("capacidad_pallet", "geometria"),
                           kits=kits, kits_mezclar=bool(ajustes.get("kits_mezclar")))
         try:
-            partes.append(segmentar(entrada))
+            r = segmentar(entrada)
+            if vista == "rampla" and r.camiones and not any("rampla" in c.tipo.lower() for c in r.camiones):
+                # una carga que cabe en un camión 50 con «Rampla 53» elegida va en una rampla, como se pidió; el camión 50 es solo para lo que sobra
+                entrada.camiones = leer_camiones([list(camiones_vista(s)["rampla"])])
+                r = segmentar(entrada)
+            partes.append(r)
         except (ModoNoPortado, ValueError) as e:
             raise HTTPException(422, str(e)) from e
 
@@ -391,10 +397,10 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                                  "fila_origen": 0, "sucursal": f.get("sucursal", "")}
                                 for f in dentro]
         else:
+            base_cam = max(camiones, key=lambda b: b.vol_m3)           # sin carga se muestra el vehículo más grande de la vista
             cams = ([_Cam(numero=c["numero"], tipo=c["tipo"], L=c["L"], w=c["w"], h=c["h"])
                      for c in doc["camiones"]] or
-                    [_Cam(numero=1, tipo=camiones[0].tipo, L=camiones[0].L, w=camiones[0].w,
-                          h=camiones[0].h)])
+                    [_Cam(numero=1, tipo=base_cam.tipo, L=base_cam.L, w=base_cam.w, h=base_cam.h)])
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
         datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor, modo=modo,
                                     por_caja=por_caja)
