@@ -273,7 +273,11 @@ function calcularResumen(p){
   }
   return {filas, tot, sums: Object.values(sums).sort((a, b) => a.n - b.n)};
 }
-const cerrado = p => { const {tot} = resumen(p); return tot.pedida > 0 && tot.pendiente === 0 && tot.entregado >= tot.pedida; };
+/* Cerrado a mano (venció sin stock y se cerró en SAP): no se borra, solo sale de las listas de trabajo. Se puede reabrir. */
+const cierreManual = p => !!(p && p.cerrado);
+const cerrado = p => cierreManual(p) || (() => { const {tot} = resumen(p); return tot.pedida > 0 && tot.pendiente === 0 && tot.entregado >= tot.pedida; })();
+/* Camiones y entregas con un paso por hacer, sin contar los de pedidos cerrados a mano */
+const gruposPorHacer = () => grupos().filter(g => g.next && g.entregas.some(e => !cierreManual(Store.get('pedidos', safeId(e.pedido)))));
 
 function barHTML(tot, big){
   const base = Math.max(tot.pedida, tot.enEntrega) || 1;
@@ -289,8 +293,7 @@ const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
 
 /* Un grupo = un camión. Puede tener varias entregas, incluso de otros pedidos
    (conchos). Los pasos del camión se derivan: hechos solo si TODAS sus entregas
-   los tienen. 'facturada' se marca por entrega, porque la factura es por entrega. */
-const POR_ENTREGA = ['facturada'];
+   los tienen. 'facturada' se marca desde el camión (círculo «Facturada»): pide el N° de factura y qué se facturó de cada entrega. */
 const grupos = porRev(calcularGrupos);
 function calcularGrupos(){
   const m = new Map();
@@ -328,7 +331,8 @@ const grupo1 = key => grupos().find(g => g.key === key);
 const gruposDelCamion = g => g.camionRef ? grupos().filter(x => x.camionRef === g.camionRef) : [g];
 
 async function marcarPasoGrupo(key, k, forzar){
-  const g = grupo1(key); if (!g || POR_ENTREGA.includes(k)) return;
+  const g = grupo1(key); if (!g) return;
+  if (k === 'facturada') return facturarGrupo(key);
   const nuevo = forzar ?? !g.pasos[k];
   // Confirmar la cita siempre pregunta fecha, hora y referencia del grupo (y la lleva a SAP): no se marca a ciegas
   if (nuevo && k === 'confirmada') return abrirCita(key);
@@ -340,7 +344,7 @@ async function marcarPaso(id, k, forzar){
   e.pasos = e.pasos || {};
   const estaba = pasoOk(e, k), nuevo = forzar ?? !estaba;
   if (nuevo && k === 'confirmada' && !(e.cita && e.cita.fecha && e.cita.hora)) return abrirEntrega(e.pedido, id, {marcar:'confirmada', msg:'Para confirmar la cita ingresa fecha y hora.'});
-  if (nuevo && k === 'facturada' && !e.factura) return abrirEntrega(e.pedido, id, {marcar:'facturada', msg:'Para marcar facturada ingresa el N° de factura.'});
+  if (k === 'facturada'){ const g = grupos().find(x => x.entregas.some(y => y.entrega === e.entrega)); if (g) return facturarGrupo(g.key); }
   if (nuevo === estaba) return;
   e.pasos[k] = {ok: nuevo, at: nowISO()};
   addLog(e, `${nuevo ? 'Hecho' : 'Reabierto'}: ${STEPS.find(s => s.k === k).t}`);
@@ -385,7 +389,7 @@ window.addEventListener('resize', moverIndicador);
 const NAV = [['pedidos','Pedidos'], ['bandeja','Por hacer'], ['cubicador','Cubicador'],
              ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
 function renderNav(){
-  const pendientes = grupos().filter(g => g.next).length;
+  const pendientes = gruposPorHacer().length;
   const items = Sesion.esAdmin() ? [...NAV, ['admin', 'Administración']] : NAV;
   const html = items.map(([v, t]) => {
     const c = v === 'bandeja' && pendientes ? `<span class="count">${pendientes}</span>`
@@ -422,16 +426,15 @@ function pintar(el, html){
    entregas lo tienen, cuántas. «Facturada» se registra por entrega (en la pestaña Entregas), así que aquí es de lectura. */
 function rutaHTML(g){
   return `<ol class="ruta pasos-g" aria-label="Pasos del camión">${STEPS.map((s, i) => {
-    const fijo = POR_ENTREGA.includes(s.k), tot = g.entregas.length;
+    const tot = g.entregas.length;
     const n = g.entregas.filter(e => pasoOk(e, s.k)).length;
     const hecho = tot > 0 && n === tot, parcial = n > 0 && n < tot;
     const sig = !hecho && g.next && g.next.k === s.k;
     const falta = g.entregas.filter(e => !pasoOk(e, s.k)).map(e => e.entrega);
-    const tit = `${s.t}${hecho ? ' · hecho' : sig ? ' · siguiente' : ''}${parcial ? ` · falta en ${falta.join(', ')}` : ''}${fijo ? ' · se registra en cada entrega' : ''}`;
-    const clase = `paso ${hecho ? 'done' : ''} ${sig ? 'next' : ''} ${parcial ? 'parcial' : ''} ${i === STEPS.length - 1 ? 'last' : ''} ${fijo ? 'fixed' : ''}`;
-    const cuerpo = `<span class="k">${hecho ? ICON.check : i + 1}</span><span class="t">${esc(s.t)}</span>${parcial || (fijo && tot > 1 && n) ? `<span class="d">${n} de ${tot}</span>` : ''}`;
-    return `<li>${fijo ? `<span class="${clase}" title="${esc(tit)}">${cuerpo}</span>`
-      : `<button class="${clase}" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" aria-pressed="${hecho}" title="${esc(tit)}">${cuerpo}</button>`}</li>`;
+    const tit = `${s.t}${hecho ? ' · hecho' : sig ? ' · siguiente' : ''}${parcial ? ` · falta en ${falta.join(', ')}` : ''}${s.k === 'facturada' && !hecho ? ' · pide el N° de factura' : ''}`;
+    const clase = `paso ${hecho ? 'done' : ''} ${sig ? 'next' : ''} ${parcial ? 'parcial' : ''} ${i === STEPS.length - 1 ? 'last' : ''}`;
+    const cuerpo = `<span class="k">${hecho ? ICON.check : i + 1}</span><span class="t">${esc(s.t)}</span>${parcial ? `<span class="d">${n} de ${tot}</span>` : ''}`;
+    return `<li><button class="${clase}" data-gpaso="${s.k}" data-grupo="${esc(g.key)}" aria-pressed="${hecho}" title="${esc(tit)}">${cuerpo}</button></li>`;
   }).join('')}</ol>`;
 }
 

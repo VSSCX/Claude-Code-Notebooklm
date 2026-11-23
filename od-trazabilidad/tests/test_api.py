@@ -108,6 +108,27 @@ def test_crud_entrega_y_reglas(c):
     assert _estado(c)["entregas"] == []   # borrado en cascada
 
 
+def test_cerrar_un_pedido_no_lo_borra_y_se_puede_reabrir(c):
+    """Un pedido vencido sin stock se cierra (no se elimina): conserva entregas y líneas, y se puede reabrir."""
+    c.post("/api/paquetes", json=paquete("pedido")); c.post("/api/paquetes", json=paquete("entregas"))
+    num = "4005171502"
+    assert not c.get("/api/estado").json()["pedidos"][0]["cerrado"]
+    d = c.post(f"/api/pedidos/{num}/cerrar", json={"motivo": "Vencido sin stock"}).json()
+    assert d["cerrado"] and d["motivoCierre"] == "Vencido sin stock"
+    est = c.get("/api/estado").json()
+    ped = next(p for p in est["pedidos"] if p["pedido"] == num)
+    assert ped["cerrado"] and ped["motivoCierre"] == "Vencido sin stock" and len(ped["lineas"]) == len(LINEAS)
+    assert est["entregas"], "las entregas se conservan"
+    # guardar el pedido (edición desde la web) no lo reabre ni pierde el motivo
+    c.put(f"/api/pedidos/{num}", json={"pedido": num, "cliente": "PARIS", "lineas": ped["lineas"]})
+    ped = next(p for p in c.get("/api/estado").json()["pedidos"] if p["pedido"] == num)
+    assert ped["cerrado"] and ped["motivoCierre"] == "Vencido sin stock"
+    d = c.post(f"/api/pedidos/{num}/reabrir").json()
+    assert not d["cerrado"] and d["motivoCierre"] == ""
+    assert c.post("/api/pedidos/999/cerrar", json={}).status_code == 404
+    assert c.post("/api/pedidos/999/reabrir").status_code == 404
+
+
 def test_entrega_sin_pedido(c):
     r = c.put("/api/entregas/9", json={"entrega": "9", "pedido": "nope", "lineas": [{"sku": "1", "qty": 1}]})
     assert r.status_code == 422

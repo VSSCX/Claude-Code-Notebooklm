@@ -65,6 +65,7 @@ def pedido_doc(p: Pedido, maestra: dict[str, str] | None = None) -> dict:
         "lineas": [{"sku": l.sku, "desc": l.descripcion or maestra.get(l.sku, ""), "qty": l.qty,
                     "externa": l.externa} for l in p.lineas],
         "creado": _iso(p.creado), "actualizado": _iso(p.actualizado),
+        "cerrado": _iso(p.cerrado), "motivoCierre": p.motivo_cierre or "", "cerradoPor": p.cerrado_por or "",
     }
 
 
@@ -110,7 +111,8 @@ def estado(s: Session) -> dict:
         pedidos.append({"pedido": r.pedido, "oc": r.oc, "cliente": r.cliente, "canal": r.canal,
                         "fechaOC": r.fecha_oc.isoformat() if r.fecha_oc else "", "obs": r.obs,
                         "lineas": lineas_p.get(r.id, []),
-                        "creado": _iso(r.creado), "actualizado": _iso(r.actualizado)})
+                        "creado": _iso(r.creado), "actualizado": _iso(r.actualizado),
+                        "cerrado": _iso(r.cerrado), "motivoCierre": r.motivo_cierre or "", "cerradoPor": r.cerrado_por or ""})
 
     lineas_e: dict[int, list] = defaultdict(list)
     for r in s.execute(select(LE.c.entrega_id, LE.c.sku, LE.c.qty).order_by(LE.c.id)):
@@ -421,6 +423,27 @@ def guardar_entrega(s: Session, d: EntregaIn) -> Entrega:
     return e
 
 
+def cerrar_pedido(s: Session, numero: str, motivo: str = "") -> Pedido | None:
+    """Cierra el pedido sin borrar nada: deja de aparecer en las listas de trabajo, pero conserva sus entregas, análisis y cubicaje."""
+    p = _get_pedido(s, numero)
+    if p is None:
+        return None
+    if p.cerrado is None:
+        p.cerrado, p.cerrado_por = ahora(), usuario_actual()
+    p.motivo_cierre = (motivo or "").strip()[:120]
+    p.actualizado = ahora()          # cambia la versión: los demás equipos lo ven
+    return p
+
+
+def reabrir_pedido(s: Session, numero: str) -> Pedido | None:
+    p = _get_pedido(s, numero)
+    if p is None:
+        return None
+    p.cerrado, p.motivo_cierre, p.cerrado_por = None, "", ""
+    p.actualizado = ahora()
+    return p
+
+
 def borrar_pedido(s: Session, numero: str) -> bool:
     p = _get_pedido(s, numero)
     if p is None:
@@ -472,6 +495,8 @@ def cargar_lectura_sap(s: Session, pedido: str, cliente: str, posiciones: list[d
             actualizadas += 1
         if fila is not None and not fila.descripcion and nombre:
             fila.descripcion = nombre                  # una descripción puesta a mano no se pisa
+    if p.cerrado is not None:               # volver a analizarlo es seguir trabajándolo: se reabre
+        p.cerrado, p.motivo_cierre, p.cerrado_por = None, "", ""
     p.actualizado = ahora()
     return {"pedido": pedido, "nuevo": nuevo, "agregadas": agregadas, "actualizadas": actualizadas,
             "posiciones": len(posiciones)}

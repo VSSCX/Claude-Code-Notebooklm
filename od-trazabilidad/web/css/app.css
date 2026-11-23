@@ -286,8 +286,6 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 .paso.done.last .k{color:var(--ok-solid)}
 .paso.next{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
 .paso.next .k{border-color:var(--accent);color:var(--accent)}
-.paso.fixed{cursor:default}
-.paso.fixed:not(.done){background:var(--paper-2)}
 .paso:active:not(.fixed){transform:scale(.97)}
 @media (hover:hover) and (pointer:fine){.paso:not(.fixed):not(.done):hover{background:var(--paper-3);color:var(--ink)}.paso.done:not(.fixed):hover{background:var(--ink-2)}.paso.done.last:not(.fixed):hover{filter:brightness(1.1)}}
 .paso:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;z-index:1}
@@ -1121,3 +1119,10 @@ details.solo-falta > summary{cursor:pointer;font-size:var(--t-sm)}
 .ver-pal{margin-left:10px;font-weight:600;float:none}
 .ver-pal svg{width:14px;height:14px;vertical-align:-2px}
 .cam-tbl tr.sel td,.cam-tbl tr.pal-h.sel th{background:var(--accent-soft)}
+
+/* Registrar factura de un camión */
+.fact-todo{display:flex;align-items:center;gap:8px;margin:14px 0 4px;padding:10px 12px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper-2)}
+.fact-cada{margin:10px 0 0;font-size:var(--t-sm)}
+.fact-cada > summary{cursor:pointer;color:var(--ink-2);font-weight:650}
+.fact-cada .stack{margin-top:8px}
+#fact-detalle[hidden]{display:none}

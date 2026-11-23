@@ -113,6 +113,24 @@ async function reanalizarPorCliente(pedido, antes){
   try { previo = await api('GET', `/analisis/${encodeURIComponent(p.pedido)}`); } catch(e){ /* sin análisis guardado: se usan los valores por defecto */ }
   await lanzarAnalisis(p.pedido, {puesto: previo.puesto || config().puesto || 'PN01', fecha: previo.fecha || new Date().toISOString().slice(0, 10), cliente: p.cliente});
 }
+/* Cerrar no es borrar: el pedido sale de las listas de trabajo pero conserva entregas, análisis y cubicaje */
+async function cerrarPedido(id){
+  const p = Store.get('pedidos', id); if (!p) return;
+  const pend = resumen(p).tot.pendiente;
+  const r = await preguntar({titulo: `Cerrar pedido ${p.pedido}`,
+    texto: `Sale de <b>Pedidos</b> y de <b>Por hacer</b>, pero no se borra: conserva sus entregas, análisis y cubicaje, y lo puedes reabrir cuando quieras.${pend > 0 ? ` Quedan <b>${fmt(pend)}</b> unidades por suministrar.` : ''}`,
+    campos: [{nombre: 'motivo', etiqueta: 'Motivo (opcional)', valor: 'Vencido sin stock', ayuda: 'Vencido, sin stock, cancelado por el cliente…'}], ok: 'Cerrar pedido'});
+  if (!r) return;
+  try {
+    await api('POST', `/pedidos/${encodeURIComponent(p.pedido)}/cerrar`, {motivo: r.motivo});
+    await Store.refresh(); UI.sel = null; toast(`Pedido ${p.pedido} cerrado. Lo ves desmarcando «Ocultar cerrados» en la lista.`);
+  } catch(e){ toast(dbErr(e)); }
+}
+async function reabrirPedido(id){
+  const p = Store.get('pedidos', id); if (!p) return;
+  try { await api('POST', `/pedidos/${encodeURIComponent(p.pedido)}/reabrir`); await Store.refresh(); toast(`Pedido ${p.pedido} reabierto`); }
+  catch(e){ toast(dbErr(e)); }
+}
 async function borrarPedido(id){
   const p = Store.get('pedidos', id); const ents = entregasDe(p.pedido);
   if (!await preguntar({titulo: `Eliminar pedido ${p.pedido}`, texto: `Se elimina el pedido y sus <b>${ents.length}</b> entregas. No se puede deshacer.`, ok: 'Eliminar', peligro: true})) return;
@@ -179,6 +197,94 @@ async function guardarEntrega(pedId, id, marcar){
   addLog(e, id ? (antes !== JSON.stringify(e.cita) ? 'Datos de cita editados' : 'Entrega editada') : 'Entrega creada');
   dlg.close(); UI.open.add(nid);
   if (await save('entregas', nid, e)) toast(id ? 'Entrega actualizada' : 'Entrega creada');
+}
+
+/* Facturar un camión: solo pide el N° de factura y confirma qué se facturó de cada entrega.
+   Lo que no se facturó (p. ej. 2 de 100 refrigeradores con daños) sale de la entrega y vuelve a «por suministrar» en el pedido. */
+function facturarGrupo(key){
+  const g = grupo1(key); if (!g) return;
+  const pend = g.entregas.filter(e => !pasoOk(e, 'facturada'));
+  if (!pend.length){
+    abrirDlg(`Factura · ${g.sinGrupo ? 'camión' : 'grupo ' + g.grupo}`, `<p class="prose" style="margin-top:0">Todas las entregas de este camión están facturadas:</p>
+      <ul class="prose">${g.entregas.map(e => `<li>Entrega <span class="code">${esc(e.entrega)}</span> · factura <span class="code">${esc(e.factura || '—')}</span> · ${fmt(unidades(e))} un.</li>`).join('')}</ul>`,
+      `<button class="btn" data-act="quitarFactura" data-grupo="${esc(key)}" title="Deja el paso Facturada sin hacer. No devuelve cantidades a lo pendiente">Quitar el paso Facturada</button>`);
+    return;
+  }
+  const filas = pend.flatMap(e => (e.lineas || []).map((l, i) => ({e, l, i})));
+  const desc = (e, sku) => { const p = Store.get('pedidos', safeId(e.pedido)); return ((p && (p.lineas || []).find(x => normSku(x.sku) === normSku(sku))) || {}).desc || ''; };
+  const total = pend.reduce((a, e) => a + unidades(e), 0);
+  abrirDlg(`Registrar factura · ${g.sinGrupo ? 'camión' : 'grupo ' + g.grupo}`, `
+    <label class="f">N° de factura<input type="text" name="factura" value="${esc(pend.map(e => e.factura).find(Boolean) || '')}" autocomplete="off" inputmode="numeric"></label>
+    ${pend.length > 1 ? `<details class="fact-cada"><summary>Cada entrega con su propia factura</summary><div class="stack">${pend.map(e =>
+      `<label class="f">Entrega ${esc(e.entrega)}<input type="text" name="factura-${esc(safeId(e.entrega))}" value="${esc(e.factura || '')}" placeholder="Si se deja vacío usa la de arriba" autocomplete="off"></label>`).join('')}</div></details>` : ''}
+    <label class="chk fact-todo"><input type="checkbox" data-fact-todo checked> <span>Se facturó <b>todo</b> lo de ${pend.length === 1 ? 'la entrega' : 'las entregas'} (<b class="num">${fmt(total)}</b> un.)</span></label>
+    <div id="fact-detalle" hidden>
+      <p class="small muted" style="margin:10px 0 6px">Anota cuántas unidades se facturaron de cada producto. Lo que no se facturó sale de la entrega y vuelve a <b>por suministrar</b> en el pedido.</p>
+      <div class="scroll"><table class="tbl compacta"><thead><tr><th>Entrega</th><th>SKU</th><th>Descripción</th><th class="n">Entregadas</th><th class="n">Facturadas</th></tr></thead><tbody>
+      ${filas.map(({e, l, i}) => `<tr><td class="code">${esc(e.entrega)}</td><td class="code">${esc(l.sku)}</td><td>${esc(desc(e, l.sku))}</td><td class="n">${fmt(l.qty)}</td>
+        <td class="n"><input class="qty" type="number" min="0" max="${+l.qty || 0}" step="1" data-fact-q data-ent="${esc(safeId(e.entrega))}" data-i="${i}" data-orig="${+l.qty || 0}" value="${+l.qty || 0}" aria-label="Facturadas de ${esc(l.sku)} en la entrega ${esc(e.entrega)}"></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="small" id="fact-resumen" aria-live="polite"></p>
+    </div>`,
+    `<button class="btn primary" data-act="guardarFactura" data-grupo="${esc(key)}">Registrar factura</button>`);
+  const f = dlg.querySelector('[name="factura"]'); if (f){ f.focus(); f.select(); }
+}
+function resumenFactura(){
+  const hay = [...dlg.querySelectorAll('[data-fact-q]')], el = $('#fact-resumen');
+  const sin = hay.reduce((a, i) => a + Math.max(0, (+i.dataset.orig || 0) - Math.max(0, Math.min(+i.dataset.orig || 0, Math.round(+i.value || 0)))), 0);
+  if (el) el.innerHTML = sin ? `<b class="num">${fmt(sin)}</b> un. sin facturar vuelven a <b>por suministrar</b>.` : 'Se factura todo.';
+}
+dlg.addEventListener('change', ev => {
+  if (!ev.target.matches || !ev.target.matches('[data-fact-todo]')) return;
+  const d = $('#fact-detalle'); if (!d) return;
+  d.hidden = ev.target.checked;
+  if (ev.target.checked) dlg.querySelectorAll('[data-fact-q]').forEach(i => { i.value = i.dataset.orig; });
+  resumenFactura();
+});
+dlg.addEventListener('input', ev => { if (ev.target.matches && ev.target.matches('[data-fact-q]')) resumenFactura(); });
+async function guardarFactura(key){
+  const g = grupo1(key); if (!g) return;
+  const pend = g.entregas.filter(e => !pasoOk(e, 'facturada'));
+  const comun = dval('factura');
+  const todo = dlg.querySelector('[data-fact-todo]').checked;
+  const cambios = [];
+  for (const orig of pend){
+    const nid = safeId(orig.entrega);
+    const factura = dval(`factura-${nid}`) || comun;
+    if (!factura) return dErr('Ingresa el N° de factura.');
+    const e = clone(Store.get('entregas', nid)); e.pasos = e.pasos || {};
+    const antes = unidades(e); let lineas = e.lineas || [], sinFact = [];
+    if (!todo){
+      lineas = [];
+      (e.lineas || []).forEach((l, i) => {
+        const inp = dlg.querySelector(`[data-fact-q][data-ent="${CSS.escape(nid)}"][data-i="${i}"]`);
+        const q = inp ? Math.max(0, Math.min(+l.qty || 0, Math.round(+inp.value || 0))) : (+l.qty || 0);
+        if (q > 0) lineas.push({...l, qty: q});
+        if (q < (+l.qty || 0)) sinFact.push(`${l.sku} ${(+l.qty || 0) - q}`);
+      });
+      if (!lineas.length) return dErr(`En la entrega ${orig.entrega} no se facturó ninguna unidad: no la marques como facturada.`);
+    }
+    e.factura = factura; e.lineas = lineas;
+    e.pasos.facturada = {ok: true, at: nowISO()};
+    const despues = unidades(e);
+    addLog(e, sinFact.length ? `Facturada (factura ${factura}): ${fmt(despues)} de ${fmt(antes)} un.; sin facturar, vuelven a por suministrar: ${sinFact.join(', ')}` : `Hecho: Facturada (factura ${factura})`);
+    cambios.push([nid, e, antes - despues]);
+  }
+  dlg.close();
+  let sin = 0, ok = true;
+  for (const [nid, e, dif] of cambios){ if (!await save('entregas', nid, e)) ok = false; sin += dif; }
+  if (ok) toast(sin ? `Factura registrada. ${fmt(sin)} un. sin facturar vuelven a por suministrar en el pedido.` : 'Factura registrada');
+}
+async function quitarFactura(key){
+  const g = grupo1(key); if (!g) return;
+  dlg.close();
+  await Promise.all(g.entregas.map(e => marcarPasoQuitar(e)));
+}
+async function marcarPasoQuitar(orig){
+  const e = clone(orig); e.pasos = e.pasos || {};
+  if (!pasoOk(e, 'facturada')) return;
+  e.pasos.facturada = {ok: false, at: nowISO()}; addLog(e, 'Reabierto: Facturada');
+  await save('entregas', safeId(e.entrega), e);
 }
 
 function abrirGrupo(key){
@@ -454,6 +560,10 @@ document.addEventListener('click', ev => {
     case 'editarPedido': abrirPedido(UI.sel); break;
     case 'guardarPedido': guardarPedido(t.dataset.id); break;
     case 'borrarPedido': borrarPedido(t.dataset.id); break;
+    case 'cerrarPedido': cerrarPedido(t.dataset.id); break;
+    case 'guardarFactura': guardarFactura(t.dataset.grupo); break;
+    case 'quitarFactura': quitarFactura(t.dataset.grupo); break;
+    case 'reabrirPedido': reabrirPedido(t.dataset.id); break;
     case 'nuevaEntrega': if (ped) abrirEntrega(ped.pedido, null); break;
     case 'editarEntrega': abrirEntrega(Store.get('entregas', ent).pedido, ent); break;
     case 'guardarEntrega': guardarEntrega(t.dataset.ped, t.dataset.id, t.dataset.marcar); break;

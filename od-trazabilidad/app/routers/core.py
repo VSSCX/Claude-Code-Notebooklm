@@ -36,6 +36,27 @@ def put_pedido(numero: str, body: PedidoIn, s: Session = Depends(get_session)):
     return domain.pedido_doc(p)
 
 
+@router.post("/pedidos/{numero}/cerrar")
+def cerrar_pedido(numero: str, body: dict | None = None, s: Session = Depends(get_session)):
+    """Cierra el pedido (no lo borra): p. ej. venció sin stock y se cerró en SAP."""
+    p = domain.cerrar_pedido(s, numero, str((body or {}).get("motivo", "")))
+    if p is None:
+        raise HTTPException(404, "Pedido no encontrado.")
+    _commit(s)
+    s.refresh(p)
+    return domain.pedido_doc(p)
+
+
+@router.post("/pedidos/{numero}/reabrir")
+def reabrir_pedido(numero: str, s: Session = Depends(get_session)):
+    p = domain.reabrir_pedido(s, numero)
+    if p is None:
+        raise HTTPException(404, "Pedido no encontrado.")
+    _commit(s)
+    s.refresh(p)
+    return domain.pedido_doc(p)
+
+
 @router.delete("/pedidos/{numero}", status_code=204)
 def delete_pedido(numero: str, s: Session = Depends(get_session)):
     if not domain.borrar_pedido(s, numero):

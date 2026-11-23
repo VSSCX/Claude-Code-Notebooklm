@@ -33,6 +33,10 @@ class Pedido(Base):
     obs: Mapped[str] = mapped_column(Unicode(500), default="")
     creado: Mapped[datetime] = mapped_column(DateTime, default=ahora)
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
+    # Cerrado a mano (p. ej. venció sin stock y se cerró en SAP): sale de las listas de trabajo pero conserva todo su historial
+    cerrado: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    motivo_cierre: Mapped[str] = mapped_column(Unicode(120), default="")
+    cerrado_por: Mapped[str] = mapped_column(Unicode(60), default="")
 
     lineas: Mapped[list["LineaPedido"]] = relationship(
         back_populates="pedido_ref", cascade="all, delete-orphan", order_by="LineaPedido.id")

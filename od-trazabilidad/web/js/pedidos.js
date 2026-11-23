@@ -8,6 +8,7 @@ function filtroCliente(){
 }
 // Ordena: primero la cita más próxima; después lo que no tiene cita; al final lo cerrado
 function urgencia(p){
+  if (cierreManual(p)) return '4' + (p.actualizado || '');
   const ents = entregasDe(p.pedido).filter(e => !e.anulada && !pasoOk(e, 'entregado'));
   const f = ents.map(e => (e.cita || {}).fecha).filter(Boolean).sort()[0];
   if (f) return '1' + f;
@@ -46,7 +47,7 @@ function vistaPedidos(){
         <span class="o-1"><span class="o-num">${esc(p.pedido)}</span><span class="o-cli">${esc(p.cliente || 'Sin cliente')}</span><span class="o-pct" data-flash>${pct(tot.agendado + tot.entregado, tot.pedida)}</span></span>
         <span class="o-2 block">OC <span class="code">${esc(p.oc || '—')}</span> · <span class="num">${fmt(tot.pedida)}</span> un.${tot.pendiente ? ` · <span class="num">${fmt(tot.pendiente)}</span> por suministrar` : ''}</span>
         ${barHTML(tot)}
-        <span class="o-next ${nx.tono}" data-flash>${esc(nx.txt)}</span></button></li>`; }).join('')}</ul>`
+        <span class="o-next ${cierreManual(p) ? '' : nx.tono}" data-flash>${cierreManual(p) ? esc('Cerrado' + (p.motivoCierre ? ' · ' + p.motivoCierre : '')) : esc(nx.txt)}</span></button></li>`; }).join('')}</ul>`
     : `<div class="empty"><h3>${todos.length ? 'Ningún pedido coincide' : 'Aún no hay pedidos'}</h3><p>${todos.length ? 'Cambia el filtro o la búsqueda.' : 'Analiza uno desde SAP, créalo a mano o importa un Excel exportado de SAP.'}</p></div>`;
 
   return `<div class="split">
@@ -56,7 +57,7 @@ function vistaPedidos(){
         <div class="row tight" style="width:100%"><button class="btn primary sm" data-act="abrirAnalisis">Analizar pedido de SAP</button>
           <button class="btn sm" data-act="nuevoPedido">${ICON.plus} Cargar a mano</button></div>
         <div class="row">${filtroCliente()}
-          <label class="chk"><input type="checkbox" data-abiertos ${UI.soloAbiertos ? 'checked' : ''}> Ocultar cerrados</label></div>
+          <label class="chk"><input type="checkbox" data-abiertos ${UI.soloAbiertos ? 'checked' : ''}> Ocultar cerrados${todos.some(cerrado) ? ` (${todos.filter(cerrado).length})` : ''}</label></div>
         <div class="row tight" style="width:100%"><button class="btn sm" data-act="juntarModo" aria-pressed="${UI.juntar}" title="Marca varios pedidos analizados para cubicarlos juntos en los mismos camiones (los conchos de uno viajan con otro)">${ICON.cube} ${UI.juntar ? 'Terminar de juntar' : 'Juntar pedidos'}</button>
           ${UI.conjunto && !UI.verConjunto ? `<button class="btn quiet sm" data-act="verConjunto">Volver al cubicaje conjunto</button>` : ''}</div>
       </div>
@@ -378,6 +379,8 @@ function detallePedido(p){
             <button role="menuitem" data-act="abrirAnalisis" ${enCurso ? 'disabled' : ''} title="Vuelve a leer el pedido en SAP y actualiza cantidades, saldo y stock">${flujo.an ? 'Volver a analizar en SAP' : 'Analizar en SAP'}</button>
             <button role="menuitem" data-act="nuevaEntrega">Nueva entrega</button>
             <button role="menuitem" data-act="editarPedido">Editar pedido</button>
+            ${cierreManual(p) ? `<button role="menuitem" data-act="reabrirPedido" data-id="${esc(safeId(p.pedido))}">Reabrir pedido</button>`
+              : `<button role="menuitem" data-act="cerrarPedido" data-id="${esc(safeId(p.pedido))}" title="Lo saca de las listas sin borrarlo: por ejemplo, un pedido vencido que ya se cerró en SAP">Cerrar pedido</button>`}
             <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel" download title="Excel para el KAM: lo pedido, lo que está en entrega, lo pendiente, la alerta, el saldo SOP, el stock CD30 y la próxima liberación">Exportar estatus para el KAM (Excel)</a>
             <a role="menuitem" data-exp-kam href="/api/analisis/${encodeURIComponent(p.pedido)}/excel?interno=true" download title="Libro completo para el equipo: estado, suministros, otros stocks, control de calidad y detalle del análisis. No es para enviar al KAM">Exportar detalle interno (Excel)</a>
             <label role="menuitem" class="menu-subir">Subir PDF o imagen<input type="file" accept=".pdf,.png,.jpg,.html" data-subir data-pedido="${esc(p.pedido)}" data-grupo="" style="display:none"></label>
@@ -391,6 +394,9 @@ function detallePedido(p){
     </div>
     <div class="label-bar">${barHTML(tot)}</div>
     ${suministrosHTML(p, tot, flujo)}
+    ${cierreManual(p) ? `<div class="aviso warn" role="status"><div><b>Pedido cerrado${p.cerrado ? ` el ${fmtFecha(String(p.cerrado).slice(0, 10))}` : ''}${p.cerradoPor ? ` por ${esc(p.cerradoPor)}` : ''}.</b>
+      ${p.motivoCierre ? `<span class="small">${esc(p.motivoCierre)}.</span> ` : ''}<span class="small">No aparece en Por hacer ni en las listas. Conserva sus entregas y su historial.</span></div>
+      <button class="btn sm" data-act="reabrirPedido" data-id="${esc(safeId(p.pedido))}">Reabrir pedido</button></div>` : ''}
     ${p.obs ? `<p class="label-obs small">${esc(p.obs)}</p>` : ''}
     <div class="label-flujo">${flujoHTML(flujo)}</div>
     ${estadoJob()}
@@ -570,7 +576,7 @@ function grupoHTML(g){
       <span class="grp-acc">${k === 'confirmada' ? `<button class="btn primary sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1" title="Pide fecha, hora y referencia del grupo y las lleva a SAP">Confirmar cita</button>`
         : k === 'sap' ? `<button class="btn primary sm" data-act="citaGrupo" data-grupo="${llave}" title="Pone la fecha, la hora y la referencia en SAP">Actualizar en SAP</button>
           <button class="btn quiet sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1" title="Si ya lo hiciste a mano en SAP">Ya está hecho</button>`
-        : POR_ENTREGA.includes(k) ? `<button class="btn primary sm" data-act="irEntrega" data-ent="${esc(safeId((falta[0] || g.entregas[0]).entrega))}">Registrar facturas</button>`
+        : k === 'facturada' ? `<button class="btn primary sm" data-gpaso="facturada" data-grupo="${llave}" title="Pide el N° de factura y confirma que se facturó todo lo de la entrega">Registrar factura</button>`
         : `<button class="btn primary sm" data-gpaso="${k}" data-grupo="${llave}" data-forzar="1">Marcar hecho</button>`}</span>`;
   return `<article class="docket grp" data-k="g-${llave}">
     <div class="grp-h">
