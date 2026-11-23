@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ...db import get_session
+from ...integrations import maestra
 from ...integrations import medidas as med_mod
 from .libre import cubicaje_libre
 from .predistribuido import _conocidos, _fila_predist
@@ -106,12 +107,12 @@ def plantilla_carga(s: Session = Depends(get_session)):
 @router.post("/cubicaje-libre/importar")
 def importar_carga(file: UploadFile = File(...), reemplazar: str = Form("si"),
                    modo: str = Form(""), caja_master: str = Form(""),
-                   piso_pallet: str = Form(""), destino: str = Form(""),
+                   piso_pallet: str = Form(""), destino: str = Form(""), cliente: str = Form(""),
                    s: Session = Depends(get_session)):
     """Carga masiva: lee el Excel y deja los productos listos para cubicar."""
     from ... import cargas
     try:
-        lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s))
+        lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s), homologacion=maestra.homologacion(cliente))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return _aplicar_carga(s, lec, reemplazar, modo, caja_master, piso_pallet, destino)

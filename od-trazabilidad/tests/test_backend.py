@@ -972,6 +972,47 @@ def test_importar_archivo_de_cliente_respeta_el_modo_en_pantalla(datos):
     assert sorted((f["sucursal"], f["unidades"]) for f in d["filas"]) == [("ALTO LAS CONDES", 4), ("PLAZA OESTE", 6)]
 
 
+def test_el_predistribuido_con_codigos_del_cliente_se_cruza_con_la_maestra_de_homologacion(datos, monkeypatch):
+    """El cliente manda su propio código: si no es un producto de la Base de Medidas, se cambia por el de Electrolux."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    with SessionLocal() as s:
+        _medida(s, "240097509", "240097509 FREIDORA")
+        s.commit()
+    pedidos = []
+    monkeypatch.setattr(maestra, "homologacion", lambda cliente="": pedidos.append(cliente) or {"635066999": "240097509", "777": "240000001"})
+    encabezado = ["Local", "SKU", "Cantidad"]
+    filas = [("PLAZA OESTE", "0635066999", 6), ("ALTO LAS CONDES", 635066999, 4), ("PLAZA OESTE", "240097509", 2), ("MAIPU", "999", 3)]
+    r = c.post("/api/cubicaje-libre/importar", files={"file": ("p.xlsx", _archivo_cliente(filas, encabezado=encabezado, titulo=False))},
+               data={"cliente": "PARIS", "modo": "MDA PREDISTRIBUIDO"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert pedidos == ["PARIS"]                                             # se pidió la homologación del cliente de la pantalla
+    assert sorted((f["sucursal"], f["unidades"]) for f in d["filas"] if f["sku"] == "240097509") == [("ALTO LAS CONDES", 4), ("PLAZA OESTE", 8)]
+    assert any("1 código del cliente se cruzaron" in n or "1 código del cliente se cruzó" in n or "cruzaron con la maestra" in n for n in d["lectura"]["notas"])
+    assert [x["sku"] for x in d.get("faltantes", [])] == ["999"]           # lo que no está en la maestra queda como sin medidas
+
+
+def test_la_maestra_de_homologacion_entrega_los_codigos_del_cliente(tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active; ws.title = "MAESTRA HOMOLOGACION"
+    ws.append(["COD. PROD. PROVEEDOR (ELUX)", "Descripción", "NOMBRE CLIENTE", "SKU CLIENTE", "ACTIVO"])
+    ws.append(["240093663", "LAVADORA A", "PARIS", "635066999", 0])
+    ws.append(["240093660", "LAVADORA B", "FALABELLA", "17012835", 1])
+    ws.append(["240093660", "LAVADORA B", "PARIS", "0", 1])                  # 0 = el cliente no tiene código
+    ws.append(["240000009", "OTRA", "PARIS", "555", 0])
+    ws.append(["240000010", "OTRA ACTIVA", "PARIS", "555", 1])               # mismo código del cliente: gana el activo
+    ruta = tmp_path / "maestra.xlsx"; wb.save(ruta)
+    monkeypatch.setattr(maestra, "settings", SimpleNamespace(maestra_homologacion=str(ruta)))
+    monkeypatch.setitem(maestra._estado, "revisado", 0.0)
+    monkeypatch.setitem(maestra._estado, "mtime", None)
+    assert maestra.homologacion("PARIS FULL") == {"635066999": "240093663", "555": "240000010"}
+    assert maestra.homologacion("FALABELLA") == {"17012835": "240093660"}
+    todos = maestra.homologacion("")                                        # sin cliente: los códigos que no chocan
+    assert todos["635066999"] == "240093663" and todos["17012835"] == "240093660" and "0" not in todos
+
+
 def test_reglas_del_reparto_avisan_lo_que_no_se_carga(datos):
     from fastapi.testclient import TestClient
     from app.main import app

@@ -359,7 +359,7 @@ async function importarCarga(input){
   const f = input.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('file', f);
   fd.append('modo', UI.cubIn.modo || ''); fd.append('caja_master', UI.cubIn.caja_master || '');
-  fd.append('piso_pallet', UI.cubIn.piso_pallet || ''); fd.append('destino', UI.cubIn.destino || '');
+  fd.append('piso_pallet', UI.cubIn.piso_pallet || ''); fd.append('destino', UI.cubIn.destino || ''); fd.append('cliente', UI.cubIn.cliente || '');
   UI.cubOcupado = true; renderSoon();
   try {
     const r = await fetch('/api/cubicaje-libre/importar', {method: 'POST', body: fd,

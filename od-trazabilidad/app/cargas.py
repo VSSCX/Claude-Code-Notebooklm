@@ -28,7 +28,8 @@ ALIAS = {
     # varios candidatos: gana el que coincide con la Base de Medidas. En empate, este orden.
     "sku": ["material", "cod prov", "cd prov", "codigo proveedor", "cdigo proveedor", "cod proveedor", "sku", "codigo", "codigo material",
             "cod material", "codigo producto", "cod producto", "articulo", "item",
-            "cdigo"],      # "Cód." mal codificado (�) llega sin la vocal
+            "cdigo",       # "Cód." mal codificado (�) llega sin la vocal
+            "sku cliente", "sku del cliente", "material cliente", "codigo producto cliente", "cod producto cliente"],   # el código del cliente: se cruza con la maestra
     "unidades": ["unidades", "cantidad", "qty", "unid", "cant", "unidades pedidas", "cantidad pedida",
                  "cantidad a despachar", "unidades a despachar", "un"],
     "bulto": ["unidades por bulto", "por bulto", "bulto", "un por bulto"],
@@ -57,6 +58,7 @@ class Lectura:
     hoja: str = ""
     columnas: dict = field(default_factory=dict)             # campo -> nombre de la columna leída
     leidas: int = 0                                          # filas del archivo con datos
+    homologados: dict = field(default_factory=dict)          # código del cliente -> código Electrolux, cruzados con la maestra
     notas: list[str] = field(default_factory=list)
 
     @property
@@ -163,11 +165,29 @@ def _texto_sku(v) -> str:
     return domain.norm_sku(v)
 
 
+def cruzar_codigo(sku: str, homologacion: dict | None, conocidos: set[str] | None, registro: dict | None = None) -> str:
+    """Cambia un código del cliente por el Electrolux de la maestra de homologación. Un código que ya es un producto de la
+    Base de Medidas no se toca. `registro` guarda cuáles se cambiaron."""
+    if not homologacion:
+        return sku
+    clave = sku.lower()
+    if conocidos and clave in conocidos:
+        return sku
+    elux = homologacion.get(clave)
+    if not elux:
+        return sku
+    if registro is not None:
+        registro[sku] = elux
+    return elux
+
+
 def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
                obligatorios: tuple = ("sku", "unidades"), hojas_preferidas=("carga", "predistribuido"),
-               orden_plantilla: tuple = tuple(ENCABEZADO_PLANTILLA)) -> Lectura:
+               orden_plantilla: tuple = tuple(ENCABEZADO_PLANTILLA), homologacion: dict | None = None) -> Lectura:
     """Lee una carga desde un archivo de cualquier cliente. `conocidos`: SKU (en minúsculas) de la
-    Base de Medidas, para elegir entre varias columnas de código. Lanza ValueError si no se puede."""
+    Base de Medidas, para elegir entre varias columnas de código. `homologacion`: código del cliente (minúsculas) ->
+    código Electrolux (maestra de homologación): lo que no es un producto conocido se cruza con ella.
+    Lanza ValueError si no se puede."""
     hojas = _hojas(contenido, nombre)
     hoja = _elegir_hoja(hojas, hojas_preferidas)
     if hoja is None or not any(any(not _vacio(x) for x in f) for f in hoja[1]):
@@ -204,7 +224,7 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
     if len(cols["sku"]) > 1:
         def aciertos(j):
             vistos = {_texto_sku(f[j]).lower() for _, f in datos if j < len(f) and not _vacio(f[j])}
-            return len(vistos & conocidos) if conocidos else 0
+            return (len(vistos & conocidos) if conocidos else 0) + (len({v for v in vistos if v in homologacion and v not in (conocidos or ())}) if homologacion else 0)
         puntajes = {j: aciertos(j) for j in cols["sku"]}
         def prioridad(j):                                    # en empate, el orden de ALIAS["sku"]
             n = norm_col(nombres[j])
@@ -250,6 +270,7 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
         if not sku:
             lec.errores.append(f"fila {n}: falta el SKU")
             continue
+        sku = cruzar_codigo(sku, homologacion, conocidos, lec.homologados)
         qty = _cantidad(qty_v) if not _vacio(qty_v) else 0.0
         if qty is None:
             lec.errores.append(f"fila {n}: '{qty_v}' no es una cantidad")
@@ -293,6 +314,9 @@ def leer_carga(contenido: bytes, nombre: str, conocidos: set[str] | None = None,
         lec.columnas.pop("grupo", None)
     elif j_grupo is not None:
         lec.notas.append(f"Grupos de carga: {len({f.grupo for f in lec.filas})}. El grupo 1 va al fondo y cada grupo empieza donde terminó el anterior.")
+    if lec.homologados:
+        lec.notas.append(f"{len(lec.homologados)} código{'s' if len(lec.homologados) != 1 else ''} del cliente se cruzaron con la maestra "
+                         "de homologación y se cambiaron por el código Electrolux.")
     if lec.leidas > len(lec.filas) and lec.filas and not lec.errores:
         lec.notas.append(f"{lec.leidas} filas del archivo se sumaron en {len(lec.filas)} (misma sucursal y producto).")
     return lec

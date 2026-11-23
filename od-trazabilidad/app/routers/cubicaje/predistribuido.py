@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ... import domain
 from ...db import get_session
+from ...integrations import maestra
 from ...integrations import medidas as med_mod
 from ._comun import _commit
 
@@ -111,10 +112,12 @@ def importar_predistribuido(numero: str, file: UploadFile = File(...),
                             s: Session = Depends(get_session)):
     """Carga masiva del reparto: la plantilla o el archivo del cliente. Reemplaza el reparto del pedido."""
     from ... import cargas
+    ped = domain._get_pedido(s, numero)
     try:
         lec = cargas.leer_carga(file.file.read(), file.filename or "", _conocidos(s),
                                 obligatorios=("sucursal", "sku", "unidades"), hojas_preferidas=("predistribuido", "carga"),
-                                orden_plantilla=("sucursal", "sku", "unidades", "bulto"))
+                                orden_plantilla=("sucursal", "sku", "unidades", "bulto"),
+                                homologacion=maestra.homologacion(ped.cliente if ped else ""))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     filas = [{"sucursal": f.sucursal, "sku": f.sku, "unidades": f.qty, "por_bulto": f.bulto} for f in lec.filas]
