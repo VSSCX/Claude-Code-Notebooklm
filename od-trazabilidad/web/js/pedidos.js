@@ -686,7 +686,7 @@ UI.pedCam = {};
 function visorPedido(p, cb, alto, clave = p.pedido){
   if (!cb.visor) return '';
   const vivo = cb.visor_json && cb.visor_vivo;
-  return `<div class="visor-caja" style="min-height:${alto}px;flex:none;height:${alto}px">
+  return barraColor(cb.visor_json, `pedido:${clave}`) + `<div class="visor-caja" style="min-height:${alto}px;flex:none;height:${alto}px">
     ${vivo ? `<iframe data-k="visor-ped" data-visor="pedido:${esc(clave)}" src="${esc(cb.visor_vivo)}#solo3d" title="Visor 3D del pedido ${esc(p.pedido)}"></iframe>`
            : `<iframe data-k="visor-ped" src="${esc(cb.visor)}" title="Visor 3D del pedido ${esc(p.pedido)}"></iframe>`}
     ${herramientasVisor(cb.visor_json)}

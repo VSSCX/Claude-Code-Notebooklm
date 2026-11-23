@@ -25,7 +25,9 @@ const Visor = {
   listos: new WeakSet(),       // iframes que ya avisaron "listo"
   enviado: new WeakMap(),      // último dato enviado a cada iframe
   palEnv: new WeakMap(),       // último pallet resaltado enviado a cada iframe
+  leyendas: {},               // por visor: qué color lleva cada sucursal del camión que muestra (lo avisa el propio visor)
   frames(){ return [...document.querySelectorAll('iframe[data-visor]')]; },
+  filtroSuc(clave, nombre, activa){ this.mandar({tipo: 'od-visor-filtro', suc: activa ? null : nombre}, this.frames().find(x => x.dataset.visor === clave)); },
   datos(f){
     const k = f.dataset.visor;
     if (k === 'libre') return (UI.cub && UI.cub.visor_json) || camionVacioJSON((UI.cubIn || {}).vista);
@@ -65,6 +67,12 @@ const Visor = {
 };
 window.addEventListener('message', ev => {
   const m = ev.data;
+  if (ev.origin === location.origin && m && m.tipo === 'od-visor-leyenda'){          // colores por sucursal del camión que se ve
+    const f = Visor.frames().find(x => x.contentWindow === ev.source);
+    const k = f && f.dataset.visor, s = JSON.stringify(m);
+    if (k && Visor.leyendas[k] !== s){ Visor.leyendas[k] = s; render(); }
+    return;
+  }
   if (ev.origin !== location.origin || !m || m.tipo !== 'od-visor-listo') return;
   for (const f of Visor.frames()) if (f.contentWindow === ev.source){ Visor.listos.add(f); Visor.enviado.delete(f); Visor.palEnv.delete(f); }
   Visor.sincronizar();
@@ -82,18 +90,29 @@ function camionVacioJSON(vista){
     {idx: 1, tipo, L, W, H, volTot: 0, volCap: +(L * W * H / 1e6).toFixed(2), ocupVol: 0, pesoTot: 0, items: [], cajas: [], pallets: []}]});
 }
 
-/* Interruptores pequeños sobre el visor: "Cajas [Descripción | Letra]" y, si la carga trae sucursales, "Color [Producto | Sucursal]" */
+/* Interruptor pequeño sobre el visor: "Cajas [Descripción | Letra]". El color (producto / sucursal) va en la barra de arriba, ver barraColor(). */
 function herramientasVisor(visorJson){
-  const e = Visor.etiqueta, hayCol = /"suc":"[^"]/.test(visorJson || ''), col = Visor.color;
+  const e = Visor.etiqueta;
   return `<div class="vis-tools" role="group" aria-label="Texto sobre las cajas"><span>Cajas</span><div class="seg sm">
     <button type="button" data-vis-etiqueta="desc" aria-pressed="${e === 'desc'}">Descripción</button>
     <button type="button" data-vis-etiqueta="letra" aria-pressed="${e === 'letra'}" title="La letra de cada producto se lee en una impresión en blanco y negro">Letra</button></div>
-    ${hayCol ? `<span>Color</span><div class="seg sm" role="group" aria-label="Color de las cajas">
-      <button type="button" data-vis-color="prod" aria-pressed="${col === 'prod'}" title="Cada producto con su color">Producto</button>
-      <button type="button" data-vis-color="suc" aria-pressed="${col === 'suc'}" title="Cada sucursal con su color">Sucursal</button></div>` : ''}
     <button type="button" class="vis-ojo" data-vis-libre aria-pressed="${Visor.libre}" aria-label="Vista libre del camión" title="Vista libre: gira por completo, mueve con clic derecho o Shift y acércate hasta entrar al camión">${ICON.ojo}</button></div>`;
 }
+/* Barra sobre el visor: con sucursales (flujo predistribuido) permite elegir el color de las cajas, por producto o por sucursal,
+   y dice qué color es cada sucursal del camión que se ve (clic: aísla esa sucursal en el 3D). `clave` es el data-visor del iframe. */
+function barraColor(visorJson, clave){
+  if (!/"suc":"[^"]/.test(visorJson || '')) return '';
+  const col = Visor.color;
+  let ley = null; try { ley = Visor.leyendas[clave] ? JSON.parse(Visor.leyendas[clave]) : null; } catch(e){ ley = null; }
+  const chips = ley && col === 'suc' ? `<ul class="vis-ley-l">${ley.suc.map(s => `<li><button type="button" class="vis-suc" data-vis-suc="${esc(s.n)}" data-vis-clave="${esc(clave)}" aria-pressed="${ley.filtro === s.n}"
+        title="${ley.filtro === s.n ? 'Volver a ver todas las sucursales' : 'Aislar esta sucursal en el 3D'}"><i class="sw" style="background:${esc(s.c)};color:${tintaSobre(s.c)}">${esc(s.l)}</i><span class="nm">${esc(s.n)}</span><span class="qt num">${s.p ? `${fmt(s.p)} pal. · ` : ''}${fmt(s.k)} cajas</span></button></li>`).join('')}</ul>` : '';
+  return `<div class="vis-ley" role="group" aria-label="Color de las cajas"><div class="vis-ley-c"><span>Color de las cajas</span>
+      <div class="seg sm"><button type="button" data-vis-color="prod" aria-pressed="${col === 'prod'}" title="Cada producto con su color">Por producto</button>
+      <button type="button" data-vis-color="suc" aria-pressed="${col === 'suc'}" title="Cada sucursal con su color: lo que se distingue en un predistribuido">Por sucursal</button></div></div>${chips}</div>`;
+}
 document.addEventListener('click', ev => {
+  const sc = ev.target.closest && ev.target.closest('[data-vis-suc]');
+  if (sc){ Visor.filtroSuc(sc.dataset.visClave, sc.dataset.visSuc, sc.getAttribute('aria-pressed') === 'true'); return; }
   const b = ev.target.closest && ev.target.closest('[data-vis-etiqueta]');
   if (b){ Visor.etiquetar(b.dataset.visEtiqueta); render(); return; }
   const k = ev.target.closest && ev.target.closest('[data-vis-color]');

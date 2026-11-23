@@ -1100,3 +1100,24 @@ details.solo-falta > summary{cursor:pointer;font-size:var(--t-sm)}
 .mix-marca:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .mix-marca:disabled{opacity:.5;cursor:not-allowed}
 @media (hover:hover) and (pointer:fine){.mix-marca[aria-pressed="false"]:not(:disabled):hover{background:var(--paper-3)}}
+
+/* Barra de color sobre el visor: producto / sucursal, y qué color es cada sucursal del camión que se ve */
+.vis-ley{display:flex;flex-direction:column;gap:8px;padding:8px 12px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper)}
+.vis-ley-c{display:flex;align-items:center;gap:10px;font-size:var(--t-sm);font-weight:650;color:var(--ink-2)}
+.vis-ley-l{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none;max-height:92px;overflow:auto}
+.vis-suc{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:7px;padding:3px 9px 3px 4px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper-2);font-size:12px;cursor:pointer;touch-action:manipulation;transition:background-color 100ms var(--ease-out),border-color 100ms var(--ease-out)}
+.vis-suc:hover{border-color:var(--edge)}
+.vis-suc[aria-pressed="true"]{border-color:var(--ink);background:var(--paper-3);box-shadow:inset 0 0 0 1px var(--ink)}
+.vis-suc:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.vis-suc .sw{display:grid;place-items:center;width:20px;height:20px;border-radius:var(--r);font-style:normal;font-weight:750;font-size:11px}
+.vis-suc .nm{font-weight:650;color:var(--ink)}
+.vis-suc .qt{color:var(--muted)}
+
+/* Detalle de un pallet y salto al detalle de todos */
+.pal-det{border:1px solid var(--ink);border-radius:var(--r);background:var(--paper)}
+.pal-det-h{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 14px;padding:9px 14px;border-bottom:1px solid var(--hair)}
+.pal-det-h h3{margin:0;font-size:var(--t-md)}
+.ir-det{margin-left:6px;font-size:var(--t-sm);font-weight:650;white-space:nowrap}
+.ver-pal{margin-left:10px;font-weight:600;float:none}
+.ver-pal svg{width:14px;height:14px;vertical-align:-2px}
+.cam-tbl tr.sel td,.cam-tbl tr.pal-h.sel th{background:var(--accent-soft)}

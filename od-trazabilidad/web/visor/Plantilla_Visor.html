@@ -684,8 +684,23 @@ function renderStats(){
    '<div class="card"><div class="v">'+fmt(c.pesoTot)+'</div><div class="l">Peso total (kg)</div>'+
    '<div class="l" style="margin-top:6px">'+(c.tipo||'')+'<br>'+(c.L/100).toFixed(1)+'x'+(c.W/100).toFixed(2)+'x'+(c.H/100).toFixed(2)+' m</div></div>';
 }
+/* Dentro de la plataforma la leyenda lateral no se ve: se le avisa qué color lleva cada sucursal del camión que se está viendo
+   (y cuántos pallets y cajas), para que la pueda dibujar fuera del 3D. Solo se envía si cambió. */
+let _leyendaEnviada='';
+function avisarLeyenda(){
+  if(parent===window||!HAS_SUC)return;
+  const c=CAM[cur];if(!c)return;
+  const agg={};
+  (c.cajas||[]).forEach(b=>{if(!b.suc)return;(agg[b.suc]=agg[b.suc]||{n:b.suc,c:SUC_COLOR[b.suc]||'#888',l:SUC_LETRA[b.suc]||'?',k:0,p:0}).k++;});
+  (c.pallets||[]).forEach(p=>{if(p.suc&&agg[p.suc])agg[p.suc].p++;});
+  const msg={tipo:'od-visor-leyenda',suc:Object.keys(agg).sort().map(k=>agg[k]),porSuc:!!colorBySuc,
+             filtro:filtroTipo==='suc'?filtroVal:null,camion:c.idx||cur+1};
+  const s=JSON.stringify(msg);if(s===_leyendaEnviada)return;_leyendaEnviada=s;
+  try{parent.postMessage(msg,location.origin);}catch(e){}
+}
 function renderLegend(){
   const c=CAM[cur];if(!c)return;const box=document.getElementById('legend');
+  avisarLeyenda();
   const cajas=c.cajas||[], items=c.items||[];
   const infoCod={}; items.forEach(it=>infoCod[it.cod]={desc:it.desc,color:it.color,letra:it.letra});
   let hayPal=false, hayPiso=false;
@@ -946,7 +961,7 @@ function procesarMensaje(m){
   if(m.tipo==='od-visor-datos')cargarDatos(typeof m.datos==='string'?JSON.parse(m.datos):m.datos);
   else if(m.tipo==='od-visor-camion'&&CAM[m.idx]){filtroTipo=null;filtroVal=null;buildScene(m.idx);renderTabs();renderStats();renderLegend();}
   else if(m.tipo==='od-visor-pallet'){palSel=(m.idx==null)?null:+m.idx;dibujarResalte();}
-  else if(m.tipo==='od-visor-filtro'){filtroTipo=m.cod?'cod':null;filtroVal=m.cod||null;buildScene(cur);renderLegend();}
+  else if(m.tipo==='od-visor-filtro'){filtroTipo=m.suc?'suc':(m.cod?'cod':null);filtroVal=m.suc||m.cod||null;buildScene(cur);renderLegend();}
   else if(m.tipo==='od-visor-etiqueta'){var l=!!m.letra;if(l!==etiquetaLetra){etiquetaLetra=l;buildScene(cur);renderEtiquetaToggle();}}
   else if(m.tipo==='od-visor-color'){if(HAS_SUC&&colorBySuc!==!!m.suc){colorBySuc=!!m.suc;buildScene(cur);renderLegend();updateToggle();}}
   else if(m.tipo==='od-visor-libre')setLibre(!!m.on);
