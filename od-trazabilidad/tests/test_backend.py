@@ -1539,6 +1539,18 @@ def test_export_sin_dialogo_de_guardado_se_recupera_si_el_archivo_aparecio(tmp_p
     assert sap._buscar_export_reciente(ahora, [carpeta, trabajo], espera=0.2) == nuevo
 
 
+def test_las_carpetas_de_trabajo_de_sap_incluyen_onedrive_y_sapworkdir(tmp_path, monkeypatch):
+    """Con Documentos redirigido a OneDrive, o SAPWORKDIR definido, SAP deja ahí la exportación sin preguntar."""
+    from app.integrations import sap
+    (tmp_path / "OneDrive - Empresa").mkdir()
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("SAPWORKDIR", str(tmp_path / "trabajo"))
+    carpetas = sap._carpetas_de_trabajo_sap()
+    assert tmp_path / "trabajo" in carpetas
+    assert tmp_path / "Documents" / "SAP" / "SAP GUI" in carpetas
+    assert tmp_path / "OneDrive - Empresa" / "Documentos" / "SAP" / "SAP GUI" in carpetas
+
+
 def test_se_puede_desactivar_zsd001_03_y_mmbe_y_el_analisis_pasa_de_vl01n_directo(monkeypatch, datos):
     from fastapi.testclient import TestClient
     from app.integrations import base_medidas, bases, sap

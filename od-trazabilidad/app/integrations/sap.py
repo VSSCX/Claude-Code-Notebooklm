@@ -806,6 +806,7 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
     if publicado is not None:
         publicado["layout"] = elegido
     t_export = time.time()                       # todo archivo nuevo desde aquí puede ser esta exportación
+    excel_antes = _libros_de_excel()             # para reconocer el libro que SAP abra si exporta sin preguntar
     menu = _por_id(ses, "wnd[0]/mbar/menu[0]/menu[3]/menu[1]")
     if menu is not None:
         menu.Select()
@@ -833,15 +834,20 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
     else:
         # Hay equipos donde SAP exporta sin preguntar dónde guardar (deja el archivo en su carpeta de trabajo y lo abre en
         # Excel). Si el archivo apareció, se usa en vez de dar la exportación por fallida.
-        hallado = _buscar_export_reciente(t_export, [Path(carpeta), *_carpetas_de_trabajo_sap()])
+        hallado = _buscar_export_reciente(t_export, [Path(carpeta), *_carpetas_de_trabajo_sap()], espera=12)
+        origen = f"el archivo {hallado.name} de {hallado.parent}" if hallado is not None else ""
+        if hallado is None and _copiar_libro_de_excel(excel_antes, destino):
+            hallado, origen = destino, "el libro que SAP abrió en Excel"
         if hallado is None:
             raise ErrorSap("ZSD001_03 no mostró el diálogo para guardar el archivo" + _ventana_inesperada(ses) + ". "
-                           "No apareció tampoco ningún archivo exportado en " + str(carpeta) + ".")
+                           "No apareció tampoco ningún archivo exportado en " + str(carpeta) + " ni en las carpetas de trabajo de SAP GUI. "
+                           "Pasa cuando en SAP GUI se marcó «no preguntar» al exportar: en Opciones (Alt+F12) > Opciones > Datos locales, "
+                           "vuelve a dejar que pregunte al guardar, o revisa dónde guarda SAP y avísanos esa carpeta.")
         if hallado != destino:
             import shutil
             shutil.copy2(hallado, destino)
         if avisar:
-            avisar(f"SAP exportó ZSD001_03 sin mostrar el diálogo de guardado; se usó el archivo {hallado.name} de {hallado.parent}.")
+            avisar(f"SAP exportó ZSD001_03 sin mostrar el diálogo de guardado; se usó {origen}.")
 
     _esperar_archivo(ses, destino)
     try:
@@ -867,10 +873,47 @@ def zsd001_03(cliente_cod: "str | list[str]", materiales: list[str], carpeta: st
 
 
 def _carpetas_de_trabajo_sap() -> list:
-    """Donde SAP GUI deja las exportaciones cuando no pregunta la ruta."""
+    """Donde SAP GUI deja las exportaciones cuando no pregunta la ruta: su carpeta de trabajo (SAPWORKDIR, o
+    Documentos\\SAP\\SAP GUI) en el perfil o en OneDrive (cuando Documentos está redirigido)."""
+    import os
     from pathlib import Path
     base = Path.home()
-    return [base / "Documents" / "SAP" / "SAP GUI", base / "Documentos" / "SAP" / "SAP GUI"]
+    raices = [base, *sorted(base.glob("OneDrive*"))]
+    carpetas = []
+    if os.environ.get("SAPWORKDIR"):
+        carpetas.append(Path(os.environ["SAPWORKDIR"]))
+    for raiz in raices:
+        carpetas += [raiz / "Documents" / "SAP" / "SAP GUI", raiz / "Documentos" / "SAP" / "SAP GUI"]
+    return carpetas
+
+
+def _libros_de_excel() -> set:
+    """Nombres de los libros abiertos ahora en Excel (vacío si Excel no está abierto o no hay pywin32)."""
+    try:
+        import win32com.client
+        xl = win32com.client.GetActiveObject("Excel.Application")
+        return {str(xl.Workbooks(i).FullName) for i in range(1, int(xl.Workbooks.Count) + 1)}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _copiar_libro_de_excel(antes: set, destino, espera: float = 10.0) -> bool:
+    """Si SAP abrió la exportación en Excel (sin pedir dónde guardar), guarda una copia de ese libro nuevo en `destino`."""
+    t0 = time.time()
+    while True:
+        try:
+            import win32com.client
+            xl = win32com.client.GetActiveObject("Excel.Application")
+            for i in range(1, int(xl.Workbooks.Count) + 1):
+                libro = xl.Workbooks(i)
+                if str(libro.FullName) not in antes:
+                    libro.SaveCopyAs(str(destino))
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        if time.time() - t0 >= espera:
+            return False
+        time.sleep(0.5)
 
 
 def _buscar_export_reciente(desde: float, carpetas: list, espera: float = 20.0):
