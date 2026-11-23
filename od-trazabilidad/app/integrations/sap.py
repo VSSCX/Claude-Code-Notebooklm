@@ -1026,8 +1026,33 @@ def leer_export(ruta) -> list[dict]:
 # ===========================================================================
 MMBE_ARBOL = "wnd[0]/usr/cntlCC_CONTAINER/shellcont/shell/shellcont[1]/shell[1]"
 MMBE_GRILLA = "wnd[1]/usr/cntlGRID1/shellcont/shell/shellcont[1]/shell"
-FILA_CD30, FILA_EC01, FILA_TP01 = "          4", "          6", "          8"
+# El árbol de MMBE lista los almacenes en orden alfabético: CD30, CVEV, EC01, TP01 (la reserva VEV pasó a ser el almacén CVEV).
+ALMACENES = ("CD30", "EC01", "TP01", "CVEV")            # los que se cargan en el filtro de almacenes
+FILAS_ALMACEN = {"CD30": "          4", "CVEV": "          6", "EC01": "          8", "TP01": "         10"}   # con los cuatro con stock
 COL_STOCK = "C          2"
+
+
+def _filas_de_almacenes(arbol) -> dict[str, str]:
+    """Fila (clave de nodo) de cada almacén en el árbol de MMBE, leyendo el texto de los nodos. Sin esto las filas fijas se
+    corren cuando un almacén no tiene stock y no sale en el árbol (se leería el stock de otro). Vacío si no se pudo leer."""
+    encontrados: dict[str, str] = {}
+    try:
+        claves = list(arbol.GetAllNodeKeys())
+    except Exception:  # noqa: BLE001
+        return {}
+    for clave in claves:
+        texto = ""
+        for leer in (lambda: arbol.GetNodeTextByKey(clave), lambda: arbol.GetItemText(clave, "C          1")):
+            try:
+                texto = str(leer() or "").strip()
+            except Exception:  # noqa: BLE001
+                texto = ""
+            if texto:
+                break
+        cod = texto.upper().split(" ")[0] if texto else ""
+        if cod in ALMACENES and cod not in encontrados:
+            encontrados[cod] = str(clave)
+    return encontrados
 
 
 def _entero_sap(v) -> int:
@@ -1084,7 +1109,7 @@ def _popup_almacen(ses, fila: str, arbol=None) -> tuple[int, int]:
 
 @desde_el_inicio
 def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
-    """Stock neto CD30, reserva CD30, stock neto EC01 y TP01 por SKU (centro CE02)."""
+    """Stock neto CD30, reserva CD30 y stock neto CVEV, EC01 y TP01 por SKU (centro CE02)."""
     if not skus:
         return {}
     ses = conectar()
@@ -1103,7 +1128,7 @@ def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
 
     _presionar(ses, "wnd[0]/usr/btn%_MS_LGORT_%_APP_%-VALU_PUSH", 5)
     _esperar_objeto(ses, _multi_celda(0), 3)                         # antes: pausa fija de 0,4 s
-    for i, alm in enumerate(("CD30", "EC01", "TP01")):
+    for i, alm in enumerate(ALMACENES):
         _texto(ses, _multi_celda(i), alm)
     _presionar(ses, "wnd[1]/tbar[0]/btn[0]")
     _presionar(ses, "wnd[1]/tbar[0]/btn[8]")
@@ -1130,11 +1155,19 @@ def mmbe(skus: list[str], avance=None) -> dict[str, dict]:
         ses.findById("wnd[0]/tbar[1]/btn[8]").press()
         _esperar(ses)
         _esperar_objeto(ses, MMBE_ARBOL, 12)
-        arbol = _por_id(ses, MMBE_ARBOL)             # el mismo árbol sirve para los tres almacenes de este SKU
-        cd30, reserva = _popup_almacen(ses, FILA_CD30, arbol)
-        ec01, _ = _popup_almacen(ses, FILA_EC01, arbol)
-        tp01, _ = _popup_almacen(ses, FILA_TP01, arbol)
-        out[sku] = {"cd30": cd30, "reserva_cd30": reserva, "ec01": ec01, "tp01": tp01}
+        arbol = _por_id(ses, MMBE_ARBOL)             # el mismo árbol sirve para los almacenes de este SKU
+        filas = _filas_de_almacenes(arbol) if arbol is not None else {}
+        if arbol is not None and not filas:
+            log.warning("MMBE %s: no se pudo leer el texto de los nodos; se usan las filas fijas", sku)
+
+        def stock_de(alm):
+            fila = filas.get(alm) if filas else FILAS_ALMACEN[alm]
+            return _popup_almacen(ses, fila, arbol) if fila else (0, 0)       # sin nodo = sin stock en ese almacén
+        cd30, reserva = stock_de("CD30")
+        cvev, _ = stock_de("CVEV")
+        ec01, _ = stock_de("EC01")
+        tp01, _ = stock_de("TP01")
+        out[sku] = {"cd30": cd30, "reserva_cd30": reserva, "cvev": cvev, "ec01": ec01, "tp01": tp01}
         _presionar(ses, "wnd[0]/tbar[0]/btn[3]", 5)   # volver a la selección
         log.info("MMBE %s: %.1f s (%d de %d)", sku, time.time() - t_sku, n, len(skus))
     log.info("MMBE terminado: %d SKU en %.1f s", len(skus), time.time() - t_ini)

@@ -1120,7 +1120,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
                 pos["sku"] = "90000"                          # el SKU que tiene el pedido de la prueba
         doc["plan"]["90000"] = doc["plan"].pop("9000")
         doc["medidas"]["90000"] = doc["medidas"].pop("9000")
-        doc["stock"] = {"90000": {"cd30": 5, "reserva_cd30": 1, "ec01": 2, "tp01": 0}}
+        doc["stock"] = {"90000": {"cd30": 5, "reserva_cd30": 1, "cvev": 3, "ec01": 2, "tp01": 0}}
         doc["disponibilidad"] = {"90000": {"cantidad": 300, "fecha": "2026-10-15"}}      # lo que se sabía al analizar
         doc["control_calidad"] = {"90000": 12}                                         # y lo que había en control de calidad
         doc["resultado"] = calcular(doc["posiciones"], doc["plan"], {}, doc["medidas"], doc["disponibilidad"], doc["stock"],
@@ -1171,7 +1171,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     filas = {x[0]: x for x in ws.iter_rows(min_row=cab + 1, values_only=True)}
     f9000 = filas["90000"]
     assert f9000[2:6] == (10, 6, 4, "Parcial") and f9000[6] == "Limitado SOP" and f9000[7] == saldo
-    assert f9000[8:12] == (5, 1, 2, 0) and f9000[12:15] == (20, "20-10-2026", 450)
+    assert f9000[8:13] == (5, 1, 3, 2, 0) and f9000[13:16] == (20, "20-10-2026", 450)
     ent = list(wb["Entregas"].iter_rows(min_row=2, values_only=True))
     assert [c.value for c in wb["Entregas"][1]] == ["Grupo", "N° entrega", "SKU", "Descripción", "Qty", "Suministro"]
     assert ent and all(len(x) == 6 and x[0] for x in ent)                 # cada línea trae su grupo (o «Sin grupo»)
@@ -1189,7 +1189,7 @@ def test_exportar_el_analisis_para_los_kam(datos, monkeypatch):
     assert fila[8:10] == ("15-10-2026", 300)           # sin conexión: la liberación del análisis
     ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel?interno=true").content))["Estatus"]
     fila = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "90000")
-    assert fila[12:15] == (12, "15-10-2026", 300)       # y el control de calidad del análisis
+    assert fila[13:16] == (12, "15-10-2026", 300)       # y el control de calidad del análisis
 
 
 def test_las_cajas_master_cuentan_unidades_de_producto_y_bultos(datos):
@@ -1551,6 +1551,27 @@ def test_las_carpetas_de_trabajo_de_sap_incluyen_onedrive_y_sapworkdir(tmp_path,
     assert tmp_path / "OneDrive - Empresa" / "Documentos" / "SAP" / "SAP GUI" in carpetas
 
 
+def test_mmbe_encuentra_cada_almacen_por_su_nombre_en_el_arbol():
+    """CVEV es un almacén más: las filas del árbol se leen por nombre, porque un almacén sin stock no sale y correría las filas."""
+    from app.integrations import sap
+
+    class Arbol:
+        def __init__(self, nodos):
+            self.nodos = nodos
+        def GetAllNodeKeys(self):
+            return list(self.nodos)
+        def GetNodeTextByKey(self, k):
+            return self.nodos[k]
+    completo = Arbol({"          1": "Sociedad 1000", "          3": "Centro CE02", "          4": "CD30 Centro distribución",
+                      "          6": "CVEV Reserva VEV", "          8": "EC01 Ecommerce", "         10": "TP01 Tránsito"})
+    assert sap._filas_de_almacenes(completo) == {"CD30": "          4", "CVEV": "          6", "EC01": "          8", "TP01": "         10"}
+    # sin stock en CVEV: no sale en el árbol y EC01 y TP01 suben una fila, no se leen las del esquema completo
+    sin_cvev = Arbol({"          4": "CD30 Centro distribución", "          6": "EC01 Ecommerce", "          8": "TP01 Tránsito"})
+    assert sap._filas_de_almacenes(sin_cvev) == {"CD30": "          4", "EC01": "          6", "TP01": "          8"}
+    assert sap._filas_de_almacenes(object()) == {}               # árbol que no se puede leer: se usan las filas fijas
+    assert sap.ALMACENES == ("CD30", "EC01", "TP01", "CVEV")
+
+
 def test_se_puede_desactivar_zsd001_03_y_mmbe_y_el_analisis_pasa_de_vl01n_directo(monkeypatch, datos):
     from fastapi.testclient import TestClient
     from app.integrations import base_medidas, bases, sap
@@ -1637,7 +1658,7 @@ def test_el_analisis_trae_las_unidades_en_control_de_calidad_y_el_excel_kam_mues
     ws = load_workbook(BytesIO(c.get("/api/analisis/4005100000/excel?interno=true").content))["Estatus"]
     assert "Control de calidad" in [x.value for x in ws[cab]]
     f = next(x for x in ws.iter_rows(min_row=cab + 1, values_only=True) if x[0] == "9000")
-    assert f[6] == "Stock parcial + Limitado SOP" and f[12] == 14
+    assert f[6] == "Stock parcial + Limitado SOP" and f[13] == 14
     time.sleep(0.2)
 
 

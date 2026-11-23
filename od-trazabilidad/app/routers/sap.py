@@ -496,7 +496,7 @@ def excel_analisis(numero: str, interno: bool = False, s: Session = Depends(get_
               if doc else [])
     if interno:
         CAB = (["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Estado", "Alerta"] + [f"Suministro {k}" for k in sums]
-               + ["Saldo SOP", "Stock CD30", "Reserva CD30", "Stock EC01", "Stock TP01", "Control de calidad",
+               + ["Saldo SOP", "Stock CD30", "Reserva CD30", "Stock CVEV", "Stock EC01", "Stock TP01", "Control de calidad",
                   "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
     else:
         CAB = ["SKU", "Descripción", "Pedido", "En entrega", "Pendiente", "Alerta", "Saldo SOP", "Stock CD30",
@@ -514,8 +514,8 @@ def excel_analisis(numero: str, interno: bool = False, s: Session = Depends(get_
             ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], estado(f), alerta]
                       + [por_sum[k].get(f["sku"], 0) for k in sums]
                       + [saldo]
-                      + ([st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"), en_calidad(f["sku"])]
-                         if f["falta"] > 0 else [None] * 5)
+                      + ([st.get("cd30"), st.get("reserva_cd30"), st.get("cvev"), st.get("ec01"), st.get("tp01"), en_calidad(f["sku"])]
+                         if f["falta"] > 0 else [None] * 6)
                       + [fecha_corta(fecha) if fecha else "", cant])
         else:
             ws.append([f["sku"], f["desc"], f["pedido"], f["en_entrega"], f["falta"], alerta, saldo,
@@ -531,12 +531,12 @@ def excel_analisis(numero: str, interno: bool = False, s: Session = Depends(get_
 
         wa = wb.create_sheet("Análisis SAP")
         wa.append(["OC", "SKU", "Descripción", "Alerta", "Qty pendiente", "Qty entrega", "Stock CD30", "Reserva CD30",
-                   "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
+                   "Stock CVEV", "Stock EC01", "Stock TP01", "Control de calidad", "Próx. liberación (fecha)", "Próx. liberación (cant.)"])
         for f in (doc["resultado"]["filas"] if doc else []):
             st = f.get("stock") or {}
             cant, _, fecha = str(f.get("disponibilidad") or "").partition(" - ")
             wa.append([oc, f["sku"], f["descripcion"], " + ".join(f.get("alertas") or [f.get("alerta", "")]), f["pendiente"],
-                       f["qty_entrega"], st.get("cd30"), st.get("reserva_cd30"), st.get("ec01"), st.get("tp01"),
+                       f["qty_entrega"], st.get("cd30"), st.get("reserva_cd30"), st.get("cvev"), st.get("ec01"), st.get("tp01"),
                        f.get("control_calidad"), fecha.strip(), cant.strip()])
 
     cab, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A2B4A")

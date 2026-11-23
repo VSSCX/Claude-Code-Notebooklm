@@ -320,7 +320,7 @@ function vistaAnalisis(p){
       <td class="n">${pct(f.ocupacion)}</td><td class="n">${pct(f.acumulado)}</td>
       <td class="small">${esc(f.disponibilidad)}</td>
       <td class="n">${f.stock ? fmt(st.cd30) : ''}</td><td class="n">${f.stock ? fmt(st.reserva_cd30) : ''}</td>
-      <td class="n">${f.stock ? fmt(st.ec01) : ''}</td><td class="n">${f.stock ? fmt(st.tp01) : ''}</td>
+      <td class="n">${f.stock ? fmt(st.cvev) : ''}</td><td class="n">${f.stock ? fmt(st.ec01) : ''}</td><td class="n">${f.stock ? fmt(st.tp01) : ''}</td>
       <td class="n">${f.control_calidad ? `<b>${fmt(f.control_calidad)}</b>` : ''}</td></tr>`;
   }).join('');
   const cuenta = k => r.filas.filter(f => (f.alertas || [f.alerta]).includes(k)).length;
@@ -356,7 +356,7 @@ function vistaAnalisis(p){
       <th>Alerta</th><th>SKU</th><th>Descripción</th><th class="n">Qty entrega</th><th class="n">Pendiente</th>
       <th class="n">Plan SOP</th><th class="n">Real</th><th class="n">En entrega</th><th class="n" title="Saldo SOP = plan − real − Qty en entrega (igual que el Excel)">Saldo SOP</th>
       <th class="n" title="Se puede ajustar a mano: escribe la cantidad y presiona Enter. Subirla por sobre el plan SOP queda registrado a tu nombre.">Carga ✎</th><th class="n">% ocup.</th><th class="n">Acumulado</th><th>Disponibilidad</th>
-      <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
+      <th class="n">Stock CD30</th><th class="n">Reserva CD30</th><th class="n">Stock CVEV</th><th class="n">Stock EC01</th><th class="n">Stock TP01</th>
       <th class="n" title="Unidades en control de calidad (último stock cargado en SQL Server)">Control de calidad</th>
     </tr></thead><tbody>${filas}</tbody></table></div>`;
 }
@@ -657,7 +657,7 @@ async function probarConexion(){
 }
 /* Pasos opcionales del análisis: si uno falla en el equipo de un analista, se desactiva mientras se arregla. */
 const PASOS_OPCIONALES = {zsd: ['Qty en entrega (ZSD001_03)', 'Exporta de SAP lo que el cliente ya tiene en entrega y lo descuenta del saldo SOP.'],
-                          mmbe: ['Stock (MMBE)', 'Consulta el stock de los productos con alerta (CD30, EC01, TP01).']};
+                          mmbe: ['Stock (MMBE)', 'Consulta el stock de los productos con alerta (CD30, CVEV, EC01, TP01).']};
 async function cargarPasosAnalisis(){
   try { UI.pasosAn = await api('GET', '/ajustes-analisis'); } catch(e){ UI.pasosAn = {zsd: true, mmbe: true}; }
   render();
