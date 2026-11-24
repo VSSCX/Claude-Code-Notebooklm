@@ -14,7 +14,10 @@
 <body class="entrando">
 <div class="app">
   <aside class="rail">
-    <div class="rail-brand"><span>Order Desk</span><b>Trazabilidad de pedidos</b></div>
+    <div class="rail-top">
+      <div class="rail-brand"><i class="rail-logo" aria-hidden="true">OD</i><div><span>Order Desk</span><b>Trazabilidad de pedidos</b></div></div>
+      <button type="button" class="al-bell" id="al-bell" data-al="alternar" aria-haspopup="dialog" aria-expanded="false" aria-controls="alertas" aria-label="Alertas"></button>
+    </div>
     <nav class="rail-nav" id="nav" aria-label="Secciones"></nav>
     <div class="rail-foot" id="sync" role="status" aria-live="polite"></div>
   </aside>
@@ -22,12 +25,14 @@
 </div>
 <div id="entrada" aria-live="polite"></div>
 <dialog id="dlg"></dialog>
+<section id="alertas" class="al-panel" role="dialog" aria-label="Alertas" hidden></section>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="/vendor/morphdom.min.js"></script>
 <script src="/js/iconos.js"></script>
 <script src="/js/barcode.js"></script>
 <script src="/js/base.js"></script>
+<script src="/js/alertas.js"></script>
 <script src="/js/visor.js"></script>
 <script src="/js/pedidos.js"></script>
 <script src="/js/cubicador.js"></script>

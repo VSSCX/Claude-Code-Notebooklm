@@ -569,7 +569,7 @@ function render(){
       : `<div class="panel stack" style="padding:16px"><span class="skel" style="width:30%"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div>`);
     return;
   }
-  pintar(app, barraJob() + Avisos.html() + (UI.view === 'bandeja' ? vistaBandeja()
+  pintar(app, barraJob() + (UI.view === 'bandeja' ? vistaBandeja()
     : UI.view === 'cubicador' ? vistaCubicador()
     : UI.view === 'proyeccion' ? vistaProyeccion()
     : UI.view === 'importar' ? vistaImportar()
@@ -595,7 +595,6 @@ document.addEventListener('click', ev => {
   if (t.dataset.sel){ UI.verConjunto = false; UI.sel = t.dataset.sel; const ps = Store.get('pedidos', t.dataset.sel); UI.sub = ps ? flujoDe(ps).tabSig : 'analisis'; render(); if (window.innerWidth <= 960) document.querySelector('.split > :last-child')?.scrollIntoView(); return; }
   if (t.dataset.sub){ cambiarSub(t.dataset.sub); return; }
   if (t.closest && t.closest('[data-ajustes]')) UI.verAjustes = true;   // no se cierra al recalcular
-  if (t.dataset.cerrarAviso){ Avisos.cerrar(t.dataset.cerrarAviso); return; }
   if (t.hasAttribute('data-pregunta-ok')){ responderPregunta(); return; }
   if (t.dataset.abrir){ UI.sel = t.dataset.abrir; UI.sub = t.dataset.sub || 'analisis'; go('pedidos'); return; }
   if (t.dataset.gpaso){ marcarPasoGrupo(t.dataset.grupo, t.dataset.gpaso, t.dataset.forzar ? true : undefined); return; }

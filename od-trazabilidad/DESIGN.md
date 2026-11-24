@@ -1,32 +1,32 @@
 ---
 name: Trazabilidad Order Desk
-description: Cada pedido es una etiqueta logística impresa; herramienta densa para analistas de Order Desk.
+description: Paneles blancos y suaves sobre un escritorio azul grisáceo; herramienta clara y con aire para analistas de Order Desk.
 colors:
-  desk: "#E4E8EC"
-  paper: "#FDFDFC"
-  paper-2: "#F2F4F5"
-  paper-3: "#E9EDEF"
-  ink: "#12171C"
-  ink-2: "#39424B"
-  muted: "#586069"
-  hair: "#CBD1D7"
-  edge: "#7A838D"
-  track: "#DCE1E6"
-  rail: "#12171C"
-  rail-ink: "#C5CCD3"
-  rail-hair: "#2A323A"
-  ultramarine: "#2442D6"
-  ultramarine-soft: "#E6EBFB"
-  delivered-green: "#17724A"
-  delivered-green-solid: "#1B7F50"
-  delivered-green-soft: "#DDF0E5"
-  attention-amber: "#8F5200"
-  attention-amber-solid: "#D98A00"
-  attention-amber-soft: "#FBEBCD"
-  void-red: "#B3261E"
-  void-red-soft: "#FADDD9"
-  scheduled-blue: "#3F6A99"
-  scheduled-blue-soft: "#DDE8F3"
+  desk: "#EEF1F6"
+  paper: "#FFFFFF"
+  paper-2: "#F6F8FB"
+  paper-3: "#ECEFF4"
+  ink: "#161B26"
+  ink-2: "#3A4352"
+  muted: "#5B6574"
+  hair: "#E1E6ED"
+  edge: "#8893A3"
+  track: "#E3E8EF"
+  rail: "#131A2B"
+  rail-ink: "#B9C2D3"
+  rail-hair: "#232C42"
+  ultramarine: "#2F4FE0"
+  ultramarine-soft: "#E8EDFE"
+  delivered-green: "#14724A"
+  delivered-green-solid: "#1E8A5B"
+  delivered-green-soft: "#E1F4EA"
+  attention-amber: "#8A5300"
+  attention-amber-solid: "#E09100"
+  attention-amber-soft: "#FFF1D6"
+  void-red: "#B42318"
+  void-red-soft: "#FDE4E1"
+  scheduled-blue: "#3D68A0"
+  scheduled-blue-soft: "#E1EBF7"
 typography:
   display-num:
     fontFamily: "Hanken Grotesk, Segoe UI, system-ui, sans-serif"
@@ -79,7 +79,9 @@ typography:
     letterSpacing: "-0.01em"
     fontFeature: "tnum"
 rounded:
-  base: "2px"
+  base: "8px"
+  lg: "14px"
+  pill: "999px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -91,14 +93,14 @@ components:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     rounded: "{rounded.base}"
-    padding: "5px 12px"
-    height: "32px"
+    padding: "6px 14px"
+    height: "34px"
   btn-primary:
     backgroundColor: "{colors.ultramarine}"
     textColor: "#FFFFFF"
     rounded: "{rounded.base}"
-    padding: "5px 12px"
-    height: "32px"
+    padding: "6px 14px"
+    height: "34px"
   btn-danger:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.void-red}"
@@ -106,7 +108,7 @@ components:
   tag:
     backgroundColor: "{colors.paper-3}"
     textColor: "{colors.ink-2}"
-    rounded: "{rounded.base}"
+    rounded: "{rounded.pill}"
     padding: "1px 7px"
   tag-ok:
     backgroundColor: "{colors.delivered-green-soft}"
@@ -167,28 +169,27 @@ components:
     rounded: "{rounded.base}"
     padding: "10px 12px"
   toast:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.base}"
-    padding: "9px 16px"
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.lg}"
+    padding: "10px 16px 10px 10px"
 ---
 
 # Design System: Trazabilidad Order Desk
 
 ## Overview
 
-**Creative North Star: "La etiqueta logística"**
+**Creative North Star: "El escritorio despejado"**
 
-Cada pedido se imprime como una etiqueta de despacho GS1: campos encajonados, una regla gruesa de tinta y un código de barras escaneable. La herramienta se lee como una etiqueta de pallet bien impresa, no como un dashboard SaaS. El sistema rechaza la grilla de tarjetas, la tira de métricas heroicas y la carcasa redondeada con sombras suaves.
+Una herramienta de uso intensivo que se siente tranquila: paneles blancos de esquinas suaves apoyados sobre un escritorio azul grisáceo, mucho aire entre bloques y una jerarquía que sale de peso y tamaño, no de reglas negras. Cada pedido conserva su identidad de despacho (número grande, código de barras escaneable, ruta de nueve pasos), pero sin el aspecto de formulario encajonado: bordes finos, una sombra apenas visible y color solo donde significa algo.
 
-La superficie de trabajo es papel de etiqueta (casi blanco) sobre un escritorio gris frío; el riel y las reglas son tinta casi negra. El ultramar aparece solo en selección, acción principal y foco; los colores de estado hacen trabajo (entregado, requiere atención, anulado o error, programado). La densidad es alta, las cifras son tabulares y las esquinas casi rectas. Tema claro y oscuro, ambos desde los mismos tokens.
+El riel lateral es de tinta azulada, con un resalte que se desliza de un apartado al otro. El ultramar aparece en selección, acción principal y foco; verde, ámbar, rojo y azul grisáceo mantienen su significado. Las alertas ya no tapan la pantalla: van a una campanita con tres niveles (Urgente, Alerta, Aceptado). Tema claro y oscuro, ambos desde los mismos tokens.
 
 **Key Characteristics:**
-- Papel sobre escritorio: `paper` sobre `desk`, riel de tinta fijo a la izquierda.
-- Reglas de tinta de 1px y 2px; radio máximo 2px.
-- Campos encajonados con leyendas pequeñas en mayúsculas.
-- Código 128 real del número de pedido, siempre sobre placa clara.
-- Una sola sombra suave, solo en diálogos y toast.
+- Paneles `paper` sobre `desk`, radio de 14px en contenedores y 8px en controles.
+- Bordes de 1px `hair`; una sola sombra suave en paneles y una grande solo en overlays.
+- Leyendas en minúscula normal (sin mayúsculas espaciadas); cifras tabulares.
+- Tags en píldora; ruta de pasos con celdas suaves (hecho = tinta, siguiente = ultramar, entregado = verde).
 - Hanken Grotesk para texto; JetBrains Mono solo para códigos y cantidades.
 
 ## Colors
@@ -250,11 +251,11 @@ Plano por defecto: la profundidad la dan las reglas (pelo 1px, tinta 1px, tinta 
 - **Lift** (`box-shadow: 0 1px 2px rgba(18,23,28,.12), 0 6px 14px rgba(18,23,28,.16)`; en oscuro con negro .5): diálogo y toast.
 
 ### Named Rules
-**The One Lift Rule.** Solo overlays llevan sombra. Paneles, etiquetas, filas y botones no.
+**The Soft Lift Rule.** Los paneles se despegan con una sombra mínima (`sh-1`); la sombra grande (`sh-2`) es solo de lo que flota: diálogos, alertas, menús y toast.
 
 ## Shapes
 
-Esquinas casi rectas: radio de 2px en todo (`--r`); círculos solo para el número de paso (20px) y los puntos de estado (8px). Bordes de 1px (`hair` en reposo, `ink` en objetos principales como la etiqueta, la ruta, diálogos y visor). Expedientes y chips de camión llevan una regla superior de 2px de tinta, con esquinas inferiores de 2px y superiores rectas.
+Esquinas suaves: 8px en controles (`--r`), 14px en paneles, etiquetas, expedientes y diálogos (`--r-lg`; 18px en diálogos y alertas) y píldora en tags, filtros y contadores. Círculos para el número de paso y los puntos de estado. Bordes de 1px `hair` en reposo y `line` en botones; los campos de texto usan `edge` para mantener 3:1. Sin filetes de color mayores de 1px en avisos ni tarjetas.
 
 ## Components
 
@@ -291,14 +292,14 @@ Barra de opciones del Cubicador: papel, borde `hair`, grupos con leyenda field-c
 ### Tag y pip
 Tag de 18px de línea, 12px/600, fondo suave del estado con texto de su color pleno: neutro, ok, warn, err, info, ink, y `void` (transparente, aro rojo, mayúsculas con tracking .08em). Pip: punto de 8px con el color del estado.
 
-### Toast (con acción)
-Pastilla de tinta con texto papel, centrada abajo (20px), máx. 560px, sombra Lift. Sin acción dura 2,6 s y no captura el puntero. Con acción (p. ej. Deshacer) dura 7 s, activa el puntero y muestra un botón-texto subrayado en 700 al final. Entra con opacidad y 8px de desplazamiento en 120-160ms.
+### Toast y alertas
+Tarjeta `paper` en la esquina inferior derecha, con chip de icono del nivel (verde Aceptado, ámbar Alerta, rojo Urgente), sombra `sh-2` y radio 14px. Dura 3,2 s (Aceptado), 6,5 s (Alerta) o 10 s (Urgente), se queda mientras el puntero está encima y ofrece «Ver» o una acción (p. ej. Deshacer, 7 s). Todo aviso queda además en la campanita del riel: panel de 440px con filtros por nivel, historial de 14 días en este equipo, contador de sin leer con el color del nivel más grave y una animación breve al llegar algo urgente.
 
 ### Inputs
-Mín. 32px, borde `edge`, fondo papel, radio 2px; hover borde `ink-2`; foco: contorno ultramar de 2px y borde ultramar. Solo lectura sobre `paper-2`. Cantidades alineadas a la derecha en tabulares. Textarea en mono 13px.
+Mín. 34px, borde `edge`, fondo papel, radio 8px; hover borde `ink-2`; foco: contorno ultramar de 2px y borde ultramar. Solo lectura sobre `paper-2`. Cantidades alineadas a la derecha en tabulares. Textarea en mono 13px.
 
 ### Navegación (riel)
-Fondo `rail`; marca como placa de papel con el nombre en 19px/700. Ítems de 8px 10px con texto 550 y contador en pastilla; activo (`aria-current`): placa de papel con texto de tinta. Pie con punto de sincronización y usuario.
+Fondo `rail`; marca con logo ultramar de 36px y nombre en blanco; campanita de alertas a la derecha. Ítems de 10px 12px con radio 11px; un resalte único se desliza de un ítem al otro al pasar el puntero (240ms, ease in-out) y el icono se desplaza 2px; el activo (`aria-current`) lleva fondo translúcido y contador ultramar. Pie con punto de sincronización y usuario.
 
 ### Movimiento
 Transiciones de 100-160ms con `cubic-bezier(.23,1,.32,1)` en color, borde, opacidad y transform; diálogos entran con `scale(.97)` y opacidad. Feedback de acción: `flash` de 900ms en ámbar suave; `busy` baja la opacidad a .55. Carga: esqueleto con brillo lineal y barra de cálculo de 3px en el visor. Sin animación decorativa.

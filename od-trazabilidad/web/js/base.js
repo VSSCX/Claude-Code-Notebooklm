@@ -39,46 +39,17 @@ function isoWeek(iso){
   d.setDate(d.getDate() - day + 3); const w1 = new Date(d.getFullYear(), 0, 4);
   return 1 + Math.round(((d - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7);
 }
-/* Un aviso breve; con `accion` ({texto, fn}) ofrece deshacer y dura más */
-function toast(msg, accion){
-  const t = $('#toast'); t.textContent = msg;
-  if (accion){
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-acc'; b.textContent = accion.texto;
-    b.onclick = () => { t.classList.remove('on'); accion.fn(); };
-    t.append(b);
-  }
-  t.classList.toggle('con-acc', !!accion);
-  t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), accion ? 7000 : 2600);
-}
+/* Un aviso breve; con `accion` ({texto, fn}) ofrece deshacer y dura más. Todo aviso queda también en el centro de alertas (la campanita). */
+function toast(msg, accion, nivel){ Alertas.toast(msg, accion, nivel); }
 /* OC comparable: sin espacios ni signos, en mayúsculas y sin ceros a la izquierda (igual que el servidor) */
 const claveOc = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+/, '');
 /* Decimales con coma, como el resto de los números de la plataforma */
 const m3 = (x, d = 1) => (+x || 0).toFixed(d).replace('.', ',');
 
-/* Resultados que no se pueden perder de vista (SAP, cubicaje, cargas): quedan
-   fijos arriba hasta que la persona los cierra, en vez de irse solos como el toast. */
+/* Resultados que no se pueden perder de vista (SAP, cubicaje, cargas): ya no tapan la pantalla. Van al centro de alertas
+   (la campanita del riel), clasificados en Urgente (rojo), Alerta (amarillo) y Aceptado (verde), y se avisa con un toast breve. */
 const Avisos = {
-  lista: [],
-  agregar(tipo, titulo, detalle, pasos){
-    this.lista.unshift({id: Date.now() + '-' + Math.random().toString(16).slice(2, 6),
-                        tipo, titulo, detalle: detalle || '', pasos: pasos || [],
-                        hora: new Date().toTimeString().slice(0, 5)});
-    this.lista = this.lista.slice(0, 5);
-    if (typeof render === 'function') render();
-  },
-  cerrar(id){ this.lista = this.lista.filter(x => x.id !== id); render(); },
-  html(){
-    if (!this.lista.length) return '';
-    return `<div class="avisos">${this.lista.map(a => `
-      <div class="aviso ${esc(a.tipo)}" data-k="av-${esc(a.id)}" role="${a.tipo === 'error' ? 'alert' : 'status'}">
-        <div class="aviso-cuerpo">
-          <div><b>${esc(a.titulo)}</b> <span class="small muted num">${esc(a.hora)}</span></div>
-          ${a.detalle ? `<div class="small">${esc(a.detalle)}</div>` : ''}
-          ${(a.pasos || []).length ? `<ul class="small muted">${a.pasos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
-        </div>
-        <button class="btn quiet icon" data-cerrar-aviso="${esc(a.id)}" title="Cerrar" aria-label="Cerrar aviso">${ICON.x}</button>
-      </div>`).join('')}</div>`;
-  },
+  agregar(tipo, titulo, detalle, pasos){ Alertas.agregar(tipo, titulo, detalle, pasos); },
 };
 function setSync(state, text){
   _pieSync = {estado: state, texto: text};
