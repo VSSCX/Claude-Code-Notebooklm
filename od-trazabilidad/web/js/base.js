@@ -138,7 +138,7 @@ const COLS = ['pedidos','entregas','config'];
 let _rafRender = 0;
 function renderSoon(){ if (_rafRender) return; _rafRender = requestAnimationFrame(() => { _rafRender = 0; render(); }); }
 const Store = {
-  data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [], notas: [],
+  data: {pedidos:new Map(), entregas:new Map(), config:new Map()}, archivos: [], notas: [], ncs: [],
   loaded: new Set(), offline: false, version: '', queues: new Map(),
   rev: 0,          // sube con cada cambio local: invalida los índices memoizados
   pendientes: 0,   // guardados en vuelo; mientras haya, el sondeo no pisa lo que se ve
@@ -153,7 +153,7 @@ const Store = {
       this.data.pedidos = new Map(st.pedidos.map(p => [safeId(p.pedido), p]));
       this.data.entregas = new Map(st.entregas.map(e => [safeId(e.entrega), e]));
       this.data.config = new Map(Object.entries(st.config || {}));
-      this.archivos = st.archivos || []; this.notas = st.notas || [];
+      this.archivos = st.archivos || []; this.notas = st.notas || []; this.ncs = st.notas_credito || [];
       this.version = st.version; this.offline = false; this.rev++;
       COLS.forEach(c => this.loaded.add(c));
       setSync('ok', 'Conectado al servidor');
@@ -319,6 +319,15 @@ function calcularGrupos(){
       if (n > 0 && n < g.entregas.length) g.parcial = true;
     }
     g.next = STEPS.find(s => !g.pasos[s.k]) || null;
+  }
+  return [...m.values()];
+}
+/* Notas de crédito de una entrega (el cliente devolvió unidades ya facturadas): una por número, con sus productos */
+function ncsDe(entrega){
+  const m = new Map();
+  for (const n of Store.ncs.filter(x => x.entrega === entrega)){
+    const g = m.get(n.numero) || {numero: n.numero, entrega, motivo: n.motivo, usuario: n.usuario, at: n.at, unidades: 0, lineas: []};
+    g.unidades += n.qty; g.lineas.push({sku: n.sku, qty: n.qty}); m.set(n.numero, g);
   }
   return [...m.values()];
 }

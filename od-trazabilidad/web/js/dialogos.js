@@ -287,6 +287,53 @@ async function marcarPasoQuitar(orig){
   await save('entregas', safeId(e.entrega), e);
 }
 
+/* Nota de crédito: el cliente devolvió unidades ya facturadas. Salen de la entrega y vuelven a «por suministrar» en el pedido,
+   para que el nuevo suministro las considere. */
+function notaCreditoGrupo(key){
+  const g = grupo1(key); if (!g) return;
+  const fact = g.entregas.filter(e => pasoOk(e, 'facturada') && (e.lineas || []).length);
+  if (!fact.length){ toast('Este camión no tiene entregas facturadas con unidades.'); return; }
+  const desc = (e, sku) => { const p = Store.get('pedidos', safeId(e.pedido)); return ((p && (p.lineas || []).find(x => normSku(x.sku) === normSku(sku))) || {}).desc || ''; };
+  abrirDlg(`Nota de crédito · ${g.sinGrupo ? 'camión' : 'grupo ' + g.grupo}`, `
+    <div class="fgrid">
+      <label class="f">N° de nota de crédito<input type="text" name="nc" autocomplete="off" inputmode="numeric"></label>
+      <label class="f">Motivo (opcional)<input type="text" name="ncMotivo" maxlength="120" placeholder="Dañado en destino, error de pedido…" autocomplete="off"></label>
+    </div>
+    <p class="small muted" style="margin:12px 0 6px">Anota cuántas unidades devolvió el cliente de cada producto. Salen de la entrega y vuelven a <b>por suministrar</b> en el pedido.</p>
+    <div class="scroll"><table class="tbl compacta"><thead><tr><th>Entrega</th><th>Factura</th><th>SKU</th><th>Descripción</th><th class="n">En la entrega</th><th class="n">Devuelve</th></tr></thead><tbody>
+    ${fact.flatMap(e => (e.lineas || []).map(l => `<tr><td class="code">${esc(e.entrega)}</td><td class="code">${esc(e.factura || '—')}</td><td class="code">${esc(l.sku)}</td><td>${esc(desc(e, l.sku))}</td><td class="n">${fmt(l.qty)}</td>
+      <td class="n"><input class="qty" type="number" min="0" max="${+l.qty || 0}" step="1" value="0" data-nc-q data-ent="${esc(e.entrega)}" data-sku="${esc(l.sku)}" aria-label="Devuelve de ${esc(l.sku)} en la entrega ${esc(e.entrega)}"></td></tr>`)).join('')}
+    </tbody></table></div>`,
+    `<button class="btn primary" data-act="guardarNotaCredito" data-grupo="${esc(key)}">Registrar nota de crédito</button>`);
+  const f = dlg.querySelector('[name="nc"]'); if (f) f.focus();
+}
+async function guardarNotaCredito(key){
+  const numero = dval('nc'); if (!numero) return dErr('Ingresa el N° de la nota de crédito.');
+  const porEntrega = new Map();
+  dlg.querySelectorAll('[data-nc-q]').forEach(i => {
+    const q = Math.round(+i.value || 0), max = Math.round(+i.max || 0);
+    if (q > max) { porEntrega.set('__exceso', i.dataset.sku); return; }
+    if (q > 0) (porEntrega.get(i.dataset.ent) || porEntrega.set(i.dataset.ent, []).get(i.dataset.ent)).push({sku: i.dataset.sku, qty: q});
+  });
+  if (porEntrega.has('__exceso')) return dErr(`De ${porEntrega.get('__exceso')} no puede devolver más de lo que tiene la entrega.`);
+  if (!porEntrega.size) return dErr('Indica cuántas unidades devolvió el cliente.');
+  const motivo = dval('ncMotivo');
+  let total = 0, todas = true;
+  try {
+    for (const [ent, lineas] of porEntrega){
+      await api('POST', `/entregas/${encodeURIComponent(ent)}/notas-credito`, {numero, motivo, lineas});
+      total += lineas.reduce((a, l) => a + l.qty, 0);
+    }
+  } catch(e){ todas = false; dErr(dbErr(e)); }
+  await Store.refresh();
+  if (todas){ dlg.close(); toast(`Nota de crédito registrada: ${fmt(total)} un. vuelven a por suministrar en el pedido.`); }
+}
+async function anularNotaCredito(entrega, numero){
+  if (!await preguntar({titulo: `Anular la nota de crédito ${numero}`, texto: `Las unidades vuelven a la entrega <b>${esc(entrega)}</b> y dejan de estar por suministrar. Úsalo solo si se registró por error.`, ok: 'Anular nota', peligro: true})) return;
+  try { await api('DELETE', `/entregas/${encodeURIComponent(entrega)}/notas-credito/${encodeURIComponent(numero)}`); await Store.refresh(); toast('Nota de crédito anulada'); }
+  catch(e){ toast(dbErr(e)); }
+}
+
 function abrirGrupo(key){
   const g = grupo1(key); if (!g) return;
   const c = g.cita || {};
@@ -562,6 +609,10 @@ document.addEventListener('click', ev => {
     case 'borrarPedido': borrarPedido(t.dataset.id); break;
     case 'cerrarPedido': cerrarPedido(t.dataset.id); break;
     case 'guardarFactura': guardarFactura(t.dataset.grupo); break;
+    case 'notaCreditoGrupo': notaCreditoGrupo(t.dataset.grupo); break;
+    case 'notaCreditoEntrega': { const e = Store.get('entregas', t.dataset.ent), g = e && grupos().find(x => x.entregas.some(y => y.entrega === e.entrega)); if (g) notaCreditoGrupo(g.key); break; }
+    case 'guardarNotaCredito': guardarNotaCredito(t.dataset.grupo); break;
+    case 'anularNotaCredito': anularNotaCredito(t.dataset.ent, t.dataset.nc); break;
     case 'quitarFactura': quitarFactura(t.dataset.grupo); break;
     case 'reabrirPedido': reabrirPedido(t.dataset.id); break;
     case 'nuevaEntrega': if (ped) abrirEntrega(ped.pedido, null); break;

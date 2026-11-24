@@ -522,6 +522,7 @@ function entregaHTML(e){
       <div class="ent-tags">${cam ? `<span class="tag" title="Camión del cubicaje en que viaja">${ICON.truck} ${esc(cam.tipo)} · n.º ${cam.numero}</span>` : ''}
         ${e.grupo ? `<span class="tag info" title="Grupo de transporte en SAP">Grupo <span class="code">${esc(e.grupo)}</span></span>` : e.anulada ? '' : '<span class="tag">Sin grupo</span>'}
         ${facturada || e.factura ? `<span class="tag ${facturada ? 'ok' : ''}" title="N° de factura">Factura <span class="code">${esc(e.factura || '—')}</span></span>` : ''}
+        ${ncsDe(e.entrega).map(n => `<span class="tag warn" title="Nota de crédito ${esc(n.numero)}: el cliente devolvió ${fmt(n.unidades)} un.${n.motivo ? ' (' + esc(n.motivo) + ')' : ''}">NC <span class="code">${esc(n.numero)}</span> · −${fmt(n.unidades)} un.</span>`).join('')}
         ${estado}</div>
       <span class="spacer"></span>
       ${verCam}
@@ -529,6 +530,8 @@ function entregaHTML(e){
         <div class="menu-acc-lista" role="menu">
           <button role="menuitem" data-act="editarEntrega" data-ent="${esc(id)}">Editar entrega</button>
           ${!e.anulada && !facturada ? `<button role="menuitem" data-paso="facturada" data-ent="${esc(id)}">Registrar factura</button>` : ''}
+          ${!e.anulada && facturada ? `<button role="menuitem" data-act="notaCreditoEntrega" data-ent="${esc(id)}" title="El cliente devolvió unidades facturadas: vuelven a por suministrar">Registrar nota de crédito</button>` : ''}
+          ${ncsDe(e.entrega).map(n => `<button role="menuitem" class="peligro" data-act="anularNotaCredito" data-ent="${esc(e.entrega)}" data-nc="${esc(n.numero)}">Anular nota de crédito ${esc(n.numero)}</button>`).join('')}
           ${(e.log || []).length ? `<button role="menuitem" data-act="logEntrega" data-ent="${esc(id)}">${UI.entLog.has(id) ? 'Ocultar' : 'Ver'} historial</button>` : ''}
           ${e.anulada ? `<button role="menuitem" data-act="reactivar" data-ent="${esc(id)}">Reactivar</button>` :
             `<button role="menuitem" class="peligro" data-act="anular" data-ent="${esc(id)}">Anular entrega</button>
@@ -601,6 +604,7 @@ function grupoHTML(g){
     <div class="dk-act">
       <button class="btn sm" data-act="editarGrupo" data-grupo="${llave}">Editar camión</button>
       <button class="btn sm" data-act="reprogGrupo" data-grupo="${llave}" ${g.pasos.confirmada ? '' : 'disabled title="Solo para citas confirmadas"'}>Reprogramar cita</button>
+      ${g.entregas.some(e => pasoOk(e, 'facturada')) ? `<button class="btn sm" data-act="notaCreditoGrupo" data-grupo="${llave}" title="El cliente devolvió unidades ya facturadas: salen de la entrega y vuelven a por suministrar">Nota de crédito</button>` : ''}
       ${g.sinGrupo
         ? `<span class="spacer"></span><button class="btn quiet sm" data-act="ensayoGrupo" data-cam="${llave}" data-ents="${ents}">Ensayo del grupo</button>
            <button class="btn sm" data-act="crearGrupoSap" data-cam="${llave}" data-ents="${ents}" title="Crea el grupo de transporte en VL06">Crear grupo en SAP</button>`

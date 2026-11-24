@@ -129,6 +129,50 @@ def test_cerrar_un_pedido_no_lo_borra_y_se_puede_reabrir(c):
     assert c.post("/api/pedidos/999/reabrir").status_code == 404
 
 
+def test_nota_de_credito_devuelve_unidades_a_por_suministrar_y_se_puede_anular(c):
+    """El cliente devolvió unidades ya facturadas: salen de la entrega y el pedido vuelve a tenerlas por suministrar."""
+    from app import domain
+    from app.db import SessionLocal
+    c.post("/api/paquetes", json=paquete("pedido")); c.post("/api/paquetes", json=paquete("entregas"))
+    num, ent = "4005171502", str(ENTREGA["entrega"])
+    qty = {l["sku"]: l["qty"] for l in ENTREGA["lineas"]}
+    url = f"/api/entregas/{ent}/notas-credito"
+
+    def lineas_de_la_entrega():
+        e = next(x for x in c.get("/api/estado").json()["entregas"] if x["entrega"] == ent)
+        return {l["sku"]: l["qty"] for l in e["lineas"]}, e
+    # validaciones: número, cantidades y producto de la entrega
+    assert c.post(url, json={"numero": "", "lineas": [{"sku": "900081624", "qty": 2}]}).status_code == 422
+    assert c.post(url, json={"numero": "NC1", "lineas": [{"sku": "900081624", "qty": 0}]}).status_code == 422
+    assert c.post(url, json={"numero": "NC1", "lineas": [{"sku": "900081624", "qty": qty["900081624"] + 1}]}).status_code == 422
+    assert c.post(url, json={"numero": "NC1", "lineas": [{"sku": "123", "qty": 1}]}).status_code == 422
+    assert c.post("/api/entregas/9999/notas-credito", json={"numero": "NC1", "lineas": []}).status_code == 422
+    assert lineas_de_la_entrega()[0] == qty                              # nada cambió
+
+    d = c.post(url, json={"numero": "NC-77", "motivo": "Dañado en destino",
+                          "lineas": [{"sku": "900081624", "qty": 2}, {"sku": "900276672", "qty": 3}]}).json()
+    assert {l["sku"]: l["qty"] for l in d["lineas"]}["900081624"] == qty["900081624"] - 2
+    ncs = c.get("/api/estado").json()["notas_credito"]
+    assert sorted((n["numero"], n["sku"], n["qty"], n["motivo"], n["entrega"]) for n in ncs) == [
+        ("NC-77", "900081624", 2, "Dañado en destino", ent), ("NC-77", "900276672", 3, "Dañado en destino", ent)]
+    assert any("Nota de crédito NC-77" in x["txt"] for x in lineas_de_la_entrega()[1]["log"])
+    # el nuevo suministro las considera: SAP dice que falta 0, pero el pedido volvió a tener 2 y 3 por suministrar
+    with SessionLocal() as s:
+        netas, _ = domain.netear_posiciones(s, num, [{"sku": "900081624", "qty_pendiente": 2, "qty_entrega": 2}])
+    assert netas and netas[0]["qty_pendiente"] == 2
+
+    # anular la nota devuelve las unidades a la entrega
+    assert c.delete(f"{url}/NC-77").status_code == 200
+    assert lineas_de_la_entrega()[0] == qty and c.get("/api/estado").json()["notas_credito"] == []
+    assert c.delete(f"{url}/NC-77").status_code == 404
+
+    # devolución completa: la entrega queda anulada, y al anular la nota vuelve a estar activa
+    c.post(url, json={"numero": "NC-80", "lineas": [{"sku": k, "qty": v} for k, v in qty.items()]})
+    assert lineas_de_la_entrega()[1]["anulada"] is True
+    c.delete(f"{url}/NC-80")
+    assert lineas_de_la_entrega()[1]["anulada"] is False and lineas_de_la_entrega()[0] == qty
+
+
 def test_entrega_sin_pedido(c):
     r = c.put("/api/entregas/9", json={"entrega": "9", "pedido": "nope", "lineas": [{"sku": "1", "qty": 1}]})
     assert r.status_code == 422

@@ -9,7 +9,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import Archivo, Config, Entrega, Evento, LineaEntrega, LineaPedido, Nota, PasoEntrega, Pedido, ahora
+from .models import (Archivo, Config, Entrega, Evento, LineaEntrega, LineaPedido, Nota, NotaCredito, PasoEntrega,
+                     Pedido, ahora)
 from .schemas import EntregaIn, PaqueteIn, PedidoIn
 
 EVENTOS = {
@@ -151,6 +152,12 @@ def estado(s: Session) -> dict:
         "archivos": archivos, "version": version(s),
         "notas": [{"id": n.id, "clave": n.clave, "texto": n.texto, "usuario": n.usuario, "at": _iso(n.at)}
                   for n in s.scalars(select(Nota).order_by(Nota.at, Nota.id)).all()],
+        "notas_credito": [{"id": r.id, "entrega": r.entrega, "numero": r.numero, "sku": r.sku, "qty": r.qty,
+                           "motivo": r.motivo, "usuario": r.usuario, "at": _iso(r.at)}
+                          for r in s.execute(select(NotaCredito.id, NotaCredito.numero, NotaCredito.sku, NotaCredito.qty,
+                                                    NotaCredito.motivo, NotaCredito.usuario, NotaCredito.at, Entrega.entrega)
+                                             .join(Entrega, Entrega.id == NotaCredito.entrega_id)
+                                             .order_by(NotaCredito.at, NotaCredito.id))],
     }
 
 
@@ -442,6 +449,70 @@ def reabrir_pedido(s: Session, numero: str) -> Pedido | None:
     p.cerrado, p.motivo_cierre, p.cerrado_por = None, "", ""
     p.actualizado = ahora()
     return p
+
+
+def registrar_nota_credito(s: Session, entrega: str, numero: str, motivo: str, lineas: list[tuple[str, int]]) -> Entrega:
+    """El cliente devolvió unidades de una entrega ya facturada y se emitió una nota de crédito: esas unidades salen de la
+    entrega y vuelven a «por suministrar» en el pedido (un nuevo suministro las considera). Si se devuelve todo, la entrega
+    queda anulada. Todo o nada: si alguna cantidad no cuadra, no se cambia nada."""
+    e = _get_entrega(s, entrega)
+    if e is None:
+        raise ErrorNegocio(f"La entrega {entrega} no existe.")
+    if e.anulada:
+        raise ErrorNegocio(f"La entrega {entrega} está anulada.")
+    numero = (numero or "").strip()[:40]
+    if not numero:
+        raise ErrorNegocio("Falta el N° de la nota de crédito.")
+    pedir: dict[str, int] = {}
+    for sku, qty in lineas:
+        if int(qty) > 0:
+            pedir[norm_sku(sku)] = pedir.get(norm_sku(sku), 0) + int(qty)
+    if not pedir:
+        raise ErrorNegocio("Indica cuántas unidades devolvió el cliente.")
+    actuales = {l.sku: l for l in e.lineas}
+    for sku, qty in pedir.items():
+        if sku not in actuales:
+            raise ErrorNegocio(f"El producto {sku} no está en la entrega {entrega}.")
+        if qty > actuales[sku].qty:
+            raise ErrorNegocio(f"De {sku} la entrega {entrega} tiene {actuales[sku].qty} un. y la nota de crédito pide {qty}.")
+    motivo = (motivo or "").strip()[:120]
+    quien = (usuario_actual() or "")[:60]
+    for sku, qty in pedir.items():
+        actuales[sku].qty -= qty
+        if actuales[sku].qty <= 0:
+            e.lineas.remove(actuales[sku])
+        s.add(NotaCredito(entrega_id=e.id, numero=numero, sku=sku, qty=qty, motivo=motivo, usuario=quien, at=ahora()))
+    detalle = ", ".join(f"{sku} {qty}" for sku, qty in pedir.items())
+    _log(e, f"Nota de crédito {numero}: {detalle}" + (f" ({motivo})" if motivo else "") + "; vuelven a por suministrar", "web")
+    if not e.lineas:
+        e.anulada = True
+        _log(e, "Devuelta completa: la entrega queda anulada", "web")
+    e.actualizado = ahora()
+    return e
+
+
+def anular_nota_credito(s: Session, entrega: str, numero: str) -> Entrega | None:
+    """Deshace una nota de crédito (se registró por error): las unidades vuelven a la entrega."""
+    e = _get_entrega(s, entrega)
+    if e is None:
+        return None
+    filas = [n for n in e.notas_credito if n.numero == numero]
+    if not filas:
+        return None
+    estaba_vacia = not e.lineas
+    actuales = {l.sku: l for l in e.lineas}
+    for n in filas:
+        if n.sku in actuales:
+            actuales[n.sku].qty += n.qty
+        else:
+            e.lineas.append(LineaEntrega(sku=n.sku, qty=n.qty))
+            actuales[n.sku] = e.lineas[-1]
+        e.notas_credito.remove(n)
+    if estaba_vacia:
+        e.anulada = False
+    _log(e, f"Nota de crédito {numero} anulada: las unidades vuelven a la entrega", "web")
+    e.actualizado = ahora()
+    return e
 
 
 def borrar_pedido(s: Session, numero: str) -> bool:

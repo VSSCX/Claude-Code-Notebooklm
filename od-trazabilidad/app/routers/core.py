@@ -78,6 +78,30 @@ def put_entrega(numero: str, body: EntregaIn, s: Session = Depends(get_session))
     return domain.entrega_doc(e)
 
 
+@router.post("/entregas/{numero}/notas-credito")
+def post_nota_credito(numero: str, body: dict, s: Session = Depends(get_session)):
+    """Nota de crédito de una entrega facturada: las unidades devueltas salen de la entrega y vuelven a por suministrar."""
+    try:
+        lineas = [(str(x.get("sku", "")), int(float(x.get("qty") or 0))) for x in (body.get("lineas") or [])]
+        e = domain.registrar_nota_credito(s, numero, str(body.get("numero", "")), str(body.get("motivo", "")), lineas)
+    except (domain.ErrorNegocio, ValueError) as err:
+        s.rollback()
+        raise HTTPException(422, str(err)) from err
+    _commit(s)
+    s.refresh(e)
+    return domain.entrega_doc(e)
+
+
+@router.delete("/entregas/{numero}/notas-credito/{nc}")
+def delete_nota_credito(numero: str, nc: str, s: Session = Depends(get_session)):
+    e = domain.anular_nota_credito(s, numero, nc)
+    if e is None:
+        raise HTTPException(404, "Nota de crédito no encontrada.")
+    _commit(s)
+    s.refresh(e)
+    return domain.entrega_doc(e)
+
+
 @router.delete("/entregas/{numero}", status_code=204)
 def delete_entrega(numero: str, s: Session = Depends(get_session)):
     if not domain.borrar_entrega(s, numero):

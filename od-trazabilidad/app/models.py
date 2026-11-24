@@ -90,6 +90,7 @@ class Entrega(Base):
         back_populates="entrega_ref", cascade="all, delete-orphan", order_by="LineaEntrega.id")
     pasos: Mapped[list["PasoEntrega"]] = relationship(
         back_populates="entrega_ref", cascade="all, delete-orphan")
+    notas_credito: Mapped[list["NotaCredito"]] = relationship(cascade="all, delete-orphan", order_by="NotaCredito.id")
     eventos: Mapped[list["Evento"]] = relationship(
         back_populates="entrega_ref", cascade="all, delete-orphan",
         order_by="(Evento.at.desc(), Evento.id.desc())")
@@ -139,6 +140,20 @@ class Archivo(Base):
     nombre: Mapped[str] = mapped_column(Unicode(200))
     archivo: Mapped[str] = mapped_column(Unicode(200))   # nombre en data/archivos
     at: Mapped[datetime] = mapped_column(DateTime, default=ahora)
+
+
+class NotaCredito(Base):
+    """Unidades de una entrega ya facturada que el cliente devolvió con nota de crédito. Al registrarla, esas unidades salen de la
+    entrega (vuelven a «por suministrar» en el pedido); aquí queda quién, cuándo y por qué, y permite anularla para devolverlas."""
+    __tablename__ = "notas_credito"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entrega_id: Mapped[int] = mapped_column(ForeignKey("entregas.id", ondelete="CASCADE"), index=True)
+    numero: Mapped[str] = mapped_column(Unicode(40), index=True)
+    sku: Mapped[str] = mapped_column(Unicode(40))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    motivo: Mapped[str] = mapped_column(Unicode(120), default="")
+    usuario: Mapped[str] = mapped_column(Unicode(60), default="")
+    at: Mapped[datetime] = mapped_column(DateTime, default=ahora, index=True)
 
 
 class Nota(Base):
