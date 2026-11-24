@@ -1004,6 +1004,61 @@ def test_crear_entregas_ensayo_y_real(c, tmp_path, monkeypatch):
     assert all(e["pedido"] == "4400" for e in ents)
 
 
+def test_cada_entrega_conserva_su_cubicaje_aunque_se_vuelva_a_cubicar_o_se_edite(c, tmp_path, monkeypatch):
+    """La entrega se queda con su camión: se ve y se baja su PDF aunque el pedido se recubique o la entrega cambie de cantidades."""
+    import json
+    from app.db import SessionLocal
+    from app.integrations import sap_crear
+    from app.models import Config
+    cub = _preparar_cubicaje(c, tmp_path, monkeypatch)
+    numero = 1000
+
+    def falso(pedido, puesto, fecha, materiales, **kw):
+        nonlocal numero
+        numero += 1
+        return sap_crear.Resultado(ok=True, entrega=f"87000{numero}", mensaje="ok", pasos=[]) if hasattr(sap_crear, "Resultado") \
+            else type("R", (), {"ok": True, "entrega": f"87000{numero}", "mensaje": "ok", "pasos": [], "borradas": [], "ajustadas": [], "incidencias": []})()
+    monkeypatch.setattr(sap_crear, "crear_entrega", falso)
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4400", "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok", t
+    entregas = [e for e in c.get("/api/estado").json()["entregas"] if e["pedido"] == "4400"]
+    assert entregas
+    primera = entregas[0]["entrega"]
+    d = c.get(f"/api/entregas/{primera}/cubicaje").json()
+    assert d["camion"] == 1 and d["origen"] == "creada" and d["filas"] and d["carga"] and "visor_json" not in d
+    # el pedido se vuelve a cubicar (el cubicaje del pedido cambia) y la entrega sigue con el suyo
+    with SessionLocal() as s:
+        clave = "cubicaje:4400"
+        doc = json.loads(s.get(Config, clave).valor); doc["camiones"] = []; doc["filas"] = []
+        s.get(Config, clave).valor = json.dumps(doc); s.commit()
+    d2 = c.get(f"/api/entregas/{primera}/cubicaje?visor=1").json()
+    assert d2["filas"] == d["filas"] and "visor_vivo" in d2
+    # una entrega que no salió de un cubicaje no tiene camión
+    c.put("/api/entregas/555", json={"entrega": "555", "pedido": "4400", "lineas": [{"sku": "900081624", "qty": 1}]})
+    assert c.get("/api/entregas/555/cubicaje").status_code == 404
+    # al borrar la entrega se va su cubicaje
+    c.delete(f"/api/entregas/{primera}")
+    with SessionLocal() as s:
+        assert s.get(Config, f"cubentrega:{primera}") is None
+
+
+def test_una_entrega_antigua_recupera_su_camion_desde_el_cubicaje_guardado(c, tmp_path, monkeypatch):
+    """Las entregas anteriores a guardar su camión se reconstruyen por su contenido (también después de una nota de crédito)."""
+    cub = _preparar_cubicaje(c, tmp_path, monkeypatch)
+    lineas = {}
+    for f in cub["filas"]:
+        if f["camion"] == 1:
+            lineas[f["sku"]] = lineas.get(f["sku"], 0) + int(f["unidades"])
+    c.put("/api/entregas/777", json={"entrega": "777", "pedido": "4400", "lineas": [{"sku": k, "qty": v} for k, v in lineas.items()]})
+    d = c.get("/api/entregas/777/cubicaje").json()
+    assert d["camion"] == 1 and d["origen"] == "reconstruida" and d["filas"]
+    # con una nota de crédito las unidades devueltas siguen contando para encontrar su camión
+    c.put("/api/entregas/778", json={"entrega": "778", "pedido": "4400", "lineas": [{"sku": k, "qty": v} for k, v in lineas.items()]})
+    sku = next(iter(lineas))
+    c.post("/api/entregas/778/notas-credito", json={"numero": "NC9", "lineas": [{"sku": sku, "qty": 1}]})
+    assert c.get("/api/entregas/778/cubicaje").json()["camion"] == 1
+
+
 def test_crear_entregas_se_detiene_ante_un_error(c, tmp_path, monkeypatch):
     from app.integrations import sap_crear
     _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4401")

@@ -711,6 +711,9 @@ def sap_crear_entregas(body: dict, s: Session = Depends(get_session)):
                                 entrega=r.entrega, pedido=numero, grupo="",
                                 camion_ref=f"{conj}-{cam}" if conj else "", categoria=categoria,
                                 lineas=[{"sku": k, "qty": v} for k, v in materiales.items()]))
+                            ses.flush()
+                            from .cubicaje.entrega_cub import guardar_de_entrega
+                            guardar_de_entrega(ses, numero, r.entrega, cam, conj)      # el camión queda guardado con su entrega
                             ses.commit()
                     except Exception as err:  # noqa: BLE001
                         salidas[-1]["incidencias"] = list(r.incidencias or []) + [

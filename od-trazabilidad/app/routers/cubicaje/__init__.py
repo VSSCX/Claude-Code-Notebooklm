@@ -9,6 +9,7 @@ Antes era un solo archivo de 1.283 líneas. Cada módulo tiene sus endpoints y e
 - libre.py          cubicador libre (sin pedido ni SAP)
 - carga_masiva.py   plantilla de carga y su importación
 - excel.py          descarga del cubicaje en Excel
+- entrega_cub.py    el camión (cubicaje) de cada entrega, guardado con ella
 - _comun.py         piezas compartidas (guardado, faltantes de medidas, visor)
 
 El orden de inclusión importa solo dentro de cada módulo (por ejemplo /predistribuido/plantilla
@@ -16,10 +17,10 @@ va antes de /predistribuido/{numero}).
 """
 from fastapi import APIRouter
 
-from . import carga_masiva, excel, kits, libre, medidas, pedido, predistribuido
+from . import carga_masiva, entrega_cub, excel, kits, libre, medidas, pedido, predistribuido
 from .libre import _reparto_por_grupos  # noqa: F401  (lo usan las pruebas)
 from .pedido import _cubicar  # noqa: F401  (lo usa el análisis para recubicar)
 
 router = APIRouter()
-for _modulo in (medidas, kits, predistribuido, pedido, libre, carga_masiva, excel):
+for _modulo in (medidas, kits, predistribuido, pedido, libre, carga_masiva, excel, entrega_cub):
     router.include_router(_modulo.router)

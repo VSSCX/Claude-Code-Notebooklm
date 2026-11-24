@@ -756,6 +756,7 @@ function pdfPausa(ms){return new Promise(r=>setTimeout(r,ms));}
 function pdfNombre(c,i,total){
   var san=function(t){return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'');};
   var ped=(DATA.pedido&&DATA.pedido!=='LIBRE'?san(DATA.pedido):'')||'Libre', n=c.idx||(i+1);
+  if(DATA.entrega)return 'Cubicaje_Entrega'+san(DATA.entrega)+'_Pedido'+ped+'_'+(esSoloPallet(c.tipo)?'Pallet':'Camion')+n+'_'+san(c.tipo||'')+'.pdf';   // el de una entrega: lleva su número
   return 'Cubicaje_'+ped+'_'+(esSoloPallet(c.tipo)?'Pallet':'Camion')+n+'de'+total+'_'+san(c.tipo||'')+'.pdf';
 }
 // Encuadre ajustado al camion y su carga: la foto aprovecha todo el ancho (antes el camion quedaba chico en una hoja vertical)
@@ -864,7 +865,7 @@ function pdfPagina(doc,c,i,total,vistasPag,nv,lay,esc){
   // --- cabecera, como el informe de siempre: titulo y pedido a la izquierda, logo y camion a la derecha
   doc.setFont('helvetica','bold');doc.setFontSize(19);doc.setTextColor.apply(doc,INK);doc.text('ORDER DESK',M,18);
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor.apply(doc,GRIS);
-  doc.text('Informe de cubicaje  -  '+(ped?'Pedido '+ped:'Cubicaje libre'),M,24);
+  doc.text('Informe de cubicaje  -  '+(DATA.entrega?'Entrega '+DATA.entrega+'  -  ':'')+(ped?'Pedido '+ped:'Cubicaje libre'),M,24);
   var sub=[DATA.cliente,DATA.modo].filter(Boolean).join('   ·   ');
   if(sub){doc.setFontSize(8.5);doc.text(sub,M,28.6);}
   var lw=44,lh=lw*LOGO_PDF_R;try{doc.addImage(LOGO_PDF,'JPEG',W-M-lw,9,lw,lh,undefined,'FAST');}catch(e){}

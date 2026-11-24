@@ -647,15 +647,12 @@ document.addEventListener('click', ev => {
     case 'plegarTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.add(safeId(x.entrega))); render(); break;
     case 'expandirTodas': Store.list('entregas').filter(x => x.pedido === (UI.sel && (Store.get('pedidos', UI.sel) || {}).pedido)).forEach(x => UI.plegadas.delete(safeId(x.entrega))); render(); break;
     case 'logEntrega': UI.entLog.has(ent) ? UI.entLog.delete(ent) : UI.entLog.add(ent); render(); break;
-    case 'verCubEntrega': { const p = Store.get('pedidos', UI.sel), e = p && Store.list('entregas').find(x => safeId(x.entrega) === ent);
+    case 'verCubEntrega': { const e = Store.list('entregas').find(x => safeId(x.entrega) === ent);
       if (!e) break;
       if (UI.entCub === ent){ UI.entCub = null; render(); break; }
-      const idx = camionDeEntrega(p, e); if (idx === null) break;
-      const clave = claveCub(p, e);
-      UI.entCub = ent; UI.pedCam[clave] = idx; render();
-      Visor.camion(idx, document.querySelector(`iframe[data-visor="pedido:${CSS.escape(clave)}"]`));
+      UI.entCub = ent; cargarCubEntrega(e.entrega, true); render();
       break; }
-    case 'irCubicaje': { const p = Store.get('pedidos', UI.sel); if (p){ const e = Store.list('entregas').find(x => safeId(x.entrega) === UI.entCub); UI.pedCam[claveCub(p, e)] = +t.dataset.cam; } UI.entCub = null; cambiarSub('cubicaje'); break; }
+    case 'pdfEntrega': pdfEntrega(t.dataset.num); break;
     case 'exportProy': exportarProyeccion(); break;
     case 'marcarProy': marcarProyeccion(); break;
     case 'plantilla': plantilla(); break;

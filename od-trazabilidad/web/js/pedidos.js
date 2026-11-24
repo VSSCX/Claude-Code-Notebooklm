@@ -348,9 +348,7 @@ function detallePedido(p){
     cuerpo = gs.length ? gs.map(grupoHTML).join('') :
       `<div class="empty"><h3>Todavía no hay grupos</h3><p>Cada entrega se agrupa por camión. Primero se crean las entregas desde el cubicaje.</p></div>`;
   } else if (UI.sub === 'entregas'){
-    if (UI.cubicaje[p.pedido] === undefined) setTimeout(() => cargarCubicaje(p.pedido), 0);    // para saber qué camión es cada entrega
-    for (const sm of new Set(ents.filter(e => !e.anulada).map(e => e.suministro || 1)))        // y el de los suministros anteriores
-      if (sm !== flujo.suministro && UI.cubicaje[`${p.pedido}#s${sm}`] === undefined) setTimeout(() => cargarCubicajeSuministro(p.pedido, sm, `${p.pedido}#s${sm}`), 0);
+    for (const e of ents) if (!e.anulada && UI.cubEnt[e.entrega] === undefined) setTimeout(() => cargarCubEntrega(e.entrega, false), 0);   // el camión de cada entrega, guardado con ella
     cuerpo = ents.length ? listaEntregas(p, ents, flujo.suministro) :
       `<div class="empty"><h3>Este pedido no tiene entregas</h3><p>Crea la primera con las cantidades que suministraste en VL01N.</p><button class="btn primary" data-act="nuevaEntrega">Nueva entrega</button></div>`;
   } else if (UI.sub === 'pendientes'){
@@ -413,44 +411,38 @@ UI.entCub = null;                // entrega cuyo cubicaje está abierto (solo un
 UI.entLog = new Set();
 /* Qué camión del cubicaje es esta entrega: la crearon desde ese camión, así que lleva exactamente sus productos y
    cantidades. Las entregas armadas a mano no coinciden con ninguno y quedan sin camión. */
-/* El cubicaje de cada suministro: el actual vive en UI.cubicaje[pedido]; los anteriores, en UI.cubicaje["pedido#s1"] */
-function claveCub(p, e){
-  const sm = (e && e.suministro) || 1;
-  return sm === flujoDe(p).suministro ? p.pedido : `${p.pedido}#s${sm}`;
-}
-async function cargarCubicajeSuministro(p, sm, clave){
-  UI.cubicaje[clave] = {cargando: true};
-  try { UI.cubicaje[clave] = await api('GET', `/cubicaje/${encodeURIComponent(p)}?suministro=${sm}`); }
-  catch(e){ UI.cubicaje[clave] = {error: e.message}; }
+/* El cubicaje de cada entrega: el camión en que salió queda guardado con la entrega (no depende de que el pedido se recubique ni de
+   qué suministro vaya). UI.cubEnt[n° de entrega] = {camion, camion_datos, filas, carga, visor_json…} | {cargando} | {error} */
+UI.cubEnt = {};
+async function cargarCubEntrega(num, conVisor){
+  const previo = UI.cubEnt[num];
+  if (previo && (previo.cargando || previo.error || (previo.camion && (!conVisor || previo.visor_json)))) return;
+  UI.cubEnt[num] = {...(previo && previo.camion ? previo : {}), cargando: true};
+  try { UI.cubEnt[num] = await api('GET', `/entregas/${encodeURIComponent(num)}/cubicaje${conVisor ? '?visor=1' : ''}`); }
+  catch(e){ UI.cubEnt[num] = {error: e.message}; }
   render();
 }
-function camionDeEntrega(p, e){
-  const cb = UI.cubicaje[claveCub(p, e)];
-  if (!cb || !cb.camiones || !cb.filas) return null;
-  const clave = lineas => Object.entries(lineas).filter(([, q]) => q > 0).map(([s, q]) => `${s}:${q}`).sort().join('|');
-  const suyo = {}; (e.lineas || []).forEach(l => { suyo[l.sku] = (suyo[l.sku] || 0) + (+l.qty || 0); });
-  const buscada = clave(suyo);
-  const idx = cb.camiones.findIndex(c => {
-    const porSku = {};
-    cb.filas.filter(f => f.camion === c.numero && (!f.pedido || String(f.pedido) === String(p.pedido)))
-      .forEach(f => { porSku[f.sku] = (porSku[f.sku] || 0) + (+f.unidades || 0); });
-    return clave(porSku) === buscada;
-  });
-  if (idx >= 0) return idx;
-  const ref = /-(\d+)$/.exec(e.camion_ref || '');                 // camión compartido: la referencia trae su número
-  const porRef = ref ? cb.camiones.findIndex(c => c.numero === +ref[1]) : -1;
-  return porRef >= 0 ? porRef : null;
+async function pdfEntrega(num){
+  toast('Generando el PDF de la entrega…');
+  await pedirPdfAlVisor(() => document.querySelector(`iframe[data-visor="entrega:${CSS.escape(num)}"]`), f => Visor.listos.has(f) && !!Visor.enviado.get(f));
 }
-function cubicajeDeEntrega(p, e, idx){
-  const clave = claveCub(p, e), cb = UI.cubicaje[clave], c = cb.camiones[idx];
-  const filas = cb.filas.filter(f => f.camion === c.numero);
+function cubicajeDeEntrega(e){
+  const d = UI.cubEnt[e.entrega]; if (!d || !d.camion) return '';
+  const c = d.camion_datos || {}, filas = d.filas || [];
   const o = filas.length ? filas[filas.length - 1].ocup_acum : 0, tono = o > 0.92 ? 'err' : o > 0.7 ? 'warn' : 'ok';
+  const kilos = (d.carga || {}).kilos;
+  const visor = d.visor_json && d.visor_vivo
+    ? `${barraColor(d.visor_json, 'entrega:' + e.entrega)}<div class="visor-caja" style="min-height:420px;flex:none;height:420px">
+        <iframe data-visor="entrega:${esc(e.entrega)}" src="${esc(d.visor_vivo)}#solo3d" title="Visor 3D de la entrega ${esc(e.entrega)}"></iframe>${herramientasVisor(d.visor_json)}</div>`
+    : d.cargando || !('visor_json' in d) ? '<div class="stack" style="padding:8px 0"><span class="skel" style="width:40%"></span><span class="skel"></span></div>'
+    : '<p class="small muted">Este cubicaje no tiene visor 3D guardado.</p>';
   return `<div class="ent-cub">
-    <div class="ent-cub-top"><b>${esc(c.tipo)} · camión n.º ${c.numero}</b>
+    <div class="ent-cub-top"><b>${esc(c.tipo || 'Camión')} · camión n.º ${d.camion}</b>
       <span class="barra"><span class="${tono}" style="width:${Math.min(100, 100 * o).toFixed(1)}%"></span></span>
-      <span class="num">${pctCub(o)} ocupado · ${m3(c.vol_m3)} m³${kgTxt(((cb.carga_por_camion || []).find(x => x.camion === c.numero) || {}).kilos) ? ` · ${kgTxt(cb.carga_por_camion.find(x => x.camion === c.numero).kilos)}` : ''}</span>
-      <button class="btn quiet sm" data-act="irCubicaje" data-cam="${idx}">Abrir en Cubicador</button></div>
-    ${cb.visor ? visorPedido(p, cb, 420, clave) : '<p class="small muted">Este cubicaje no tiene visor 3D.</p>'}
+      <span class="num">${pctCub(o)} ocupado${c.vol_m3 ? ` · ${m3(c.vol_m3)} m³` : ''}${kgTxt(kilos) ? ` · ${kgTxt(kilos)}` : ''}</span>
+      ${d.visor_json ? `<button class="btn sm" data-act="pdfEntrega" data-num="${esc(e.entrega)}" title="PDF de este camión para cargarlo al portal de operaciones">${ICON.descargar} Descargar PDF</button>` : ''}</div>
+    <p class="small muted" style="margin:0 0 8px">Suministro ${d.suministro || 1}${d.origen === 'reconstruida' ? ' · camión encontrado en el cubicaje guardado del pedido' : ''}. Este cubicaje queda guardado con la entrega.</p>
+    ${visor}
   </div>`;
 }
 /* Cuántas veces se suministró este pedido: lo ya suministrado, lo que va en curso y lo que falta */
@@ -485,13 +477,11 @@ function listaEntregasPorTanda(p, ents, actual){
 }
 /* Lo que lleva una entrega según el cubicaje: su camión y los bultos (por entrega y por SKU) */
 function cargaDeEntrega(p, e){
-  const idx = e.anulada ? null : camionDeEntrega(p, e);
-  const cb = UI.cubicaje[claveCub(p, e)];
-  if (idx === null || !cb || !cb.camiones) return {idx: null, cb};
-  const cam = cb.camiones[idx], carga = (cb.carga_por_camion || []).find(x => x.camion === cam.numero) || null;
+  const d = e.anulada ? null : UI.cubEnt[e.entrega];
+  if (!d || !d.camion) return {idx: null, d};
   const bultosSku = {};
-  if (carga) for (const l of carga.lineas || []) bultosSku[normSku(l.sku)] = (bultosSku[normSku(l.sku)] || 0) + (+l.bultos || 0);
-  return {idx, cb, cam, carga, bultosSku};
+  for (const l of (d.carga || {}).lineas || []) bultosSku[normSku(l.sku)] = (bultosSku[normSku(l.sku)] || 0) + (+l.bultos || 0);
+  return {idx: d.camion, cam: {...(d.camion_datos || {}), numero: d.camion}, carga: d.carga || null, bultosSku, d};
 }
 /* La barra de la pestaña: cuántas entregas, cuántas unidades y cómo abrir o cerrar todo el detalle */
 function barraEntregas(ents){
@@ -504,14 +494,14 @@ function barraEntregas(ents){
 function entregaHTML(e){
   const id = safeId(e.entrega), plegada = UI.plegadas.has(id);
   const p = Store.get('pedidos', UI.sel) || {pedido: e.pedido};
-  const {idx, cb, cam, carga, bultosSku} = cargaDeEntrega(p, e);
+  const {idx, cam, carga, bultosSku, d: cubEnt} = cargaDeEntrega(p, e);
   const abierta = UI.entCub === id && idx !== null;
   const lineas = e.lineas || [];
   const sig = e.anulada ? null : STEPS.find(s => !pasoOk(e, s.k));
   const estado = e.anulada ? '<span class="tag void">Anulada</span>' : sig ? `<span class="tag warn">Falta ${esc(sig.t)}</span>` : '<span class="tag ok">Entregada</span>';
   const verCam = e.anulada ? ''
-    : idx !== null ? `<button class="btn sm ent-cam" data-act="verCubEntrega" data-ent="${esc(id)}" aria-pressed="${abierta}" title="Ver cómo viaja esta entrega: camión n.º ${cam.numero}">${ICON.truck}<span>Cubicaje</span></button>`
-    : `<button class="btn sm ent-cam" disabled title="${(cb || {}).camiones ? 'Esta entrega no salió del cubicaje del pedido, por eso no tiene camión asociado' : 'No hay un cubicaje guardado para esta entrega'}">${ICON.truck}<span>Cubicaje</span></button>`;
+    : idx !== null ? `<button class="btn sm ent-cam" data-act="verCubEntrega" data-ent="${esc(id)}" aria-pressed="${abierta}" title="Ver el cubicaje de esta entrega (camión n.º ${cam.numero}) y bajar su PDF">${ICON.truck}<span>Cubicaje</span></button>`
+    : `<button class="btn sm ent-cam" disabled title="${cubEnt && cubEnt.error ? esc(cubEnt.error) : 'Buscando el cubicaje de esta entrega…'}">${ICON.truck}<span>Cubicaje</span></button>`;
   const stat = (n, txt) => `<span class="ent-stat"><b class="num">${fmt(n)}</b> ${txt}</span>`;
   const facturada = pasoOk(e, 'facturada');
   return `<article class="docket ent ${e.anulada ? 'void' : ''}" data-k="e-${esc(id)}">
@@ -542,7 +532,7 @@ function entregaHTML(e){
       ${lineas.map(l => `<tr><td class="code">${esc(l.sku)}</td><td>${esc(l.desc || descDe(e.pedido, l.sku))}</td>${bultosSku ? `<td class="n">${bultosSku[normSku(l.sku)] !== undefined ? fmt(bultosSku[normSku(l.sku)]) : '—'}</td>` : ''}<td class="n">${fmt(l.qty)}</td></tr>`).join('')}</tbody></table></div>`}
     ${e.obs ? `<p class="dk-obs">${esc(e.obs)}</p>` : ''}
     ${UI.entLog.has(id) && (e.log || []).length ? `<ul class="log">${e.log.map(x => `<li>${new Date(x.at).toLocaleString('es-CL')} — ${esc(x.txt)}</li>`).join('')}</ul>` : ''}
-    ${abierta ? cubicajeDeEntrega(p, e, idx) : ''}
+    ${abierta ? cubicajeDeEntrega(e) : ''}
   </article>`;
 }
 

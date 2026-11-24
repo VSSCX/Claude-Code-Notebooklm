@@ -1164,7 +1164,7 @@ dialog::backdrop{background:rgba(13,17,25,.42);backdrop-filter:blur(2px)}
 /* ---------- Controles ---------- */
 .btn{min-height:34px;padding:6px 14px;border-color:var(--line);border-radius:var(--r);box-shadow:0 1px 0 rgba(22,27,38,.04);
   transition:background-color 120ms var(--ease-out),border-color 120ms var(--ease-out),box-shadow 120ms var(--ease-out),transform 120ms var(--ease-out)}
-@media (hover:hover) and (pointer:fine){.btn:hover{border-color:var(--edge);background:var(--paper-2)}}
+@media (hover:hover) and (pointer:fine){.btn:not([aria-pressed="true"]):not(.primary):not(.quiet):hover{border-color:var(--edge);background:var(--paper-2)}}
 .btn.primary{box-shadow:0 1px 2px rgba(47,79,224,.35),inset 0 1px 0 rgba(255,255,255,.14)}
 @media (hover:hover) and (pointer:fine){.btn.primary:hover{box-shadow:0 2px 6px rgba(47,79,224,.35),inset 0 1px 0 rgba(255,255,255,.14)}}
 .btn.quiet{box-shadow:none}

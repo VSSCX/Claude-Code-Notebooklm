@@ -163,7 +163,7 @@ def estado(s: Session) -> dict:
 
 # Documentos grandes por pedido (análisis y cubicaje con todas sus filas): la web los pide de a uno.
 # En /estado y en la versión solo viaja su resumen, en "flujo:<pedido>".
-PESADAS = ("analisis:%", "cubicaje:%")
+PESADAS = ("analisis:%", "cubicaje:%", "cubentrega:%")
 
 
 def resumen_analisis(doc: dict) -> dict:
@@ -519,14 +519,23 @@ def borrar_pedido(s: Session, numero: str) -> bool:
     p = _get_pedido(s, numero)
     if p is None:
         return False
+    for e in p.entregas:
+        _borrar_cubicaje_de_entrega(s, e.entrega)
     s.delete(p)
     return True
+
+
+def _borrar_cubicaje_de_entrega(s: Session, entrega: str) -> None:
+    c = s.get(Config, f"cubentrega:{entrega}")
+    if c is not None:
+        s.delete(c)
 
 
 def borrar_entrega(s: Session, numero: str) -> bool:
     e = _get_entrega(s, numero)
     if e is None:
         return False
+    _borrar_cubicaje_de_entrega(s, numero)
     s.delete(e)
     return True
 

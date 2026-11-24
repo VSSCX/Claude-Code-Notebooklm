@@ -32,6 +32,7 @@ const Visor = {
     const k = f.dataset.visor;
     if (k === 'libre') return (UI.cub && UI.cub.visor_json) || camionVacioJSON((UI.cubIn || {}).vista);
     if (k.startsWith('pedido:')){ const cb = UI.cubicaje[k.slice(7)]; return cb && cb.visor_json; }
+    if (k.startsWith('entrega:')){ const d = UI.cubEnt[k.slice(8)]; return d && d.visor_json; }
     return null;
   },
   /* Manda al visor lo que no tiene todavía. Se llama después de cada render. */
@@ -47,7 +48,7 @@ const Visor = {
       this.mandar({tipo: 'od-visor-color', suc: this.color === 'suc'}, f);
       if (this.libre) this.mandar({tipo: 'od-visor-libre', on: true}, f);
       const libre = f.dataset.visor === 'libre';
-      this.camion(libre ? UI.cubCam : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
+      this.camion(libre ? UI.cubCam : f.dataset.visor.startsWith('entrega:') ? 0 : (UI.pedCam[f.dataset.visor.slice(7)] || 0), f);
       if (libre) this.mandar({tipo: 'od-visor-filtro', cod: UI.cubFiltro || null}, f);       // el visor limpia su filtro al recibir datos
     }
   },
