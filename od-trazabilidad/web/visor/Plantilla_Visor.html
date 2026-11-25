@@ -627,9 +627,9 @@ function animate(){requestAnimationFrame(animate);if(!_sucio)return;_sucio=false
 /* Vista libre (el ojo de la plataforma): la camara gira por completo, tambien por debajo, se mueve con clic derecho o
    Shift y se acerca hasta quedar dentro del camion. Apagada, el visor se comporta como siempre. */
 let libre=false;
-const HINT_FIJA='arrastrar: rotar<br>rueda: zoom<br>doble clic: reencuadrar';
-const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom<br>doble clic: reencuadrar';
-function limitesCam(){return libre?{elMin:-1.5,elMax:1.5,dMin:120}:{elMin:0.05,elMax:1.45,dMin:700};}
+const HINT_FIJA='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor<br>doble clic: reencuadrar';
+const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor<br>doble clic: reencuadrar';
+function limitesCam(){return libre?{elMin:-1.5,elMax:1.5,dMin:60}:{elMin:0.05,elMax:1.45,dMin:80};}
 function ponerHint(){
   let s=libre?HINT_LIBRE:HINT_FIJA;
   if(typeof EDIT!=='undefined'&&EDIT.permitido&&!MODO_BN)s=s.replace('doble clic: reencuadrar','doble clic en una caja: elegirla<br>doble clic fuera: reencuadrar');
@@ -650,14 +650,21 @@ function panCam(dx,dy){
 }
 function bindControls(cv){
   let drag=false,mover=false,px,py;
-  cv.addEventListener('mousedown',e=>{drag=true;mover=libre&&(e.button===2||e.button===1||e.shiftKey);px=e.clientX;py=e.clientY;if(mover)e.preventDefault();});
-  cv.addEventListener('contextmenu',e=>{if(libre)e.preventDefault();});
+  cv.addEventListener('mousedown',e=>{drag=true;mover=(e.button===2||e.button===1||e.shiftKey);px=e.clientX;py=e.clientY;if(mover)e.preventDefault();});
+  cv.addEventListener('contextmenu',e=>e.preventDefault());
   window.addEventListener('mouseup',()=>drag=false);
   window.addEventListener('mousemove',e=>{if(!drag)return;
     if(mover){panCam(e.clientX-px,e.clientY-py);}
     else{const l=limitesCam();az-=(e.clientX-px)*0.008;el+=(e.clientY-py)*0.006;el=Math.max(l.elMin,Math.min(l.elMax,el));}
     px=e.clientX;py=e.clientY;pedirRender();});
-  cv.addEventListener('wheel',e=>{e.preventDefault();const l=limitesCam();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(l.dMin,Math.min(9000,dist));_zoomUsuario=true;pedirRender();},{passive:false});
+  cv.addEventListener('wheel',e=>{e.preventDefault();const l=limitesCam();
+    const f=1+(e.deltaY>0?0.12:-0.12),nd=Math.max(l.dMin,Math.min(9000,dist*f));
+    /* el zoom va hacia donde está el cursor: lo que miras se queda en su sitio y se agranda */
+    const r=cv.getBoundingClientRect(),rc=new THREE.Raycaster();
+    camera.updateMatrixWorld();rc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+    const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),ctr),P=new THREE.Vector3();
+    if(rc.ray.intersectPlane(pl,P))ctr.addScaledVector(P.sub(ctr),1-nd/dist);
+    dist=nd;_zoomUsuario=true;pedirRender();},{passive:false});
   cv.addEventListener('dblclick',e=>{if(window.EDIT_doble&&EDIT_doble(e))return;az=0.85;el=0.28;buildScene(cur)});   // sobre una caja (si se puede ajustar) la elige; fuera de ellas reencuadra
 }
 // ---- UI ----
