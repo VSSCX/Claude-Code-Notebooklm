@@ -110,7 +110,10 @@ async function guardarAjustes(datos){
   render();
 }
 
-function pedirCalculo(){
+function pedirCalculo(forzar){
+  // con ajustes a mano en el 3D, un cambio en la carga no los borra solo: se avisa y el analista decide
+  if (forzar !== true && UI.cub && UI.cub.ajustado){ UI.cubPendiente = true; return renderSoon(); }
+  UI.cubPendiente = false;
   UI.cubSucio = true;
   if (!UI.cubCalculando) correrCalculos();
   else renderSoon();
@@ -140,7 +143,7 @@ function camionDelPallet(){
   if (i >= 0 && i !== UI.cubCam){ UI.cubCam = i; Visor.camion(i); }
 }
 /* Importar y "traer pedido" reemplazan toda la carga: el servidor devuelve el documento completo */
-function adoptarDoc(doc){ UI.cubGen++; UI.cubSucio = false; UI.cubIn = entradaDe(doc); UI.cub = doc; UI.cubError = ''; UI.cubCam = 0; UI.cubFiltro = null; }
+function adoptarDoc(doc){ UI.cubGen++; UI.cubSucio = false; UI.cubPendiente = false; UI.cubIn = entradaDe(doc); UI.cub = doc; UI.cubError = ''; UI.cubCam = 0; UI.cubFiltro = null; }
 
 /* ---- Agregar productos ---- */
 let _sugSeq = 0, _sugTimer = 0, _qtyTimer = 0;
@@ -600,7 +603,7 @@ function vistaCubicador(){
     ...(UI.cubError && !faltaMedidas && !UI.cubFalta ? [['err', 'Error', UI.cubError]] : []),
     ...((c.sin_medidas || []).length ? [['err', 'Sin medidas', c.sin_medidas.join(', ')]] : []),
     ...(enPallet && !ef.pallets ? [['info', 'Pallets', 'Para ver un pallet se cubicó en pallets: con la carga a piso no hay pallets que mostrar.']] : []),
-    ...((c.avisos || []).map(a => ['warn', 'Aviso', a])),
+    ...((c.avisos || []).filter(a => !/^Ajustado a mano/.test(a)).map(a => ['warn', 'Aviso', a])),
   ];
 
   const vivo = c.visor_vivo || '/visor/visor_vivo.html';
@@ -633,6 +636,7 @@ function vistaCubicador(){
       ${faltaMedidas ? `<div class="panel empty"><h3>Falta la Base de Medidas</h3><p>El cubicaje necesita las medidas de los productos. Se cargan una vez y quedan guardadas.</p><button class="btn primary" data-go="config">Ir a Configuración</button></div>` : ''}
       ${alertaFaltantes(c.faltantes, '/api/cubicaje-libre/faltantes.xlsx', totUnidades)}
       ${msgs.length ? `<ul class="msgs">${msgs.map(([t, k, x]) => `<li><span class="tag ${t}">${k}</span> ${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${avisoAjustado(c, 'cubVolver', UI.cubPendiente ? 'Cambiaste la carga después de ajustar: el 3D sigue como lo dejaste hasta que vuelvas a la sugerencia.' : '')}
       ${barraColor(c.visor_json, 'libre')}
       <div class="visor-caja" aria-busy="${UI.cubCalculando || UI.cubOcupado}">
         <iframe data-k="visor-libre" data-visor="libre" src="${esc(vivo)}#solo3d" title="Visor 3D del cubicador"></iframe>

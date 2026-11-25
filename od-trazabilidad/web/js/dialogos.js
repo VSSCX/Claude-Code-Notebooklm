@@ -699,6 +699,9 @@ document.addEventListener('click', ev => {
       if (p && ta) guardarPredist(p.pedido, ta.value); break; }
     case 'cubicar': { const p = Store.get('pedidos', UI.sel);
       if (p) cubicar(p.pedido, opcionesCub(UI.cubicaje[p.pedido] || {})); break; }
+    case 'cubVolver': pedirCalculo(true); break;
+    case 'volverSugerencia': { const p = Store.get('pedidos', UI.sel);
+      if (p) cubicar(p.pedido, opcionesCub(UI.cubicaje[p.pedido] || {})); break; }
     case 'cubMix': { const p = Store.get('pedidos', UI.sel); if (!p) break;
       const cb = UI.cubicaje[p.pedido] || {};
       UI.cubOpts.mix = !(UI.cubOpts.mix ?? cb.mezclar_pallets);                       // el marcador recalcula al momento

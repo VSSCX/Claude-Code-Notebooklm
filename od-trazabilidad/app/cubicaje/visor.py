@@ -93,7 +93,9 @@ def _camion_json(c: int, cam, placed, med, letras, colores, pallets=(), tarima=1
                 ',"z":' + fmt_num(p.z + u * p.oH) + ',"dx":' + fmt_num(p.oL) +
                 ',"dy":' + fmt_num(p.oW) + ',"dz":' + fmt_num(p.oH) +
                 ',"color":"' + colores[p.cod] + '","letra":"' + letras[p.cod] +
-                '","suc":"' + _js(p.suc) + '","piso":1}')
+                '","suc":"' + _js(p.suc) + '","piso":1' +
+                (',"ped":"' + _js(p.ped) + '"' if p.ped else "") +
+                (',"pal":' + str(int(p.pallet)) if getattr(p, "pallet", 0) else "") + "}")
     items_json = []
     for cod in orden:
         desc, dL, dW, dH, _ = med.get(cod, ("", 0, 0, 0, 0))

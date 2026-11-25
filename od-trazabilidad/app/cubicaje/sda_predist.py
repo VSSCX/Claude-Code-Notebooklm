@@ -405,6 +405,7 @@ def cubicaje_sda_predistribuido(posiciones: list[Posicion], predist: list[FilaPr
     piso_pl, piso_filas, vehiculos = cargar_piso(piso, bloques, vehiculos, geo, pal_W,
                                                  restricciones_piso())
     res.placed = colocados + piso_pl
+    res.por_caja = {"C" + b.cod: b.cm_por_caja for b in bloques if b.tipo == "Caja" and b.cm_por_caja > 1}
     res.filas04 = filas04 + piso_filas
     res.pallets = [{"numero": i + 1, "tipo": getattr(p, "tipo", "Mono-Suc"),
                     "sucursal": getattr(p, "sucursal", ""),

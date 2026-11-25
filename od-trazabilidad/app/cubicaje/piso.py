@@ -72,6 +72,7 @@ def cubicaje_sda_a_piso(posiciones: list[Posicion], cache: dict[str, Dims], boxe
     res.avisos += av_kit
     res.sin_medidas += [x for x in sm_kit if x not in res.sin_medidas]
     res.placed = placed
+    res.por_caja = {c: m for c, m in mult.items() if m > 1 and c.startswith("C")}
 
     for c in range(1, n_cont + 1):
         bi = cont_box[c] if 1 <= c < len(cont_box) else len(boxes) - 1

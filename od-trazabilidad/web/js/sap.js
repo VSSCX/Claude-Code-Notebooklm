@@ -493,7 +493,7 @@ async function importarMedidas(input){
     UI.medidas = null; await cargarMedidas();
     // lo que estaba sin medidas se vuelve a calcular: el cubicador libre y los pedidos que tenían faltantes
     if (UI.cubIn) pedirCalculo();
-    for (const [ped, cb] of Object.entries(UI.cubicaje)) if ((cb.faltantes || []).length) cubicar(ped, {});
+    for (const [ped, cb] of Object.entries(UI.cubicaje)) if ((cb.faltantes || []).length && !cb.ajustado) cubicar(ped, {});
   } catch(e){ toast(e.message); }
 }
 function seccionMedidas(){

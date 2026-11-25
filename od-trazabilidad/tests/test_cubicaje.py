@@ -952,3 +952,35 @@ def test_los_pallets_de_130_van_en_una_columna_centrada_y_dentro_del_camion():
         por_camion.setdefault(p["vehiculo"], []).append(p)
     assert all(len({round(q["x"]) for q in ps}) == len(ps) for ps in por_camion.values())             # una sola columna: x distintos
     assert max(len(ps) for ps in por_camion.values()) <= 11
+
+
+def test_un_pallet_a_medio_llenar_se_arma_por_capas_de_abajo_hacia_arriba():
+    """Como lo carga el operario: la primera capa completa, luego la segunda encima, y así; no columnas de cajas hasta el techo."""
+    from app.cubicaje.core import Item
+    from app.cubicaje.sda import _cubicar_pallet, restricciones_sda
+    # pallet 120 × 100 × 150; la caja 40 × 30 × 25 da 8 por capa y 6 capas (48 en total)
+    item = lambda n: Item(cod="A", L=40, w=30, h=25, peso=10, apilable=True, qty=n, fila=0)
+    plc, puestas = _cubicar_pallet([item(20)], 120, 100, 150, restricciones_sda())
+    assert puestas == 20
+    por_nivel: dict = {}
+    for p in plc:
+        por_nivel[round(p.z)] = por_nivel.get(round(p.z), 0) + p.n
+    assert por_nivel == {0: 8, 25: 8, 50: 4}                 # capas llenas abajo y la incompleta arriba
+    # dentro de la capa se llena fila por fila a lo ancho del pallet (y), y recién después avanza en x
+    piso = sorted((round(p.x), round(p.y)) for p in plc if p.z == 0)
+    assert piso[:4] == [(0, 0), (0, 30), (0, 60), (0, 90)]
+    # un pallet completo de un solo producto queda igual que siempre
+    completo, n = _cubicar_pallet([item(48)], 120, 100, 150, restricciones_sda())
+    assert n == 48 and sum(p.n for p in completo) == 48
+
+
+def test_un_pallet_mixto_tambien_se_arma_por_capas():
+    from app.cubicaje.core import Item
+    from app.cubicaje.sda import _cubicar_pallet, restricciones_sda
+    a = Item(cod="A", L=40, w=30, h=25, peso=10, apilable=True, qty=12, fila=0)
+    b = Item(cod="B", L=30, w=30, h=20, peso=5, apilable=True, qty=10, fila=1)
+    plc, puestas = _cubicar_pallet([a, b], 120, 100, 150, restricciones_sda())
+    assert puestas == 22
+    # ninguna caja arranca en un nivel de arriba mientras el piso todavía tiene lugar para ella
+    alto_piso = max(p.z for p in plc if p.z == 0) if any(p.z == 0 for p in plc) else 0
+    assert any(p.z == 0 for p in plc) and all(p.n == 1 for p in plc)

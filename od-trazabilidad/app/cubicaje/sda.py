@@ -15,7 +15,7 @@ Conceptos que se conservan del VBA:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .core import Item, Placement, Restric, meter_en_camion
 from .datos import Dims, get_dims_for
@@ -451,11 +451,24 @@ def _items_de_pallet(pallet: Pallet, bloques: list[Bloque]) -> list[Item]:
             for bi, n in pallet.contenido if n > 0]
 
 
+def _pallet_completo(items: list[Item], pal_L: float, pal_W: float, alto: float) -> bool:
+    """Un pallet de un solo producto que se llena entero: da lo mismo columnas que capas (queda igual)."""
+    if len(items) != 1:
+        return False
+    from .core import Box, capacidad_mono
+    cols, filas, niveles = capacidad_mono(items[0].L, items[0].w, items[0].h, Box("p", pal_W, pal_L, alto), items[0].apilable)
+    return cols * filas * niveles <= items[0].qty
+
+
 def _cubicar_pallet(items: list[Item], pal_L: float, pal_W: float, pal_H: float,
                     restric: Restric) -> tuple[list[Placement], int]:
     acum = {"unid": 0, "vol": 0.0}
     plc: list[Placement] = []
     if items:
+        # Pallets a medio llenar y mixtos se arman por capas, de abajo hacia arriba y fila por fila, como los carga el operario;
+        # uno completo de un solo producto queda igual por columnas (más rápido) y por capas.
+        if not _pallet_completo(items, pal_L, pal_W, max(pal_H, items[0].h) if len(items) == 1 else pal_H):
+            restric = replace(restric, capas=True)
         # Un producto más alto que el pallet (un refrigerador de 180 cm en un pallet de 150) va igual, uno por nivel, como la
         # capacidad ya lo cuenta: sin esto el pallet quedaba con unidades que no se colocaban ni se dibujaban.
         alto = max(pal_H, items[0].h) if len(items) == 1 else pal_H
@@ -748,6 +761,7 @@ def cubicaje_sda_stock(posiciones: list[Posicion], cache: dict[str, Dims], pal_L
     piso_pl, piso_filas, vehiculos = cargar_piso(piso, bloques, vehiculos, geo, pal_W,
                                                  restricciones_piso())
     res.placed = colocados + piso_pl
+    res.por_caja = {"C" + b.cod: b.cm_por_caja for b in bloques if b.tipo == "Caja" and b.cm_por_caja > 1}
     res.filas04 = filas04 + piso_filas
     res.pallets = [{"numero": i + 1, "tipo": p.tipo or ("Mono" if p.k == 1 else "Mix"),
                     "vehiculo": geo.get(i + 1, {}).get("veh", 0),

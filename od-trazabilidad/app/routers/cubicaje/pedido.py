@@ -226,7 +226,7 @@ def _cubicar(numero, body: dict, s: Session):
         rm = camiones_vista(s)["rampla"]
         cams = r.camiones or [_Cam(numero=1, tipo=rm[0], L=rm[1], w=rm[2], h=rm[3])]
         datos_visor = construir_json(r.placed, cams, es_sda=bool(r.pallets), pallets=r.pallets,
-                                      cliente=cliente, modo=r.modo)
+                                      cliente=cliente, modo=r.modo, por_caja=r.por_caja)
         html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob(f"{nombre_visor}_*.html"):         # deja solo el último
             viejo.unlink(missing_ok=True)

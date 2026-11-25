@@ -121,3 +121,22 @@ def caja_master_defecto(body: dict, regla, modo: str, piso: str = "") -> str:
         return "CON CAJA MASTER"
     return "SIN CAJA MASTER" if str(modo).upper() != "MDA" else ""      # a piso no aplica; el motor pide un valor fuera de MDA
 
+
+
+def _escribir_visor(nombre: str, datos: str, doc: dict) -> None:
+    """Deja los datos del visor (y su página) como los dejó el analista, sin pasar por el motor. Pone `visor` y `visor_vivo` en el documento."""
+    import uuid
+    from pathlib import Path as _Path
+
+    from ...config import settings as _st
+    from ...cubicaje.visor import asegurar_visor_vivo, guardar_datos_visor, html_visor, preparar_carpeta
+    carpeta = _Path(_st.visores_dir)
+    preparar_carpeta(carpeta, _st.visor_assets)
+    plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
+    for viejo in carpeta.glob(f"{nombre}_*.html"):
+        viejo.unlink(missing_ok=True)
+    nombre_fs = f"{nombre}_{uuid.uuid4().hex[:8]}.html"
+    (carpeta / nombre_fs).write_text(html_visor(plantilla, datos), encoding="utf-8")
+    doc["visor"] = f"/visor/{nombre_fs}"
+    doc["visor_vivo"] = asegurar_visor_vivo(carpeta, plantilla)
+    guardar_datos_visor(carpeta, f"{nombre}_datos", datos)

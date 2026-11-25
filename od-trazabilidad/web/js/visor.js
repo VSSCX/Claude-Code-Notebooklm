@@ -25,11 +25,16 @@ const Visor = {
   listos: new WeakSet(),       // iframes que ya avisaron "listo"
   enviado: new WeakMap(),      // último dato enviado a cada iframe
   palEnv: new WeakMap(),       // último pallet resaltado enviado a cada iframe
+  edit: {},                   // por visor: el último ajuste a mano, hasta que el servidor lo confirma
+  pend: {},                   // por visor: ajuste que llegó mientras se guardaba el anterior
+  subiendo: {},
+  editEnv: new WeakMap(),     // último permiso de edición enviado a cada iframe
   leyendas: {},               // por visor: qué color lleva cada sucursal del camión que muestra (lo avisa el propio visor)
   frames(){ return [...document.querySelectorAll('iframe[data-visor]')]; },
   filtroSuc(clave, nombre, activa){ this.mandar({tipo: 'od-visor-filtro', suc: activa ? null : nombre}, this.frames().find(x => x.dataset.visor === clave)); },
   datos(f){
     const k = f.dataset.visor;
+    if (this.edit[k]) return this.edit[k];                 // lo que el analista dejó en el 3D manda mientras se guarda
     if (k === 'libre') return (UI.cub && UI.cub.visor_json) || camionVacioJSON((UI.cubIn || {}).vista);
     if (k.startsWith('pedido:')){ const cb = UI.cubicaje[k.slice(7)]; return cb && cb.visor_json; }
     if (k.startsWith('entrega:')){ const d = UI.cubEnt[k.slice(8)]; return d && d.visor_json; }
@@ -41,6 +46,7 @@ const Visor = {
       if (!this.listos.has(f) || !f.contentWindow) continue;
       const json = this.datos(f);
       this.resaltarPallet(f);
+      this.permitirEdicion(f);
       if (!json || this.enviado.get(f) === json) continue;
       this.enviado.set(f, json);
       f.contentWindow.postMessage({tipo: 'od-visor-datos', datos: json}, location.origin);
@@ -61,6 +67,47 @@ const Visor = {
     this.palEnv.set(f, idx);
     this.mandar({tipo: 'od-visor-pallet', idx}, f);
   },
+  /* Se puede mover cajas en el 3D del cubicador y de un pedido; no en un pallet suelto, en un cubicaje conjunto ni en una entrega ya creada. */
+  editable(f){
+    const k = f.dataset.visor;
+    if (k === 'libre'){ const c = UI.cub || {}; return !!(c.camiones && c.camiones.length) && (UI.cubIn || {}).vista !== 'pallet' && !UI.cubCalculando; }
+    if (k.startsWith('pedido:')){ const cb = UI.cubicaje[k.slice(7)]; return !!(cb && cb.camiones && !cb.conjunto && !cb.recalculando); }
+    return false;
+  },
+  permitirEdicion(f){
+    const on = this.editable(f), v = on ? 1 : 0;
+    if (this.editEnv.get(f) === v) return;
+    this.editEnv.set(f, v);
+    this.mandar({tipo: 'od-visor-editable', on}, f);
+    if (on) this.mandar({tipo: 'od-visor-vehiculos', lista: ['rampla', 'camion50'].map(v => { const [tipo, L, W, H] = medidasVista(v); return {tipo, L, W, H}; })}, f);
+  },
+  /* El analista movió cajas en el 3D: se guarda en el servidor (que rehace las cargas de cada camión). Un solo guardado a la vez;
+     si llega otro cambio mientras tanto, se guarda después con lo último. */
+  ajustar(f, datos){
+    const k = f.dataset.visor;
+    this.edit[k] = datos; this.enviado.set(f, datos);
+    if (this.subiendo[k]){ this.pend[k] = datos; return; }
+    this.guardar(f, k, datos);
+  },
+  async guardar(f, k, datos){
+    this.subiendo[k] = true;
+    let sig = datos;
+    while (sig){
+      this.pend[k] = null;
+      try {
+        const libre = k === 'libre', n = libre ? '' : k.slice(7);
+        const doc = await api('POST', libre ? '/cubicaje-libre/ajustes' : `/cubicaje/${encodeURIComponent(n)}/ajustes`, {visor: sig});
+        if (libre) UI.cub = {...UI.cub, ...doc}; else UI.cubicaje[n] = {...UI.cubicaje[n], ...doc};
+        if (!this.pend[k]){ delete this.edit[k]; this.enviado.set(f, sig); }
+      } catch(e){
+        toast(e.message);
+        this.pend[k] = null; delete this.edit[k]; this.enviado.delete(f);       // el visor vuelve a lo último guardado
+      }
+      sig = this.pend[k];
+    }
+    this.subiendo[k] = false;
+    render();
+  },
   mandar(msg, f){ (f ? [f] : this.frames()).forEach(x => this.listos.has(x) && x.contentWindow && x.contentWindow.postMessage(msg, location.origin)); },
   camion(idx, f){ this.mandar({tipo: 'od-visor-camion', idx: idx || 0}, f); },
   filtro(cod){ this.mandar({tipo: 'od-visor-filtro', cod: cod || null}); },
@@ -74,8 +121,19 @@ window.addEventListener('message', ev => {
     if (k && Visor.leyendas[k] !== s){ Visor.leyendas[k] = s; render(); }
     return;
   }
+  if (ev.origin === location.origin && m && m.tipo === 'od-visor-editado' && typeof m.datos === 'string'){
+    const f = Visor.frames().find(x => x.contentWindow === ev.source);
+    if (f && Visor.editable(f)) Visor.ajustar(f, m.datos);
+    return;
+  }
+  if (ev.origin === location.origin && m && m.tipo === 'od-visor-camion-actual'){          // el analista cambió de camión dentro del 3D
+    const f = Visor.frames().find(x => x.contentWindow === ev.source), k = f && f.dataset.visor, i = +m.idx || 0;
+    if (k === 'libre' && UI.cubCam !== i){ UI.cubCam = i; render(); }
+    else if (k && k.startsWith('pedido:') && (UI.pedCam[k.slice(7)] || 0) !== i){ UI.pedCam[k.slice(7)] = i; render(); }
+    return;
+  }
   if (ev.origin !== location.origin || !m || m.tipo !== 'od-visor-listo') return;
-  for (const f of Visor.frames()) if (f.contentWindow === ev.source){ Visor.listos.add(f); Visor.enviado.delete(f); Visor.palEnv.delete(f); }
+  for (const f of Visor.frames()) if (f.contentWindow === ev.source){ Visor.listos.add(f); Visor.enviado.delete(f); Visor.palEnv.delete(f); Visor.editEnv.delete(f); }
   Visor.sincronizar();
 });
 
@@ -120,3 +178,12 @@ document.addEventListener('click', ev => {
   if (k){ Visor.colorear(k.dataset.visColor); render(); return; }
   if (ev.target.closest && ev.target.closest('[data-vis-libre]')){ Visor.verLibre(!Visor.libre); render(); }
 });
+
+/* Aviso sobre el visor cuando el 3D tiene ajustes del analista, con la salida: volver a lo que sugirió el motor. */
+function avisoAjustado(doc, accion, nota = ''){
+  if (!doc || !doc.ajustado) return '';
+  const a = doc.ajustado;
+  return `<div class="aviso info" role="status"><div class="aviso-cuerpo"><b>Ajustado a mano en el 3D.</b>
+    <span class="small">${fmt(a.cajas_ahora)} cajas ahora${a.cajas_antes !== a.cajas_ahora ? ` (el motor había sugerido ${fmt(a.cajas_antes)})` : ''}. ${nota || 'Las cargas de cada camión salen de lo que dejaste en el 3D.'}</span></div>
+    <button class="btn sm" data-act="${accion}" title="Descarta tus ajustes y deja lo que sugiere el motor">Volver a la sugerencia</button></div>`;
+}

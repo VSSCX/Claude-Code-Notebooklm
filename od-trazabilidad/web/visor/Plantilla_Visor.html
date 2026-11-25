@@ -509,11 +509,12 @@ function _cajasFusionadas(grp,lista){
   for(const b of lista){
     const mat=skuMat(boxColor(b),textoCaja(b));
     let a=porMat.get(mat);if(!a){a=[];porMat.set(mat,a);}
-    const c={x:b.x+b.dx/2,y:b.z+b.dz/2,z:b.y+b.dy/2,sx:b.dx,sy:b.dz,sz:b.dy};
+    const c={x:b.x+b.dx/2,y:b.z+b.dz/2,z:b.y+b.dy/2,sx:b.dx,sy:b.dz,sz:b.dy,src:b};
     a.push(c);todas.push(c);
   }
   porMat.forEach((cajas,mat)=>{
     const m=new THREE.Mesh(_geoCajas(cajas,true,false),mat);
+    m.userData.cajas=cajas.map(c=>c.src);                      // para saber qué caja es cada triángulo (ajustes a mano)
     m.castShadow=true;m.receiveShadow=true;grp.add(m);
   });
   if(todas.length)grp.add(new THREE.LineSegments(_geoAristas(todas),_MAT_ARISTA));
@@ -585,9 +586,11 @@ function buildScene(ci){
   capaCajas=new THREE.Group();group.add(capaCajas);
   _palletsFusionados(capaCajas,(c.pallets||[]).filter(pasaFiltroPal).map(p=>({p:p,colP:(colorBySuc&&p.suc)?(SUC_COLOR[p.suc]||null):null})));
   // etiquetas FRENTE / PUERTAS quitadas a pedido (no en pantalla ni en PDF)
-  const visibles=(c.cajas||[]).filter(b=>pasaFiltro(b));
+  const visibles=(c.cajas||[]).filter(b=>pasaFiltro(b)&&!(window.EDIT_oculta&&EDIT_oculta(b)));
   _cajasFusionadas(capaCajas,visibles);
   dibujarResalte();
+  if(window.EDIT_dibujar)EDIT_dibujar();
+  if(window.EDIT_mantener){renderer.shadowMap.needsUpdate=true;pedirRender();return;}      // ajustes a mano: la cámara se queda donde está
 
   if(visibles.length){
     let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
@@ -808,7 +811,8 @@ function shotWhite(azv,elv,w,h){
   return url;
 }
 async function exportPDF(soloActual){
-  if(MODO_BN)return;                                                     // ya hay un PDF en curso: un segundo clic no lo pisa
+  if(MODO_BN)return;
+  if(window.EDIT_sinSeleccion)EDIT_sinSeleccion();                       // la caja elegida no sale resaltada en el PDF                                                     // ya hay un PDF en curso: un segundo clic no lo pisa
   var busy=document.getElementById('busy');busy.classList.add('on');busy.textContent='Generando PDF...';
   var cur0=cur, pS=palSel; palSel=null;                                  // el PDF no lleva el resalte del pallet
   var fT=filtroTipo,fV=filtroVal; filtroTipo=null;filtroVal=null;        // el PDF muestra el camion completo, sin el filtro de pantalla
@@ -947,6 +951,7 @@ let _zoomUsuario=false;
 function cargarDatos(d){
   if(!d||typeof d!=='object')return;
   const cam={az:az,el:el,dist:dist};
+  if(window.EDIT_limpiar)EDIT_limpiar();
   DATA=d; ESC=d.escenarios||[{nombre:'Cubicaje',camiones:(d.camiones||[])}];
   escCur=Math.min(escCur,ESC.length-1); CAM=ESC[escCur].camiones||[];
   if(cur>=CAM.length)cur=0;
@@ -978,6 +983,458 @@ window.addEventListener('message',function(ev){
 });
 window.addEventListener('load',init);
 window.buildScene=buildScene;
+</script><script>
+/* ===== Ajustes a mano =====
+   Doble clic sobre una caja la elige; se arrastra para moverla, se gira o voltea, se quita o se pasa a otro camión; también por producto
+   (todas las cajas de un producto del camión) o por pallet. Siempre cae sobre lo que tenga debajo (el piso, una tarima u otra caja), así
+   que no flota. Las reglas del motor (peso, apilado, apoyo) se avisan pero no se imponen: la sugerencia es la primera opción, el analista decide.
+   Cada cambio rehace el resumen del camión y se le avisa a la plataforma (od-visor-editado), que guarda y recalcula las cargas. */
+const EDIT={sel:[],selSet:new Set(),anc:null,ambito:'caja',hist:[],rehacer:[],drag:null,permitido:false,vehiculos:[],selGrupo:null,t:null,msgT:null,ultimo:0};
+const ED_EPS=0.05;
+function ED_cam(){return CAM[cur];}
+window.EDIT_oculta=function(b){return EDIT.selSet.size>0&&EDIT.selSet.has(b);};
+window.EDIT_sinSeleccion=function(){EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;EDIT.drag=null;ED_panel();};
+window.EDIT_limpiar=function(){EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;EDIT.drag=null;EDIT.hist=[];EDIT.rehacer=[];ED_panel();};
+function ED_build(){window.EDIT_mantener=true;try{buildScene(cur);}finally{window.EDIT_mantener=false;}}
+function ED_r1(n){return Math.round(n*10)/10;}
+function ED_solapa(ax,ay,adx,ady,bx,by,bdx,bdy){return ax<bx+bdx-ED_EPS&&ax+adx>bx+ED_EPS&&ay<by+bdy-ED_EPS&&ay+ady>by+ED_EPS;}
+
+/* ---- Rejilla espacial: qué cajas hay bajo un rectángulo, sin recorrer todas ---- */
+function ED_rejilla(cam,excluir){
+  const T=40,m=new Map();
+  const clave=(i,j)=>i*4096+j;
+  const r={add(b){for(let i=Math.floor(b.x/T);i<=Math.floor((b.x+b.dx)/T);i++)for(let j=Math.floor(b.y/T);j<=Math.floor((b.y+b.dy)/T);j++){const k=clave(i,j);let a=m.get(k);if(!a){a=[];m.set(k,a);}a.push(b);}},
+    cerca(x,y,dx,dy){const s=new Set();for(let i=Math.floor(x/T);i<=Math.floor((x+dx)/T);i++)for(let j=Math.floor(y/T);j<=Math.floor((y+dy)/T);j++){const a=m.get(clave(i,j));if(a)a.forEach(b=>s.add(b));}return s;}};
+  (cam.cajas||[]).forEach(b=>{if(!excluir||!excluir.has(b))r.add(b);});
+  return r;
+}
+/* Altura a la que apoya una caja con esa huella: el piso, una tarima o lo más alto que tenga debajo */
+function ED_zApoyo(cam,rej,x,y,dx,dy){
+  let z=0;
+  (cam.pallets||[]).forEach(p=>{if(ED_solapa(x,y,dx,dy,p.x,p.y,p.dl,p.dw))z=Math.max(z,p.tar||14.5);});
+  rej.cerca(x,y,dx,dy).forEach(b=>{if(ED_solapa(x,y,dx,dy,b.x,b.y,b.dx,b.dy))z=Math.max(z,b.z+b.dz);});
+  return z;
+}
+function ED_dentro(cam,x,y,z,dx,dy,dz){return x>=-0.5&&y>=-0.5&&x+dx<=cam.L+0.5&&y+dy<=cam.W+0.5&&z+dz<=cam.H+0.5;}
+/* A qué pallet de ese camión pertenece una caja: el que tiene debajo */
+function ED_pal(cam,b){
+  const cx=b.x+b.dx/2,cy=b.y+b.dy/2;let pal=0;
+  (cam.pallets||[]).forEach(p=>{if(cx>=p.x&&cx<=p.x+p.dl&&cy>=p.y&&cy<=p.y+p.dw&&b.z>=(p.tar||14.5)-0.6)pal=p.idx;});
+  if(pal)b.pal=pal;else delete b.pal;
+}
+function ED_pesoDe(cod){for(const c of CAM){const it=(c.items||[]).find(i=>i.cod===cod);if(it)return it.pesoU||0;}return 0;}
+/* Avisos suaves de lo que quedó mal apoyado (no impiden nada) */
+function ED_advertencias(cam,rej,b){
+  const av=[];
+  if(b.z>0.5){
+    let area=0;const total=b.dx*b.dy;
+    const sup=(x,y,dx,dy)=>{const w=Math.max(0,Math.min(b.x+b.dx,x+dx)-Math.max(b.x,x)),h=Math.max(0,Math.min(b.y+b.dy,y+dy)-Math.max(b.y,y));return w*h;};
+    (cam.pallets||[]).forEach(p=>{if(Math.abs((p.tar||14.5)-b.z)<0.7)area+=sup(p.x,p.y,p.dl,p.dw);});
+    let masLiviano=false;
+    rej.cerca(b.x,b.y,b.dx,b.dy).forEach(o=>{if(o!==b&&Math.abs(o.z+o.dz-b.z)<0.7){const a=sup(o.x,o.y,o.dx,o.dy);if(a>0){area+=a;if(ED_pesoDe(o.cod)<ED_pesoDe(b.cod)-1e-6)masLiviano=true;}}});
+    if(area/total<0.7)av.push('apoya poco ('+Math.round(100*area/total)+'% de la base)');
+    if(masLiviano)av.push('va una caja más pesada sobre otra más liviana');
+  }
+  return av;
+}
+
+/* ---- Historial ---- */
+function ED_snap(idxs){return {n:CAM.length,cams:idxs.map(i=>({i:i,cajas:CAM[i].cajas.map(b=>Object.assign({},b)),pallets:(CAM[i].pallets||[]).map(p=>Object.assign({},p))}))};}
+function ED_restaurar(s){
+  while(CAM.length>s.n)CAM.pop();
+  s.cams.forEach(c=>{if(CAM[c.i]){CAM[c.i].cajas=c.cajas;CAM[c.i].pallets=c.pallets;}});
+}
+function ED_hacer(nombre,idxs,fn){
+  const s=ED_snap(idxs),r=fn();
+  if(!r||r.ok===false){ED_msg((r&&r.msg)||'No se pudo hacer ese cambio.','err');return false;}
+  const ahora=Date.now();
+  if(!(nombre==='mover'&&EDIT.ultimo&&ahora-EDIT.ultimo<900&&EDIT.hist.length)){EDIT.hist.push(s);if(EDIT.hist.length>40)EDIT.hist.shift();}
+  EDIT.ultimo=nombre==='mover'?ahora:0;EDIT.rehacer=[];
+  ED_cambio(idxs.concat(r.idxs||[]));
+  if(r.msg)ED_msg(r.msg,r.av&&r.av.length?'warn':'ok',r.accion);
+  return true;
+}
+function ED_deshacer(){
+  const s=EDIT.hist.pop();if(!s)return;
+  EDIT.rehacer.push(ED_snap(s.cams.map(c=>c.i)));
+  ED_restaurar(s);EDIT.sel=[];EDIT.selSet=new Set();ED_cambio(s.cams.map(c=>c.i));ED_msg('Cambio deshecho.','ok');
+}
+function ED_rehacer(){
+  const s=EDIT.rehacer.pop();if(!s)return;
+  EDIT.hist.push(ED_snap(s.cams.map(c=>c.i)));
+  ED_restaurar(s);EDIT.sel=[];EDIT.selSet=new Set();ED_cambio(s.cams.map(c=>c.i));ED_msg('Cambio rehecho.','ok');
+}
+
+/* ---- Lo que cambia en un camión cuando se mueven sus cajas ---- */
+function ED_recalcular(c){
+  const meta={};CAM.forEach(k=>(k.items||[]).forEach(it=>{if(!meta[it.cod])meta[it.cod]=it;}));
+  const cnt=new Map();let vol=0,peso=0;
+  (c.cajas||[]).forEach(b=>{cnt.set(b.cod,(cnt.get(b.cod)||0)+1);vol+=b.dx*b.dy*b.dz/1e6;peso+=(meta[b.cod]&&meta[b.cod].pesoU)||0;});
+  const orden=(c.items||[]).map(i=>i.cod).filter(cod=>cnt.has(cod));
+  cnt.forEach((_,cod)=>{if(orden.indexOf(cod)<0)orden.push(cod);});
+  c.items=orden.map(cod=>Object.assign({},meta[cod]||{cod:cod,desc:cod,m:1,pesoU:0,L:0,W:0,H:0,letra:'?',color:'#888888'},{n:cnt.get(cod)}));
+  const cap=c.L*c.W*c.H/1e6;
+  c.volTot=ED_r1(vol*100)/100;c.volCap=ED_r1(cap*100)/100;c.ocupVol=cap>0?ED_r1(vol/cap*1000)/10:0;c.pesoTot=ED_r1(peso);
+}
+function ED_cambio(idxs){
+  new Set(idxs).forEach(i=>{if(CAM[i])ED_recalcular(CAM[i]);});
+  if(cur>=CAM.length)cur=0;
+  indexarDatos();renderTabs();renderStats();renderLegend();
+  ED_build();ED_panel();ED_notificar();
+}
+function ED_notificar(){
+  if(parent===window)return;
+  clearTimeout(EDIT.t);
+  EDIT.t=setTimeout(function(){try{parent.postMessage({tipo:'od-visor-editado',datos:JSON.stringify(DATA)},location.origin);}catch(e){}},450);
+}
+
+/* ---- Selección ---- */
+/* Las cajas que descansan sobre esta (y las que descansan sobre esas): moverla sin ellas las dejaría en el aire */
+function ED_encima(b){
+  const rej=ED_rejilla(ED_cam(),null),visto=new Set([b]),res=[],cola=[b];
+  while(cola.length){const q=cola.pop();
+    rej.cerca(q.x,q.y,q.dx,q.dy).forEach(function(o){
+      if(visto.has(o))return;
+      if(ED_solapa(q.x,q.y,q.dx,q.dy,o.x,o.y,o.dx,o.dy)&&o.z>=q.z+q.dz-0.6){visto.add(o);res.push(o);cola.push(o);}});}
+  return res;
+}
+function ED_libre(){   // ¿se puede mover/girar/quitar la selección sin dejar cajas en el aire?
+  if(EDIT.ambito!=='caja'||!EDIT.anc)return true;
+  const n=ED_encima(EDIT.anc).length;
+  if(!n)return true;
+  ED_msg('Esta caja tiene '+n+(n===1?' caja encima':' cajas encima')+'. Elige «Con encima» para moverlas juntas, o mueve primero las de arriba.','warn');
+  return false;
+}
+function ED_seleccionar(b,ambito){
+  const c=ED_cam();if(!c||!b)return;
+  EDIT.anc=b;EDIT.ambito=ambito||'caja';
+  let lista=[b];
+  if(EDIT.ambito==='producto')lista=c.cajas.filter(x=>x.cod===b.cod&&pasaFiltro(x));
+  else if(EDIT.ambito==='pallet'&&b.pal)lista=c.cajas.filter(x=>x.pal===b.pal);
+  else if(EDIT.ambito==='columna')lista=[b].concat(ED_encima(b));
+  else EDIT.ambito='caja';
+  EDIT.sel=lista;EDIT.selSet=new Set(lista);
+  ED_build();ED_panel();
+}
+function ED_soltar(){if(!EDIT.sel.length)return;EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;ED_build();ED_panel();}
+const ED_ray=new THREE.Raycaster(),ED_ndc=new THREE.Vector2();
+function ED_apunta(e){const r=renderer.domElement.getBoundingClientRect();ED_ndc.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);camera.updateMatrixWorld();ED_ray.setFromCamera(ED_ndc,camera);}
+function ED_elegir(e){
+  if(!capaCajas)return null;
+  ED_apunta(e);
+  const objs=[];capaCajas.children.forEach(o=>{if(o.isMesh&&o.userData.cajas)objs.push(o);});
+  if(EDIT.selGrupo)EDIT.selGrupo.children.forEach(o=>{if(o.isMesh)objs.push(o);});
+  const h=ED_ray.intersectObjects(objs,false);if(!h.length)return null;
+  const o=h[0].object;
+  return o.userData.caja||o.userData.cajas[Math.floor(h[0].faceIndex/12)]||null;
+}
+window.EDIT_dibujar=function(){
+  EDIT.selGrupo=null;if(!EDIT.sel.length||!capaCajas)return;
+  const g=new THREE.Group();
+  EDIT.sel.forEach(b=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(b.dx,b.dz,b.dy),new THREE.MeshStandardMaterial({color:new THREE.Color(boxColor(b)),emissive:0x2f4fe0,emissiveIntensity:0.5,roughness:0.6}));
+    m.userData.caja=b;m.castShadow=true;m.position.set(b.x+b.dx/2,b.z+b.dz/2,b.y+b.dy/2);
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),new THREE.LineBasicMaterial({color:0xffffff})));
+    g.add(m);
+  });
+  capaCajas.add(g);EDIT.selGrupo=g;
+};
+function ED_actualizarMallas(valido){
+  if(!EDIT.selGrupo)return;
+  EDIT.selGrupo.children.forEach(m=>{const b=m.userData.caja;m.position.set(b.x+b.dx/2,b.z+b.dz/2,b.y+b.dy/2);m.material.emissive.setHex(valido===false?0xd62d2d:0x2f4fe0);});
+  pedirRender();
+}
+
+/* ---- Mover: arrastrar o con las flechas ---- */
+function ED_planoY(b){return b.z+b.dz/2;}
+function ED_golpe(e,y){ED_apunta(e);const p=new THREE.Vector3();const pl=new THREE.Plane(new THREE.Vector3(0,1,0),-y);return ED_ray.ray.intersectPlane(pl,p)?p:null;}
+/* Mueve la selección: una caja cae sobre lo que tenga debajo; un grupo se desplaza entero a la misma altura */
+function ED_ubicar(orig,ddx,ddy,rej,ajustar){
+  const c=ED_cam();
+  if(orig.length===1){
+    const o=orig[0],b=o.b;let x=o.x+ddx,y=o.y+ddy;
+    x=Math.max(0,Math.min(c.L-b.dx,x));y=Math.max(0,Math.min(c.W-b.dy,y));
+    if(ajustar){   // imán a los bordes de lo que tiene cerca
+      let sx=null,sy=null;const S=5;
+      rej.cerca(x-S,y-S,b.dx+2*S,b.dy+2*S).forEach(o2=>{
+        [o2.x+o2.dx,o2.x-b.dx].forEach(cx=>{if(Math.abs(cx-x)<S&&(sx===null||Math.abs(cx-x)<Math.abs(sx-x)))sx=cx;});
+        [o2.y+o2.dy,o2.y-b.dy].forEach(cy=>{if(Math.abs(cy-y)<S&&(sy===null||Math.abs(cy-y)<Math.abs(sy-y)))sy=cy;});});
+      if(Math.abs(x)<S)sx=0;if(Math.abs(c.L-b.dx-x)<S)sx=c.L-b.dx;if(Math.abs(y)<S)sy=0;if(Math.abs(c.W-b.dy-y)<S)sy=c.W-b.dy;
+      if(sx!==null)x=sx;if(sy!==null)y=sy;
+    }
+    const z=ED_zApoyo(c,rej,x,y,b.dx,b.dy);
+    b.x=ED_r1(x);b.y=ED_r1(y);b.z=ED_r1(z);
+    return ED_dentro(c,b.x,b.y,b.z,b.dx,b.dy,b.dz);
+  }
+  let ok=true,dz=0;
+  if(EDIT.ambito==='columna'&&EDIT.anc){   // la columna entera cae sobre lo que haya en el lugar nuevo: la caja de abajo manda
+    const ba=orig.find(o=>o.b===EDIT.anc);
+    if(ba){const nx=Math.max(0,Math.min(c.L-ba.b.dx,ba.x+ddx)),ny=Math.max(0,Math.min(c.W-ba.b.dy,ba.y+ddy));dz=ED_zApoyo(c,rej,nx,ny,ba.b.dx,ba.b.dy)-ba.z;}
+  }
+  orig.forEach(o=>{const b=o.b;b.x=ED_r1(o.x+ddx);b.y=ED_r1(o.y+ddy);b.z=ED_r1(o.z+dz);
+    if(!ED_dentro(c,b.x,b.y,b.z,b.dx,b.dy,b.dz))ok=false;
+    else rej.cerca(b.x,b.y,b.dx,b.dy).forEach(q=>{if(ED_solapa(b.x,b.y,b.dx,b.dy,q.x,q.y,q.dx,q.dy)&&b.z<q.z+q.dz-ED_EPS&&b.z+b.dz>q.z+ED_EPS)ok=false;});
+    (c.pallets||[]).forEach(p=>{if(ED_solapa(b.x,b.y,b.dx,b.dy,p.x,p.y,p.dl,p.dw)&&b.z<(p.tar||14.5)-ED_EPS)ok=false;});});
+  return ok;
+}
+function ED_origenes(){return EDIT.sel.map(b=>({b:b,x:b.x,y:b.y,z:b.z}));}
+function ED_revertir(orig){orig.forEach(o=>{o.b.x=o.x;o.b.y=o.y;o.b.z=o.z;});}
+function ED_cerrarMovimiento(orig,idxs,valido,rej){
+  // valida y deja el cambio en el historial (ya está aplicado en las cajas; si no vale, se vuelve atrás)
+  if(!valido){ED_revertir(orig);ED_actualizarMallas(true);ED_msg('Ahí no cabe.','err');return;}
+  const hecho=orig.map(o=>({b:o.b,x:o.b.x,y:o.b.y,z:o.b.z}));
+  const mov=hecho.some((h,i)=>h.x!==orig[i].x||h.y!==orig[i].y||h.z!==orig[i].z);
+  if(!mov){ED_actualizarMallas(true);return;}
+  ED_revertir(orig);
+  let av=[];
+  ED_hacer('mover',[cur],function(){hecho.forEach(h=>{h.b.x=h.x;h.b.y=h.y;h.b.z=h.z;});
+    hecho.forEach(h=>ED_pal(ED_cam(),h.b));
+    if(hecho.length===1)av=ED_advertencias(ED_cam(),rej,hecho[0].b);
+    return {ok:true,msg:av.length?'Ojo: '+av.join('; ')+'.':'',av:av};});
+}
+function ED_mousedown(e){
+  if(e.button!==0||!EDIT.permitido||MODO_BN||!EDIT.sel.length||e.shiftKey)return;
+  const b=ED_elegir(e);if(!b||!EDIT.selSet.has(b))return;
+  const p0=ED_golpe(e,ED_planoY(b));if(!p0)return;
+  e.stopImmediatePropagation();e.preventDefault();
+  if(EDIT.ambito==='pallet'){ED_msg('Un pallet se pasa a otro camión con «Pasar»; dentro del camión no se arrastra.','warn');return;}
+  if(!ED_libre())return;
+  EDIT.drag={p0:p0,y:ED_planoY(b),orig:ED_origenes(),rej:ED_rejilla(ED_cam(),EDIT.selSet),mov:false,valido:true,idx:cur};
+}
+function ED_mousemove(e){
+  const d=EDIT.drag;if(!d)return;
+  const p=ED_golpe(e,d.y);if(!p)return;
+  const ddx=p.x-d.p0.x,ddy=p.z-d.p0.z;
+  if(!d.mov&&Math.abs(ddx)+Math.abs(ddy)<2)return;
+  d.mov=true;
+  d.valido=ED_ubicar(d.orig,ddx,ddy,d.rej,!e.altKey);
+  ED_actualizarMallas(d.valido);
+}
+function ED_mouseup(){
+  const d=EDIT.drag;if(!d)return;EDIT.drag=null;
+  if(!d.mov)return;
+  ED_cerrarMovimiento(d.orig,[cur],d.valido,d.rej);
+}
+function ED_empujar(dx,dy){
+  if(!EDIT.sel.length||EDIT.ambito==='pallet'||!ED_libre())return;
+  const rej=ED_rejilla(ED_cam(),EDIT.selSet),orig=ED_origenes();
+  const ok=ED_ubicar(orig,dx,dy,rej,false);
+  ED_actualizarMallas(ok);
+  ED_cerrarMovimiento(orig,[cur],ok,rej);
+}
+
+/* ---- Girar, voltear, quitar ---- */
+function ED_reubicar(b,x,y,dx,dy,dz,enSitio){
+  const c=ED_cam();
+  if(dx>c.L+0.5||dy>c.W+0.5||dz>c.H+0.5)return {ok:false,msg:'No cabe en el camión con esa orientación.'};
+  x=Math.max(0,Math.min(c.L-dx,x));y=Math.max(0,Math.min(c.W-dy,y));
+  const rej=ED_rejilla(c,new Set([b])),z=ED_zApoyo(c,rej,x,y,dx,dy);
+  if(enSitio&&z>b.z+0.5)return {ok:false,msg:'Así no cabe: choca con la caja de al lado.'};     // girar o voltear no la sube encima de otra: o cabe donde está, o no
+  if(!ED_dentro(c,x,y,z,dx,dy,dz))return {ok:false,msg:'No cabe ahí con esa orientación: choca con el techo.'};
+  Object.assign(b,{x:ED_r1(x),y:ED_r1(y),z:ED_r1(z),dx:dx,dy:dy,dz:dz});ED_pal(c,b);
+  const av=ED_advertencias(c,rej,b);
+  return {ok:true,msg:av.length?'Ojo: '+av.join('; ')+'.':'',av:av};
+}
+function ED_girar(){
+  if(EDIT.sel.length!==1||!ED_libre())return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2;
+  ED_hacer('girar',[cur],function(){return ED_reubicar(b,cx-b.dy/2,cy-b.dx/2,b.dy,b.dx,b.dz,true);});
+}
+function ED_voltear(){
+  if(EDIT.sel.length!==1||!ED_libre())return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2;
+  const nd={dx:b.dz,dy:b.dx,dz:b.dy};          // la altura pasa a ser el otro lado: tres vueltas y vuelve a como estaba
+  ED_hacer('voltear',[cur],function(){return ED_reubicar(b,cx-nd.dx/2,cy-nd.dy/2,nd.dx,nd.dy,nd.dz,true);});
+}
+function ED_quitar(){
+  if(!EDIT.sel.length||!ED_libre())return;
+  const sel=EDIT.sel.slice(),pal=EDIT.ambito==='pallet'&&EDIT.anc?EDIT.anc.pal:0,n=sel.length;
+  ED_hacer('quitar',[cur],function(){
+    const c=ED_cam(),s=new Set(sel);c.cajas=c.cajas.filter(b=>!s.has(b));
+    if(pal)c.pallets=(c.pallets||[]).filter(p=>p.idx!==pal);
+    EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;
+    return {ok:true,msg:n+(n===1?' caja quitada':' cajas quitadas')+' del camión.'};});
+}
+
+/* ---- Pasar a otro camión ---- */
+function ED_nuevoCamion(tipoIdx){
+  const v=EDIT.vehiculos[tipoIdx],base=ED_cam(),idx=Math.max.apply(null,CAM.map(c=>c.idx||0))+1;
+  const L=v?v.L:base.L,W=v?v.W:base.W,H=v?v.H:base.H;
+  CAM.push({idx:idx,tipo:v?v.tipo:base.tipo,L:L,W:W,H:H,volTot:0,volCap:ED_r1(L*W*H/1e4)/100,ocupVol:0,pesoTot:0,items:[],cajas:[],pallets:[]});
+  return CAM.length-1;
+}
+/* Primer lugar donde cabe: el más bajo, y entre iguales el más cerca del fondo (x chico) */
+function ED_primerLugar(dest,rej,dx,dy,dz,cand){
+  let mejor=null;
+  cand.forEach(function(k){
+    const x=k[0],y=k[1];
+    if(x+dx>dest.L+0.5||y+dy>dest.W+0.5)return;
+    const z=ED_zApoyo(dest,rej,x,y,dx,dy);
+    if(z+dz>dest.H+0.5)return;
+    const s=z*1e7+x*1e3+y;
+    if(mejor===null||s<mejor.s)mejor={s:s,x:x,y:y,z:z};
+  });
+  return mejor;
+}
+function ED_esquinas(dest,cand){
+  cand.set('0,0',[0,0]);
+  (dest.cajas||[]).forEach(b=>{[[b.x+b.dx,b.y],[b.x,b.y+b.dy],[b.x,b.y]].forEach(k=>cand.set(k[0]+','+k[1],k));});
+  (dest.pallets||[]).forEach(p=>{[[p.x+p.dl,p.y],[p.x,p.y+p.dw],[p.x,p.y]].forEach(k=>cand.set(k[0]+','+k[1],k));});
+}
+/* Pone copias de las cajas en el camión `di`, una por una, en el primer lugar que les quede. Devuelve las que entraron y las que no. */
+function ED_pasarCajas(di,clones){
+  const dest=CAM[di],rej=ED_rejilla(dest,null),cand=new Map();ED_esquinas(dest,cand);
+  const orden=clones.slice().sort((a,b)=>a.z-b.z||a.x-b.x||a.y-b.y);
+  const puestas=[],resto=[];
+  orden.forEach(function(b){
+    const l=ED_primerLugar(dest,rej,b.dx,b.dy,b.dz,cand);
+    if(!l){resto.push(b);return;}
+    b.x=ED_r1(l.x);b.y=ED_r1(l.y);b.z=ED_r1(l.z);ED_pal(dest,b);
+    dest.cajas.push(b);rej.add(b);puestas.push(b);
+    [[b.x+b.dx,b.y],[b.x,b.y+b.dy],[b.x,b.y]].forEach(k=>cand.set(k[0]+','+k[1],k));
+  });
+  return {puestas:puestas,resto:resto};
+}
+/* Un pallet entero (tarima y cajas) a un lugar libre del piso del otro camión */
+function ED_pasarPallet(di,pal,clones){
+  const dest=CAM[di],p0=(ED_cam().pallets||[]).find(q=>q.idx===pal);if(!p0)return {puestas:[],resto:clones};
+  const p=Object.assign({},p0),rej=ED_rejilla(dest,null),cand=new Map();ED_esquinas(dest,cand);
+  const alto=Math.max.apply(null,clones.map(b=>b.z+b.dz).concat([p.tar||14.5]));
+  let mejor=null;
+  cand.forEach(function(k){
+    const x=k[0],y=k[1];
+    if(x+p.dl>dest.L+0.5||y+p.dw>dest.W+0.5||alto>dest.H+0.5)return;
+    let libre=true;
+    (dest.pallets||[]).forEach(q=>{if(ED_solapa(x,y,p.dl,p.dw,q.x,q.y,q.dl,q.dw))libre=false;});
+    if(libre)rej.cerca(x,y,p.dl,p.dw).forEach(b=>{if(ED_solapa(x,y,p.dl,p.dw,b.x,b.y,b.dx,b.dy))libre=false;});
+    if(!libre)return;
+    const s=x*1e3+y;if(mejor===null||s<mejor.s)mejor={s:s,x:x,y:y};
+  });
+  if(!mejor)return {puestas:[],resto:clones};
+  const ddx=mejor.x-p.x,ddy=mejor.y-p.y;
+  clones.forEach(b=>{b.x=ED_r1(b.x+ddx);b.y=ED_r1(b.y+ddy);dest.cajas.push(b);});
+  p.x=ED_r1(mejor.x);p.y=ED_r1(mejor.y);(dest.pallets=dest.pallets||[]).push(p);
+  return {puestas:clones,resto:[]};
+}
+function ED_ver(di){
+  EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;
+  buildScene(di);renderTabs();renderStats();renderLegend();ED_panel();
+  try{if(parent!==window)parent.postMessage({tipo:'od-visor-camion-actual',idx:di},location.origin);}catch(e){}
+}
+function ED_pasar(destino,cantidad){
+  if(!EDIT.sel.length||!ED_libre())return;
+  const src=ED_cam(),srcI=cur;
+  let lista=EDIT.sel.slice();
+  if(EDIT.ambito==='producto'&&cantidad>0&&cantidad<lista.length)       // solo algunas: las últimas en cargarse (las más cerca de las puertas)
+    lista=lista.sort((a,b)=>b.x-a.x||b.z-a.z).slice(0,cantidad);
+  const esPallet=EDIT.ambito==='pallet'&&EDIT.anc&&EDIT.anc.pal,pal=esPallet?EDIT.anc.pal:0;
+  const nuevo=destino<0,n0=CAM.length;
+  const toca=[srcI];if(!nuevo&&CAM[destino])toca.push(destino);
+  ED_hacer('pasar',toca,function(){
+    const di=nuevo?ED_nuevoCamion(-destino-1):destino;
+    if(di===srcI||!CAM[di]){if(nuevo)CAM.splice(n0);return {ok:false,msg:'Elige otro camión.'};}
+    const dest=CAM[di],clones=lista.map(b=>Object.assign({},b));
+    const r=esPallet?ED_pasarPallet(di,pal,clones):ED_pasarCajas(di,clones);
+    if(!r.puestas.length){if(nuevo)CAM.splice(n0);return {ok:false,msg:'No cupo nada en el camión '+(dest.idx||di+1)+'.'};}
+    const entraron=new Set(lista.filter((_,i)=>r.puestas.indexOf(clones[i])>=0));
+    src.cajas=src.cajas.filter(b=>!entraron.has(b));
+    if(esPallet&&!r.resto.length)src.pallets=(src.pallets||[]).filter(q=>q.idx!==pal);
+    EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;
+    const n=r.puestas.length;
+    return {ok:true,idxs:[di],av:r.resto.length?['resto']:[],accion:{txt:'Ver camión '+(dest.idx||di+1),fn:function(){ED_ver(di);}},
+      msg:n+(n===1?' caja pasada':' cajas pasadas')+' al camión '+(dest.idx||di+1)+(r.resto.length?'; '+r.resto.length+' no cupieron y siguen aquí.':'.')};
+  });
+}
+
+/* ---- Panel ---- */
+function ED_msg(t,tipo,accion){
+  let el=document.getElementById('ed-aviso');
+  if(!el){el=document.createElement('div');el.id='ed-aviso';el.setAttribute('role','status');el.setAttribute('aria-live','polite');document.getElementById('stage').appendChild(el);}
+  clearTimeout(EDIT.msgT);el.replaceChildren();
+  if(!t){el.hidden=true;return;}
+  el.hidden=false;el.className='ed-aviso '+(tipo||'');
+  const s=document.createElement('span');s.textContent=t;el.appendChild(s);
+  if(accion){const b=document.createElement('button');b.type='button';b.textContent=accion.txt;b.onclick=function(){el.hidden=true;accion.fn();};el.appendChild(b);}
+  EDIT.msgT=setTimeout(function(){el.hidden=true;},accion?10000:6000);
+}
+function ED_panel(){
+  const p=document.getElementById('edit');if(!p)return;
+  const n=EDIT.sel.length;
+  p.hidden=!(n>0&&EDIT.permitido&&!MODO_BN);
+  if(p.hidden)return;
+  const b=EDIT.anc||EDIT.sel[0],it=(ED_cam().items||[]).find(i=>i.cod===b.cod)||{};
+  document.getElementById('ed-n').textContent=n===1?'1 caja':n+' cajas';
+  document.getElementById('ed-det').textContent=(it.desc||b.cod)+' · '+ED_r1(b.dx)+' × '+ED_r1(b.dy)+' × '+ED_r1(b.dz)+' cm';
+  document.querySelectorAll('#ed-ambito button').forEach(function(x){
+    const a=x.getAttribute('data-a');x.setAttribute('aria-pressed',String(EDIT.ambito===a));
+    x.disabled=(a==='pallet'&&!b.pal);});
+  document.getElementById('ed-girar').disabled=n!==1;document.getElementById('ed-voltear').disabled=n!==1;
+  document.getElementById('ed-des').disabled=!EDIT.hist.length;document.getElementById('ed-reh').disabled=!EDIT.rehacer.length;
+  const sel=document.getElementById('ed-dest'),prev=sel.value;
+  const op=[];CAM.forEach(function(c,i){if(i!==cur)op.push('<option value="'+i+'">Camión '+(c.idx||i+1)+' ('+(c.tipo||'')+')</option>');});
+  (EDIT.vehiculos.length?EDIT.vehiculos:[{tipo:ED_cam().tipo}]).forEach(function(v,i){op.push('<option value="'+(-i-1)+'">Camión nuevo: '+v.tipo+'</option>');});
+  sel.innerHTML=op.join('');if(prev&&sel.querySelector('option[value="'+prev+'"]'))sel.value=prev;
+  const cant=document.getElementById('ed-cant');
+  cant.hidden=EDIT.ambito!=='producto'||n<2;cant.max=n;if(!cant.value||+cant.value>n)cant.value=n;
+}
+function ED_ambito(a){if(!EDIT.anc)return;ED_seleccionar(EDIT.anc,a);}
+(function(){
+  const st=document.createElement('style');
+  st.textContent='#edit{position:absolute;left:12px;top:12px;z-index:4;width:316px;background:rgba(255,255,255,.96);color:#161b26;border:1px solid #d2d9e3;border-radius:12px;box-shadow:0 6px 22px rgba(13,17,25,.28);padding:10px 12px;font:13px/1.35 "Segoe UI",system-ui,sans-serif}'+
+  '#edit[hidden]{display:none}#edit .ed-t{display:flex;flex-direction:column;gap:1px;margin-bottom:8px}#edit .ed-t b{font-size:14px}#edit .ed-t span{color:#5b6574;font-size:12px;overflow-wrap:anywhere}'+
+  '#edit .ed-f{display:flex;gap:6px;align-items:center;margin-top:7px;flex-wrap:wrap}#edit .ed-seg{display:flex;border:1px solid #d2d9e3;border-radius:8px;overflow:hidden}'+
+  '#edit button{font:600 12px "Segoe UI",system-ui,sans-serif;border:1px solid #d2d9e3;background:#fff;color:#161b26;border-radius:8px;padding:5px 10px;cursor:pointer}'+
+  '#edit button:hover:not(:disabled){background:#f3f5f9}#edit button:disabled{opacity:.4;cursor:not-allowed}#edit .ed-seg button{border:0;border-radius:0;border-right:1px solid #d2d9e3}#edit .ed-seg button:last-child{border-right:0}'+
+  '#edit .ed-seg button[aria-pressed="true"]{background:#2f4fe0;color:#fff}#edit .ed-p{background:#2f4fe0;color:#fff;border-color:#2f4fe0}#edit .ed-p:hover:not(:disabled){background:#2540c4}'+
+  '#edit .ed-q{color:#b42318;border-color:#f1c4c0}#edit select,#edit input{font:12px "Segoe UI",system-ui,sans-serif;border:1px solid #8893a3;border-radius:8px;padding:4px 6px;min-width:0}#edit select{flex:1}#edit input{width:54px}'+
+  '#edit .ed-h{margin-top:8px;color:#5b6574;font-size:11.5px}'+
+  '#ed-aviso{position:absolute;left:12px;bottom:12px;z-index:4;max-width:min(520px,calc(100% - 24px));display:flex;gap:10px;align-items:center;background:#fff;color:#161b26;border:1px solid #d2d9e3;border-radius:12px;box-shadow:0 6px 22px rgba(13,17,25,.28);padding:9px 12px;font:600 12.5px/1.35 "Segoe UI",system-ui,sans-serif}#ed-aviso[hidden]{display:none}'+
+  '#ed-aviso.err{border-color:#b42318;color:#b42318}#ed-aviso.warn{border-color:#e09100;color:#8a5300}#ed-aviso.ok{border-color:#1e8a5b}#ed-aviso button{font:700 12px "Segoe UI",system-ui,sans-serif;border:0;background:#e8edfe;color:#2f4fe0;border-radius:8px;padding:5px 10px;cursor:pointer;flex:none}';
+  document.head.appendChild(st);
+  const d=document.createElement('div');d.id='edit';d.hidden=true;d.setAttribute('role','group');d.setAttribute('aria-label','Ajustes a mano');
+  d.innerHTML='<div class="ed-t"><b id="ed-n"></b><span id="ed-det"></span></div>'+
+   '<div class="ed-seg" id="ed-ambito" role="group" aria-label="Qué se mueve"><button type="button" data-a="caja" title="Solo esta caja">Caja</button><button type="button" data-a="columna" title="Esta caja y lo que tiene encima">Con encima</button><button type="button" data-a="producto" title="Todas las cajas de este producto en el camión">Producto</button><button type="button" data-a="pallet" title="Todo el pallet, con su tarima">Pallet</button></div>'+
+   '<div class="ed-f"><button type="button" id="ed-girar" title="Girar 90° (R)">Girar</button><button type="button" id="ed-voltear" title="Voltear: otra cara queda arriba (V)">Voltear</button><button type="button" id="ed-quitar" class="ed-q" title="Quitar del camión (Supr)">Quitar</button></div>'+
+   '<div class="ed-f"><select id="ed-dest" aria-label="Camión de destino"></select><input id="ed-cant" type="number" min="1" title="Cuántas cajas del producto" aria-label="Cantidad de cajas"><button type="button" id="ed-pasar" class="ed-p">Pasar</button></div>'+
+   '<div class="ed-f"><button type="button" id="ed-des" title="Deshacer (Ctrl+Z)">Deshacer</button><button type="button" id="ed-reh" title="Rehacer (Ctrl+Y)">Rehacer</button><button type="button" id="ed-listo">Listo</button></div>'+
+   '<div class="ed-h">Arrastra la caja para moverla, o usa las flechas (Mayús: 10 cm). Alt desactiva el imán.</div>';
+  document.getElementById('stage').appendChild(d);
+  d.addEventListener('click',function(e){
+    const a=e.target.closest('[data-a]');if(a){ED_ambito(a.getAttribute('data-a'));return;}
+    const id=e.target.id;
+    if(id==='ed-girar')ED_girar();else if(id==='ed-voltear')ED_voltear();else if(id==='ed-quitar')ED_quitar();
+    else if(id==='ed-des')ED_deshacer();else if(id==='ed-reh')ED_rehacer();else if(id==='ed-listo')ED_soltar();
+    else if(id==='ed-pasar'){const v=+document.getElementById('ed-dest').value;if(!isNaN(v))ED_pasar(v,+document.getElementById('ed-cant').value||0);}
+  });
+  const cv=document.getElementById('cv');
+  cv.addEventListener('mousedown',ED_mousedown);
+  cv.addEventListener('dblclick',function(e){
+    if(!EDIT.permitido||MODO_BN)return;
+    const b=ED_elegir(e);if(!b)return;
+    e.stopImmediatePropagation();ED_seleccionar(b,'caja');cv.focus&&cv.focus();
+  });
+  window.addEventListener('mousemove',ED_mousemove);
+  window.addEventListener('mouseup',ED_mouseup);
+  document.addEventListener('keydown',function(e){
+    if(!EDIT.permitido||MODO_BN)return;
+    const t=e.target&&e.target.tagName;if(t==='INPUT'||t==='SELECT'||t==='TEXTAREA')return;
+    const deshacer=(e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z'),rehacer=(e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y');
+    if(deshacer||rehacer){e.preventDefault();deshacer?ED_deshacer():ED_rehacer();return;}
+    if(!EDIT.sel.length)return;
+    const paso=e.shiftKey?10:1;let hecho=true;
+    if(e.key==='ArrowLeft')ED_empujar(-paso,0);else if(e.key==='ArrowRight')ED_empujar(paso,0);
+    else if(e.key==='ArrowUp')ED_empujar(0,-paso);else if(e.key==='ArrowDown')ED_empujar(0,paso);
+    else if(e.key==='r'||e.key==='R')ED_girar();else if(e.key==='v'||e.key==='V')ED_voltear();
+    else if(e.key==='Delete'||e.key==='Backspace')ED_quitar();else if(e.key==='Escape')ED_soltar();
+    else hecho=false;
+    if(hecho)e.preventDefault();
+  });
+})();
+window.addEventListener('message',function(ev){
+  if(ev.source!==parent||ev.origin!==location.origin||!ev.data)return;
+  const m=ev.data;
+  if(m.tipo==='od-visor-editable'){EDIT.permitido=!!m.on;if(!EDIT.permitido)EDIT_limpiar();else ED_panel();}
+  else if(m.tipo==='od-visor-vehiculos'&&Array.isArray(m.lista)){EDIT.vehiculos=m.lista;ED_panel();}
+});
+/* ===== fin ajustes a mano ===== */
 </script><script>
 /* Dentro de la plataforma el detalle de carga ya se ve al lado, así que con #compacto
    en la dirección se oculta esa lista y el visor gana ancho. */

@@ -73,6 +73,8 @@ class Restric:                   # Public Type TRestric
     motorBestFit: bool = False
     bloquePorSuc: bool = False
     bloquePorProducto: bool = False     # MDA «por producto»: cada producto de cada pedido es un bloque, como las sucursales
+    capas: bool = False                 # pallets: se llena por capas, de abajo hacia arriba (una caja por vez, siempre en el nivel más bajo
+                                        # con lugar), no por columnas de cajas apiladas hasta el techo: así arma el operario un pallet
 
 
 @dataclass
@@ -319,10 +321,10 @@ def _colocar_columnas_sku(it: Item, cL: float, cW: float, ch: float, restric: Re
         if r is None:
             break
         bx, by, bz, bOL, bOW, bOH, bcx, bcy = r
-        if it.apilable and restric.usaApilable:
+        if it.apilable and restric.usaApilable and not restric.capas:
             cap_z = vb_int((ch - bz + EPS) / bOH)
         else:
-            cap_z = 1
+            cap_z = 1                       # por capas, cada caja es su propia colocación: la siguiente va en el nivel más bajo libre
         cap_z = max(cap_z, 1)
         cap_z = min(cap_z, it.qty)
         if restric.topeUnidades > 0 and acum["unid"] + cap_z > restric.topeUnidades:
@@ -472,6 +474,9 @@ def _mejor_colocacion_bf(it: Item, ch: float, restric: Restric, est: _Estado, x_
     gx_fin = est.nx - cx + 1                      # posiciones gx válidas: [gx0, gx_fin)
     if gx0 >= gx_fin:
         return None
+    if restric.capas:
+        # Por capas el nivel más bajo con lugar gana sobre el orden de la grilla: se mira todo el camión de una vez
+        return _mejor_en_franja(it, ch, restric, est, gx0, gx_fin, cx, cy, capas=True)
     # El resultado de una franja depende solo de lo que se pregunta y de las filas que lee
     clave = (cx, cy, it.h, it.apilable, ch, restric.usaApilable, restric.usaPeso,
              it.peso if restric.usaPeso else 0.0)
@@ -492,7 +497,7 @@ def _mejor_colocacion_bf(it: Item, ch: float, restric: Restric, est: _Estado, x_
 
 
 def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
-                     a: int, b: int, cx: int, cy: int):
+                     a: int, b: int, cx: int, cy: int, capas: bool = False):
     """Primera posición válida con gx en [a, b), o None. Solo lee las filas que necesita."""
     oH = it.h
     hm = est.hm[a:b + cx - 1]
@@ -538,6 +543,8 @@ def _mejor_en_franja(it: Item, ch: float, restric: Restric, est: _Estado,
             valido |= ok & (sub == z) & bien
     if not valido.any():
         return None
+    if capas:
+        valido = valido & (sub <= float(sub[valido].min()) + EPS)     # solo el nivel más bajo con lugar
     idx = int(np.argmax(valido))                  # primera en orden gx asc, gy asc
     gx_rel, gy = divmod(idx, valido.shape[1])
     return (a + gx_rel, gy, float(sub[gx_rel, gy]), it.L, it.w, oH, cx, cy)

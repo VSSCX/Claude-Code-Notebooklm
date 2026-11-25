@@ -1059,6 +1059,83 @@ def test_una_entrega_antigua_recupera_su_camion_desde_el_cubicaje_guardado(c, tm
     assert c.get("/api/entregas/778/cubicaje").json()["camion"] == 1
 
 
+def _mover_cajas_en_el_visor(visor: str, n: int, a_otro_camion: bool) -> str:
+    """Lo que haría el analista en el 3D: pasa n cajas del camión 1 a un camión 2 nuevo (o las quita)."""
+    import json
+    d = json.loads(visor)
+    c1 = d["camiones"][0]
+    movidas, c1["cajas"] = c1["cajas"][-n:], c1["cajas"][:-n]
+    cods = {b["cod"] for b in movidas}
+    if a_otro_camion:
+        c2 = {**{k: v for k, v in c1.items() if k not in ("cajas", "items", "pallets")}, "idx": 2, "cajas": movidas, "pallets": [],
+              "items": [{**it, "n": sum(1 for b in movidas if b["cod"] == it["cod"])} for it in c1["items"] if it["cod"] in cods]}
+        for b in movidas:
+            b["pal"] = 0
+        d["camiones"].append(c2)
+    for it in c1["items"]:
+        it["n"] = sum(1 for b in c1["cajas"] if b["cod"] == it["cod"])
+    return json.dumps(d, separators=(",", ":"))
+
+
+def test_los_ajustes_a_mano_del_3d_rehacen_las_cargas_de_cada_camion(c, tmp_path, monkeypatch):
+    """Pasar cajas a otro camión o quitarlas cambia lo que lleva cada camión (y por tanto las entregas), no solo el dibujo."""
+    cub = _preparar_cubicaje(c, tmp_path, monkeypatch)
+    total = cub["unidades"]
+    assert len(cub["camiones"]) == 1 and total > 5
+    d = c.post("/api/cubicaje/4400/ajustes", json={"visor": _mover_cajas_en_el_visor(cub["visor_json"], 5, True)})
+    assert d.status_code == 200, d.text
+    doc = d.json()
+    assert [x["numero"] for x in doc["camiones"]] == [1, 2] and doc["unidades"] == total
+    por_camion = {}
+    for f in doc["filas"]:
+        por_camion[f["camion"]] = por_camion.get(f["camion"], 0) + f["unidades"]
+    assert por_camion == {1: total - 5, 2: 5}
+    assert doc["ajustado"]["cajas_ahora"] == doc["ajustado"]["cajas_antes"] and "Ajustado a mano" in " ".join(doc["avisos"])
+    assert sum(x["unidades"] for x in doc["carga_por_camion"]) == total and doc["visor_json"]
+    # queda guardado: al volver a pedirlo es lo ajustado, no la sugerencia
+    again = c.get("/api/cubicaje/4400").json()
+    assert [x["numero"] for x in again["camiones"]] == [1, 2] and again["visor_json"] == doc["visor_json"]
+    # las entregas salen de lo ajustado: un camión por cada uno
+    from app.integrations import sap_crear
+    pedidos = []
+    monkeypatch.setattr(sap_crear, "crear_entrega", lambda pedido, puesto, fecha, materiales, **kw: pedidos.append(dict(materiales)) or
+                        type("R", (), {"ok": True, "entrega": f"8800{len(pedidos)}", "mensaje": "ok", "pasos": [], "borradas": [], "ajustadas": [], "incidencias": []})())
+    t = _esperar_job(c, c.post("/api/sap/crear_entregas", json={"pedido": "4400", "ensayo": False}).json()["id"])
+    assert t["estado"] == "ok" and sorted(sum(m.values()) for m in pedidos) == [5, total - 5]
+    # quitar cajas baja el total
+    quitadas = c.post("/api/cubicaje/4400/ajustes", json={"visor": _mover_cajas_en_el_visor(again["visor_json"], 2, False)}).json()
+    assert quitadas["unidades"] == total - 5 - 2 or quitadas["unidades"] <= total - 2
+    # validaciones
+    assert c.post("/api/cubicaje/4400/ajustes", json={"visor": "no es json"}).status_code == 422
+    assert c.post("/api/cubicaje/4400/ajustes", json={"visor": "{\"camiones\":[]}"}).status_code == 422
+    assert c.post("/api/cubicaje/9999/ajustes", json={"visor": cub["visor_json"]}).status_code == 404
+
+
+def test_los_ajustes_a_mano_del_cubicador_libre_se_guardan_y_se_descartan_al_recalcular(c, tmp_path):
+    from app.config import settings
+    _cargar_medidas_basicas(c, tmp_path)
+    plantilla = tmp_path / "p.html"; plantilla.write_text("X __CUBICAJE_JSON__", encoding="utf-8")
+    object.__setattr__(settings, "plantilla_visor", str(plantilla))
+    entrada = {"lineas": [{"sku": "900081624", "qty": 30}], "vista": "rampla"}
+    d = c.post("/api/cubicaje-libre", json=entrada).json()
+    assert d["unidades"] == 30 and "ajustado" not in d
+    r = c.post("/api/cubicaje-libre/ajustes", json={"visor": _mover_cajas_en_el_visor(d["visor_json"], 4, True)})
+    assert r.status_code == 200, r.text
+    aj = r.json()
+    assert [x["numero"] for x in aj["camiones"]] == [1, 2] and aj["unidades"] == 30 and aj["ajustado"]
+    assert sum(x["unidades"] for x in aj["carga_por_camion"]) == 30
+    # queda guardado, con el visor como lo dejó el analista
+    g = c.get("/api/cubicaje-libre").json()
+    assert g["ajustado"] and g["visor_json"] == aj["visor_json"]
+    # volver a calcular descarta los ajustes
+    d2 = c.post("/api/cubicaje-libre", json=entrada).json()
+    assert "ajustado" not in d2 and len(d2["camiones"]) == 1
+    # un pallet suelto no se ajusta a mano
+    p = c.post("/api/cubicaje-libre", json={**entrada, "vista": "pallet", "caja_master": "SIN CAJA MASTER"}).json()
+    assert c.post("/api/cubicaje-libre/ajustes", json={"visor": p["visor_json"]}).status_code == 422
+    assert c.post("/api/cubicaje-libre/ajustes", json={"visor": "x"}).status_code == 422
+
+
 def test_crear_entregas_se_detiene_ante_un_error(c, tmp_path, monkeypatch):
     from app.integrations import sap_crear
     _preparar_cubicaje(c, tmp_path, monkeypatch, pedido="4401")

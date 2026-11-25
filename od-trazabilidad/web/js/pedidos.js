@@ -667,8 +667,13 @@ async function cargarCubicaje(pedido){
   catch(e){ UI.cubicaje[pedido] = {error:e.message}; }
   render();
 }
-async function cubicar(pedido, opts){
+async function cubicar(pedido, opts, confirmado){
   const previo = UI.cubicaje[pedido];
+  if (previo && previo.ajustado && !confirmado){
+    const r = await preguntar({titulo: 'Volver a cubicar', ok: 'Cubicar de nuevo', peligro: true,
+      texto: 'Este pedido tiene ajustes hechos a mano en el 3D. Al cubicar de nuevo se pierden y queda lo que sugiere el motor.'});
+    if (!r) return;
+  }
   // con un resultado a la vista se conserva (y su visor): solo se marca que se está recalculando
   UI.cubicaje[pedido] = previo && previo.camiones ? {...previo, recalculando:true} : {cargando:true}; render();
   try {
@@ -790,7 +795,7 @@ function vistaCubicaje(p){
         <button class="btn sm" data-act="pdfPedido" data-ped="${esc(p.pedido)}" title="PDF para operaciones, un archivo por camión (a color, pensado para imprimirse en blanco y negro; con vista desde arriba)">${ICON.descargar} Descargar PDF</button>
         <button class="btn sm" data-act="verVisorCub" aria-pressed="${!!UI.verVisorCub}">${UI.verVisorCub ? 'Ocultar visor 3D' : 'Ver visor 3D aquí'}</button>` : ''}</div>
     ${cb.camiones.length ? fichasCamion(p, cb) : ''}
-    ${cb.visor && UI.verVisorCub ? `<div style="margin:10px 0 14px">${visorPedido(p, cb, 640)}</div>` : ''}
+    ${cb.visor && UI.verVisorCub ? `${avisoAjustado(cb, 'volverSugerencia')}<div style="margin:10px 0 14px">${visorPedido(p, cb, 640)}</div>` : ''}
     <div class="legend" style="margin:12px 0"><span>Camiones <b class="num">${cb.camiones.length}</b></span><span>Unidades <b class="num">${fmt(cb.unidades)}</b></span>${cb.bultos ? `<span>Bultos <b class="num">${fmt(cb.bultos)}</b></span>` : ''}
       <span>SKU <b class="num">${new Set(cb.filas.map(f => f.sku)).size}</b></span>
       ${(cb.pallets_detalle || []).length ? `<span>Pallets <b class="num">${cb.pallets_detalle.length}</b></span>` : ''}
@@ -799,7 +804,7 @@ function vistaCubicaje(p){
     ${form}
     ${seccionPredist(p, modoElegido(cb))}
     ${problemas ? `<p class="small" style="margin-top:10px">${problemas}</p>` : ''}
-    ${(cb.avisos || []).map(a => `<p class="small"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
+    ${(cb.avisos || []).filter(a => !/^Ajustado a mano/.test(a)).map(a => `<p class="small"><span class="tag warn">Aviso</span> ${esc(a)}</p>`).join('')}
     ${(cb.kits || []).length ? `<p class="small muted" style="margin:6px 0"><span class="tag info">Kits</span> ${cb.kits.map(k => `<b>${esc(k.sku)}</b> × ${fmt(k.unidades)} (${k.componentes.map(c => esc(c.sku) + (c.por_kit > 1 ? ' ×' + c.por_kit : '')).join(' + ')})`).join(' · ')} — sus cajas viajan juntas.</p>` : ''}
     <div class="camiones-lista tabla-larga" style="margin-top:12px">${camiones}</div>
     ${detalleCarga(cb, UI.pedCam[p.pedido] || 0)}`;

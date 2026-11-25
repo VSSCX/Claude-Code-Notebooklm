@@ -74,6 +74,7 @@ class Resultado:
     sin_ubicar: dict = field(default_factory=dict)
     filas04: list = field(default_factory=list)      # detalle por pallet (modos SDA)
     pallets: list = field(default_factory=list)      # geometría de los pallets para el visor
+    por_caja: dict = field(default_factory=dict)     # código de caja master -> unidades que trae cada caja (el visor y los ajustes a mano lo usan)
 
     @property
     def unidades(self) -> int:

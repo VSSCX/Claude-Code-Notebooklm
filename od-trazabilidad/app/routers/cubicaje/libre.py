@@ -403,7 +403,7 @@ def cubicaje_libre(body: dict, s: Session = Depends(get_session)):
                     [_Cam(numero=1, tipo=base_cam.tipo, L=base_cam.L, w=base_cam.w, h=base_cam.h)])
         plantilla = _Path(_st.plantilla_visor).read_text(encoding="utf-8")
         datos_visor = construir_json(placed, cams, es_sda=bool(pallets_visor), pallets=pallets_visor, modo=modo,
-                                    por_caja=por_caja)
+                                    por_caja={**{k: v for x in partes for k, v in x.por_caja.items()}, **por_caja})
         html = html_visor(plantilla, datos_visor)
         for viejo in carpeta.glob("libre_*.html"):
             viejo.unlink(missing_ok=True)
