@@ -48,7 +48,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#f3f5f7;color:
 .hint{font-size:12px;color:#3b485a;text-align:center;margin-top:2px}
 #stage{flex:1;position:relative;background:radial-gradient(circle at 50% 30%,#1a2942,#0a1120 75%)}
 #cv{width:100%;height:100%;display:block}
-#viewhint{position:absolute;top:16px;right:20px;font-size:12px;color:#2c3b52;background:rgba(255,255,255,.78);padding:6px 10px;border-radius:6px;text-align:right;line-height:1.7}
+#viewhint button{margin-top:4px;font:inherit;font-size:11px;padding:3px 9px;border:1px solid #b8c4d6;border-radius:6px;background:#fff;color:#2c3b52;cursor:pointer}#viewhint button:hover{background:#eef2f8}#viewhint i{font-style:normal;color:#8a5a00}#viewhint{position:absolute;top:16px;right:20px;font-size:12px;color:#2c3b52;background:rgba(255,255,255,.78);padding:6px 10px;border-radius:6px;text-align:right;line-height:1.7}
 #busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   background:rgba(8,14,26,.82);font-size:14px;color:#cdd9ea;z-index:5}
 #busy.on{display:flex}
@@ -627,14 +627,24 @@ function animate(){requestAnimationFrame(animate);if(!_sucio)return;_sucio=false
 /* Vista libre (el ojo de la plataforma): la camara gira por completo, tambien por debajo, se mueve con clic derecho o
    Shift y se acerca hasta quedar dentro del camion. Apagada, el visor se comporta como siempre. */
 let libre=false;
-const HINT_FIJA='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor<br>doble clic: reencuadrar';
-const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor<br>doble clic: reencuadrar';
+const HINT_FIJA='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor';
+const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom hacia el cursor';
 function limitesCam(){return libre?{elMin:-1.5,elMax:1.5,dMin:60}:{elMin:0.05,elMax:1.45,dMin:80};}
+function reencuadrar(){az=0.85;el=0.28;buildScene(cur);}
+window.EDIT_motivo='';
 function ponerHint(){
   let s=libre?HINT_LIBRE:HINT_FIJA;
-  if(typeof EDIT!=='undefined'&&EDIT.permitido&&!MODO_BN)s=s.replace('doble clic: reencuadrar','doble clic en una caja: elegirla<br>doble clic fuera: reencuadrar');
+  const ed=typeof EDIT!=='undefined'&&EDIT.permitido&&!MODO_BN;
+  if(ed)s+='<br>doble clic en una caja: elegirla';
+  else if(window.EDIT_motivo)s+='<br><i>Ajustes a mano no disponibles: '+window.EDIT_motivo+'</i>';
+  s+='<br><button type="button" id="reenc" title="Vuelve a encuadrar todo el camión (tecla F)">Reencuadrar · F</button>';
   const h=document.getElementById('viewhint');if(h)h.innerHTML=s;
 }
+document.addEventListener('click',function(e){if(e.target&&e.target.id==='reenc')reencuadrar();});
+document.addEventListener('keydown',function(e){
+  const t=e.target&&e.target.tagName;if(t==='INPUT'||t==='SELECT'||t==='TEXTAREA'||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==='f'||e.key==='F'||e.key==='Home'){e.preventDefault();reencuadrar();}
+});
 function setLibre(on){
   libre=!!on;const l=limitesCam();
   el=Math.max(l.elMin,Math.min(l.elMax,el));dist=Math.max(l.dMin,Math.min(9000,dist));
@@ -665,7 +675,7 @@ function bindControls(cv){
     const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),ctr),P=new THREE.Vector3();
     if(rc.ray.intersectPlane(pl,P))ctr.addScaledVector(P.sub(ctr),1-nd/dist);
     dist=nd;_zoomUsuario=true;pedirRender();},{passive:false});
-  cv.addEventListener('dblclick',e=>{if(window.EDIT_doble&&EDIT_doble(e))return;az=0.85;el=0.28;buildScene(cur)});   // sobre una caja (si se puede ajustar) la elige; fuera de ellas reencuadra
+  cv.addEventListener('dblclick',e=>{if(window.EDIT_doble)EDIT_doble(e);});   // doble clic sobre una caja (si se puede ajustar) la elige; el reencuadre es la tecla F o el botón
 }
 // ---- UI ----
 function renderEscTabs(){
@@ -1471,7 +1481,7 @@ function ED_ambito(a){if(!EDIT.anc)return;ED_seleccionar(EDIT.anc,a);}
 window.addEventListener('message',function(ev){
   if(ev.source!==parent||ev.origin!==location.origin||!ev.data)return;
   const m=ev.data;
-  if(m.tipo==='od-visor-editable'){EDIT.permitido=!!m.on;if(!EDIT.permitido)EDIT_limpiar();else ED_panel();ponerHint();}
+  if(m.tipo==='od-visor-editable'){window.EDIT_motivo=m.motivo||'';EDIT.permitido=!!m.on;if(!EDIT.permitido)EDIT_limpiar();else ED_panel();ponerHint();}
   else if(m.tipo==='od-visor-vehiculos'&&Array.isArray(m.lista)){EDIT.vehiculos=m.lista;ED_panel();}
 });
 /* ===== fin ajustes a mano ===== */

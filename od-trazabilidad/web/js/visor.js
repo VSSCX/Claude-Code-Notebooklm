@@ -67,18 +67,29 @@ const Visor = {
     this.palEnv.set(f, idx);
     this.mandar({tipo: 'od-visor-pallet', idx}, f);
   },
-  /* Se puede mover cajas en el 3D del cubicador y de un pedido; no en un pallet suelto, en un cubicaje conjunto ni en una entrega ya creada. */
-  editable(f){
+  /* Por qué un 3D no se puede ajustar ('' = se puede). El visor lo muestra para que el analista sepa qué pasa. */
+  motivoNoEditable(f){
     const k = f.dataset.visor;
-    if (k === 'libre'){ const c = UI.cub || {}; return !!(c.camiones && c.camiones.length) && (UI.cubIn || {}).vista !== 'pallet' && !UI.cubCalculando; }
-    if (k.startsWith('pedido:')){ const cb = UI.cubicaje[k.slice(7)]; return !!(cb && cb.camiones && !cb.conjunto && !cb.recalculando); }
-    return false;
+    if (k === 'libre'){
+      const c = UI.cub || {};
+      if (!(c.camiones && c.camiones.length)) return 'todavía no hay carga cubicada';
+      if ((UI.cubIn || {}).vista === 'pallet') return 'un pallet suelto no se ajusta; cambia a Rampla o Camión';
+      return UI.cubCalculando ? 'se está calculando' : '';
+    }
+    if (k.startsWith('pedido:')){
+      const cb = UI.cubicaje[k.slice(7)];
+      if (!(cb && cb.camiones)) return 'el pedido no está cubicado';
+      if (cb.conjunto) return 'es un cubicaje conjunto';
+      return cb.recalculando ? 'se está recalculando' : '';
+    }
+    return 'la entrega ya está creada';
   },
+  editable(f){ return !this.motivoNoEditable(f); },
   permitirEdicion(f){
-    const on = this.editable(f), v = on ? 1 : 0;
+    const motivo = this.motivoNoEditable(f), on = !motivo, v = on ? '1' : '0:' + motivo;
     if (this.editEnv.get(f) === v) return;
     this.editEnv.set(f, v);
-    this.mandar({tipo: 'od-visor-editable', on}, f);
+    this.mandar({tipo: 'od-visor-editable', on, motivo}, f);
     if (on) this.mandar({tipo: 'od-visor-vehiculos', lista: ['rampla', 'camion50'].map(v => { const [tipo, L, W, H] = medidasVista(v); return {tipo, L, W, H}; })}, f);
   },
   /* El analista movió cajas en el 3D: se guarda en el servidor (que rehace las cargas de cada camión). Un solo guardado a la vez;
