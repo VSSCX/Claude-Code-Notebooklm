@@ -630,10 +630,15 @@ let libre=false;
 const HINT_FIJA='arrastrar: rotar<br>rueda: zoom<br>doble clic: reencuadrar';
 const HINT_LIBRE='arrastrar: rotar<br>clic derecho o Shift: mover<br>rueda: zoom<br>doble clic: reencuadrar';
 function limitesCam(){return libre?{elMin:-1.5,elMax:1.5,dMin:120}:{elMin:0.05,elMax:1.45,dMin:700};}
+function ponerHint(){
+  let s=libre?HINT_LIBRE:HINT_FIJA;
+  if(typeof EDIT!=='undefined'&&EDIT.permitido&&!MODO_BN)s=s.replace('doble clic: reencuadrar','doble clic en una caja: elegirla<br>doble clic fuera: reencuadrar');
+  const h=document.getElementById('viewhint');if(h)h.innerHTML=s;
+}
 function setLibre(on){
   libre=!!on;const l=limitesCam();
   el=Math.max(l.elMin,Math.min(l.elMax,el));dist=Math.max(l.dMin,Math.min(9000,dist));
-  const h=document.getElementById('viewhint');if(h)h.innerHTML=libre?HINT_LIBRE:HINT_FIJA;
+  ponerHint();
   if(!libre)buildScene(cur);                                // al apagarla vuelve al encuadre normal del camion
   else pedirRender();
 }
@@ -653,7 +658,7 @@ function bindControls(cv){
     else{const l=limitesCam();az-=(e.clientX-px)*0.008;el+=(e.clientY-py)*0.006;el=Math.max(l.elMin,Math.min(l.elMax,el));}
     px=e.clientX;py=e.clientY;pedirRender();});
   cv.addEventListener('wheel',e=>{e.preventDefault();const l=limitesCam();dist*=(1+(e.deltaY>0?0.09:-0.09));dist=Math.max(l.dMin,Math.min(9000,dist));_zoomUsuario=true;pedirRender();},{passive:false});
-  cv.addEventListener('dblclick',()=>{az=0.85;el=0.28;buildScene(cur)});
+  cv.addEventListener('dblclick',e=>{if(window.EDIT_doble&&EDIT_doble(e))return;az=0.85;el=0.28;buildScene(cur)});   // sobre una caja (si se puede ajustar) la elige; fuera de ellas reencuadra
 }
 // ---- UI ----
 function renderEscTabs(){
@@ -1434,11 +1439,11 @@ function ED_ambito(a){if(!EDIT.anc)return;ED_seleccionar(EDIT.anc,a);}
   });
   const cv=document.getElementById('cv');
   cv.addEventListener('mousedown',ED_mousedown);
-  cv.addEventListener('dblclick',function(e){
-    if(!EDIT.permitido||MODO_BN)return;
-    const b=ED_elegir(e);if(!b)return;
-    e.stopImmediatePropagation();ED_seleccionar(b,'caja');cv.focus&&cv.focus();
-  });
+  window.EDIT_doble=function(e){
+    if(!EDIT.permitido||MODO_BN)return false;
+    const b=ED_elegir(e);if(!b)return false;
+    ED_seleccionar(b,'caja');cv.focus&&cv.focus();return true;
+  };
   window.addEventListener('mousemove',ED_mousemove);
   window.addEventListener('mouseup',ED_mouseup);
   document.addEventListener('keydown',function(e){
@@ -1459,7 +1464,7 @@ function ED_ambito(a){if(!EDIT.anc)return;ED_seleccionar(EDIT.anc,a);}
 window.addEventListener('message',function(ev){
   if(ev.source!==parent||ev.origin!==location.origin||!ev.data)return;
   const m=ev.data;
-  if(m.tipo==='od-visor-editable'){EDIT.permitido=!!m.on;if(!EDIT.permitido)EDIT_limpiar();else ED_panel();}
+  if(m.tipo==='od-visor-editable'){EDIT.permitido=!!m.on;if(!EDIT.permitido)EDIT_limpiar();else ED_panel();ponerHint();}
   else if(m.tipo==='od-visor-vehiculos'&&Array.isArray(m.lista)){EDIT.vehiculos=m.lista;ED_panel();}
 });
 /* ===== fin ajustes a mano ===== */
