@@ -1044,9 +1044,16 @@ function ED_restaurar(s){
   while(CAM.length>s.n)CAM.pop();
   s.cams.forEach(c=>{if(CAM[c.i]){CAM[c.i].cajas=c.cajas;CAM[c.i].pallets=c.pallets;}});
 }
-function ED_hacer(nombre,idxs,fn){
-  const s=ED_snap(idxs),r=fn();
+function ED_hacer(nombre,idxs,fn,arriba){
+  const cam=ED_cam(),s=ED_snap(idxs);let r=fn();
   if(!r||r.ok===false){ED_msg((r&&r.msg)||'No se pudo hacer ese cambio.','err');return false;}
+  let extra='',avExtra=[];
+  if(arriba&&arriba.length){          // lo que estaba apoyado en lo que se movió se reacomoda: nada queda en el aire
+    const a=ED_asentar(cam,arriba);
+    if(!a.ok){ED_restaurar(s);EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;ED_build();ED_panel();ED_msg(a.msg,'err');return false;}
+    extra=a.msg;avExtra=a.av;
+  }
+  if(extra)r=Object.assign({},r,{msg:[r.msg,extra].filter(Boolean).join(' '),av:(r.av||[]).concat(avExtra)});
   const ahora=Date.now();
   if(!(nombre==='mover'&&EDIT.ultimo&&ahora-EDIT.ultimo<900&&EDIT.hist.length)){EDIT.hist.push(s);if(EDIT.hist.length>40)EDIT.hist.shift();}
   EDIT.ultimo=nombre==='mover'?ahora:0;EDIT.rehacer=[];
@@ -1098,12 +1105,34 @@ function ED_encima(b){
       if(ED_solapa(q.x,q.y,q.dx,q.dy,o.x,o.y,o.dx,o.dy)&&o.z>=q.z+q.dz-0.6){visto.add(o);res.push(o);cola.push(o);}});}
   return res;
 }
-function ED_libre(){   // ¿se puede mover/girar/quitar la selección sin dejar cajas en el aire?
-  if(EDIT.ambito!=='caja'||!EDIT.anc)return true;
-  const n=ED_encima(EDIT.anc).length;
-  if(!n)return true;
-  ED_msg('Esta caja tiene '+n+(n===1?' caja encima':' cajas encima')+'. Elige «Con encima» para moverlas juntas, o mueve primero las de arriba.','warn');
-  return false;
+/* Cajas que descansan sobre la selección (sin contar la propia selección): al mover o quitar esta, ellas bajan o suben para quedar apoyadas */
+function ED_arriba(sel){
+  const set=new Set(sel);if(!set.size)return [];
+  const rej=ED_rejilla(ED_cam(),null),visto=new Set(sel),res=[],cola=sel.slice();
+  while(cola.length){const q=cola.pop();
+    rej.cerca(q.x,q.y,q.dx,q.dy).forEach(function(o){
+      if(visto.has(o))return;
+      if(ED_solapa(q.x,q.y,q.dx,q.dy,o.x,o.y,o.dx,o.dy)&&o.z>=q.z+q.dz-0.6){visto.add(o);res.push(o);cola.push(o);}});}
+  return res;
+}
+/* Deja cada caja de `lista` apoyada: del piso para arriba, cada una a la altura de lo más alto que tiene debajo. Si algo ya no cabe, falla. */
+function ED_asentar(cam,lista){
+  const rej=ED_rejilla(cam,new Set(lista)),orden=lista.slice().sort((a,b)=>a.z-b.z||a.x-b.x||a.y-b.y),bajan=[],suben=[];
+  for(let i=0;i<orden.length;i++){
+    const b=orden[i],z=ED_r1(ED_zApoyo(cam,rej,b.x,b.y,b.dx,b.dy));
+    if(z<b.z-0.05)bajan.push(b);else if(z>b.z+0.05)suben.push(b);
+    b.z=z;
+    if(!ED_dentro(cam,b.x,b.y,b.z,b.dx,b.dy,b.dz))return {ok:false,msg:'No se puede: las cajas de arriba ya no cabrían en el camión.'};
+    rej.add(b);ED_pal(cam,b);
+  }
+  const rf=ED_rejilla(cam,null);let poco=0,pesada=0;
+  orden.forEach(function(b){ED_advertencias(cam,rf,b).forEach(function(x){if(/apoya poco/.test(x))poco++;else pesada++;});});
+  const m=[],av=[];
+  if(bajan.length)m.push(bajan.length+(bajan.length===1?' caja de arriba bajó':' cajas de arriba bajaron')+' para apoyarse.');
+  if(suben.length)m.push(suben.length+(suben.length===1?' caja de arriba subió':' cajas de arriba subieron')+' para no chocar.');
+  if(poco){av.push('poco apoyo');m.push('Ojo: '+poco+(poco===1?' quedó':' quedaron')+' con poco apoyo.');}
+  if(pesada){av.push('peso');m.push('Ojo: '+pesada+(pesada===1?' caja más pesada quedó':' cajas más pesadas quedaron')+' sobre una más liviana.');}
+  return {ok:true,msg:m.join(' '),av:av};
 }
 function ED_seleccionar(b,ambito){
   const c=ED_cam();if(!c||!b)return;
@@ -1179,7 +1208,7 @@ function ED_ubicar(orig,ddx,ddy,rej,ajustar){
 }
 function ED_origenes(){return EDIT.sel.map(b=>({b:b,x:b.x,y:b.y,z:b.z}));}
 function ED_revertir(orig){orig.forEach(o=>{o.b.x=o.x;o.b.y=o.y;o.b.z=o.z;});}
-function ED_cerrarMovimiento(orig,idxs,valido,rej){
+function ED_cerrarMovimiento(orig,idxs,valido,rej,arriba){
   // valida y deja el cambio en el historial (ya está aplicado en las cajas; si no vale, se vuelve atrás)
   if(!valido){ED_revertir(orig);ED_actualizarMallas(true);ED_msg('Ahí no cabe.','err');return;}
   const hecho=orig.map(o=>({b:o.b,x:o.b.x,y:o.b.y,z:o.b.z}));
@@ -1190,7 +1219,7 @@ function ED_cerrarMovimiento(orig,idxs,valido,rej){
   ED_hacer('mover',[cur],function(){hecho.forEach(h=>{h.b.x=h.x;h.b.y=h.y;h.b.z=h.z;});
     hecho.forEach(h=>ED_pal(ED_cam(),h.b));
     if(hecho.length===1)av=ED_advertencias(ED_cam(),rej,hecho[0].b);
-    return {ok:true,msg:av.length?'Ojo: '+av.join('; ')+'.':'',av:av};});
+    return {ok:true,msg:av.length?'Ojo: '+av.join('; ')+'.':'',av:av};},arriba);
 }
 function ED_mousedown(e){
   if(e.button!==0||!EDIT.permitido||MODO_BN||!EDIT.sel.length||e.shiftKey)return;
@@ -1198,8 +1227,7 @@ function ED_mousedown(e){
   const p0=ED_golpe(e,ED_planoY(b));if(!p0)return;
   e.stopImmediatePropagation();e.preventDefault();
   if(EDIT.ambito==='pallet'){ED_msg('Un pallet se pasa a otro camión con «Pasar»; dentro del camión no se arrastra.','warn');return;}
-  if(!ED_libre())return;
-  EDIT.drag={p0:p0,y:ED_planoY(b),orig:ED_origenes(),rej:ED_rejilla(ED_cam(),EDIT.selSet),mov:false,valido:true,idx:cur};
+  EDIT.drag={p0:p0,y:ED_planoY(b),orig:ED_origenes(),rej:ED_rejilla(ED_cam(),EDIT.selSet),arriba:ED_arriba(EDIT.sel),mov:false,valido:true,idx:cur};
 }
 function ED_mousemove(e){
   const d=EDIT.drag;if(!d)return;
@@ -1213,14 +1241,14 @@ function ED_mousemove(e){
 function ED_mouseup(){
   const d=EDIT.drag;if(!d)return;EDIT.drag=null;
   if(!d.mov)return;
-  ED_cerrarMovimiento(d.orig,[cur],d.valido,d.rej);
+  ED_cerrarMovimiento(d.orig,[cur],d.valido,d.rej,d.arriba);
 }
 function ED_empujar(dx,dy){
-  if(!EDIT.sel.length||EDIT.ambito==='pallet'||!ED_libre())return;
-  const rej=ED_rejilla(ED_cam(),EDIT.selSet),orig=ED_origenes();
+  if(!EDIT.sel.length||EDIT.ambito==='pallet')return;
+  const rej=ED_rejilla(ED_cam(),EDIT.selSet),orig=ED_origenes(),arriba=ED_arriba(EDIT.sel);
   const ok=ED_ubicar(orig,dx,dy,rej,false);
   ED_actualizarMallas(ok);
-  ED_cerrarMovimiento(orig,[cur],ok,rej);
+  ED_cerrarMovimiento(orig,[cur],ok,rej,arriba);
 }
 
 /* ---- Girar, voltear, quitar ---- */
@@ -1236,22 +1264,22 @@ function ED_reubicar(b,x,y,dx,dy,dz,enSitio){
   return {ok:true,msg:av.length?'Ojo: '+av.join('; ')+'.':'',av:av};
 }
 function ED_girar(){
-  if(EDIT.sel.length!==1||!ED_libre())return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2;
-  ED_hacer('girar',[cur],function(){return ED_reubicar(b,cx-b.dy/2,cy-b.dx/2,b.dy,b.dx,b.dz,true);});
+  if(EDIT.sel.length!==1)return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2,arriba=ED_arriba([b]);
+  ED_hacer('girar',[cur],function(){return ED_reubicar(b,cx-b.dy/2,cy-b.dx/2,b.dy,b.dx,b.dz,true);},arriba);
 }
 function ED_voltear(){
-  if(EDIT.sel.length!==1||!ED_libre())return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2;
+  if(EDIT.sel.length!==1)return;const b=EDIT.sel[0],cx=b.x+b.dx/2,cy=b.y+b.dy/2,arriba=ED_arriba([b]);
   const nd={dx:b.dz,dy:b.dx,dz:b.dy};          // la altura pasa a ser el otro lado: tres vueltas y vuelve a como estaba
-  ED_hacer('voltear',[cur],function(){return ED_reubicar(b,cx-nd.dx/2,cy-nd.dy/2,nd.dx,nd.dy,nd.dz,true);});
+  ED_hacer('voltear',[cur],function(){return ED_reubicar(b,cx-nd.dx/2,cy-nd.dy/2,nd.dx,nd.dy,nd.dz,true);},arriba);
 }
 function ED_quitar(){
-  if(!EDIT.sel.length||!ED_libre())return;
+  if(!EDIT.sel.length)return;
   const sel=EDIT.sel.slice(),pal=EDIT.ambito==='pallet'&&EDIT.anc?EDIT.anc.pal:0,n=sel.length;
   ED_hacer('quitar',[cur],function(){
     const c=ED_cam(),s=new Set(sel);c.cajas=c.cajas.filter(b=>!s.has(b));
     if(pal)c.pallets=(c.pallets||[]).filter(p=>p.idx!==pal);
     EDIT.sel=[];EDIT.selSet=new Set();EDIT.anc=null;
-    return {ok:true,msg:n+(n===1?' caja quitada':' cajas quitadas')+' del camión.'};});
+    return {ok:true,msg:n+(n===1?' caja quitada':' cajas quitadas')+' del camión.'};},ED_arriba(sel));
 }
 
 /* ---- Pasar a otro camión ---- */
@@ -1320,12 +1348,12 @@ function ED_ver(di){
   try{if(parent!==window)parent.postMessage({tipo:'od-visor-camion-actual',idx:di},location.origin);}catch(e){}
 }
 function ED_pasar(destino,cantidad){
-  if(!EDIT.sel.length||!ED_libre())return;
+  if(!EDIT.sel.length)return;
   const src=ED_cam(),srcI=cur;
   let lista=EDIT.sel.slice();
   if(EDIT.ambito==='producto'&&cantidad>0&&cantidad<lista.length)       // solo algunas: las últimas en cargarse (las más cerca de las puertas)
     lista=lista.sort((a,b)=>b.x-a.x||b.z-a.z).slice(0,cantidad);
-  const esPallet=EDIT.ambito==='pallet'&&EDIT.anc&&EDIT.anc.pal,pal=esPallet?EDIT.anc.pal:0;
+  const arriba=ED_arriba(lista),esPallet=EDIT.ambito==='pallet'&&EDIT.anc&&EDIT.anc.pal,pal=esPallet?EDIT.anc.pal:0;
   const nuevo=destino<0,n0=CAM.length;
   const toca=[srcI];if(!nuevo&&CAM[destino])toca.push(destino);
   ED_hacer('pasar',toca,function(){
@@ -1341,7 +1369,7 @@ function ED_pasar(destino,cantidad){
     const n=r.puestas.length;
     return {ok:true,idxs:[di],av:r.resto.length?['resto']:[],accion:{txt:'Ver camión '+(dest.idx||di+1),fn:function(){ED_ver(di);}},
       msg:n+(n===1?' caja pasada':' cajas pasadas')+' al camión '+(dest.idx||di+1)+(r.resto.length?'; '+r.resto.length+' no cupieron y siguen aquí.':'.')};
-  });
+  },arriba);
 }
 
 /* ---- Panel ---- */
