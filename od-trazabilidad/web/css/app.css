@@ -1448,3 +1448,7 @@ tr.etq-dif td{background:var(--warn-soft)}
 .etq-stats .edit b{color:var(--accent)}
 .etq-tbl th:first-child,.etq-tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--paper);box-shadow:1px 0 0 var(--hair)}
 .etq-tbl thead th:first-child{z-index:3;background:var(--paper-2)}
+.etq-arriba{align-self:flex-start;margin-bottom:6px}
+.etq-card.grupo{border-style:dashed}
+.etq-card.grupo .etq-ini{background:var(--paper-3);color:var(--ink-2)}
+.etq-card.grupo .etq-ini svg{width:22px;height:22px}

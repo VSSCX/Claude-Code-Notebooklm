@@ -4,14 +4,23 @@
    Parte de la interfaz de Trazabilidad Order Desk. */
 
 const ETQ_LISTOS = ['DIMARSA'];
-UI.etq = {cliente: '', archivo: '', res: null, filas: [], orig: new Map(), bajando: false, leyendo: false, error: '', sel: new Set(), cuadre: null, cuadrando: false, arrastrando: false, cargandoClientes: false};
+UI.etq = {cliente: '', grupo: '', archivo: '', res: null, filas: [], orig: new Map(), bajando: false, leyendo: false, error: '', sel: new Set(), cuadre: null, cuadrando: false, arrastrando: false, cargandoClientes: false};
 
 const etqListo = c => ETQ_LISTOS.includes(String(c || '').toUpperCase());
 const etqIniciales = n => String(n).replace(/[^A-Za-zÁÉÍÓÚÑ0-9 ]/g, '').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
+/* Los clientes se separan igual que en SOP: los regionales (grupo «REGION 2» o «REGION 3») van juntos en una sola tarjeta, porque en general
+   no llevan etiqueta; el resto son los principales y salen directo. */
+const etqEsRegional = c => /^REGION\b/i.test(String(c.grupo_sop || '').trim());
+const etqOrden = (a, b) => (etqListo(b) - etqListo(a)) || a.localeCompare(b, 'es');
 function etqClientes(){
-  const todos = new Set(ETQ_LISTOS);
-  for (const c of UI.clientes || []) if (c && c.nombre) todos.add(String(c.nombre).toUpperCase());
-  return [...todos].sort((a, b) => (etqListo(b) - etqListo(a)) || a.localeCompare(b, 'es'));
+  const principales = new Set(ETQ_LISTOS), regionales = new Map();
+  for (const c of UI.clientes || []){
+    if (!c || !c.nombre) continue;
+    const n = String(c.nombre).toUpperCase();
+    if (etqListo(n)) continue;
+    if (etqEsRegional(c)) regionales.set(n, String(c.grupo_sop).trim().replace(/^REGION/i, 'Región')); else principales.add(n);
+  }
+  return {principales: [...principales].sort(etqOrden), regionales: [...regionales].sort((a, b) => a[0].localeCompare(b[0], 'es'))};
 }
 
 /* ---- Vista ---- */
@@ -25,20 +34,34 @@ function vistaEtiquetas(){
 /* Cargando: nunca una pantalla en blanco */
 const etqCargando = txt => `<div class="etq-carga" role="status" aria-live="polite"><i class="etq-giro" aria-hidden="true"></i><span>${esc(txt)}</span></div>`;
 
+const etqTarjeta = (nombre, i, pie, extra = '') => `
+  <button type="button" class="etq-card ${etqListo(nombre) ? 'listo' : ''} ${extra}" data-etq-cliente="${esc(nombre)}" style="--i:${i}">
+    <span class="etq-ini" aria-hidden="true">${esc(etqIniciales(nombre))}</span><b>${esc(nombre)}</b><small>${pie}</small></button>`;
+
 function etqElegir(){
-  const cuerpo = UI.clientes
-    ? `<div class="etq-grid" id="etq-grid">${etqClientes().map((c, i) => `
-        <button type="button" class="etq-card ${etqListo(c) ? 'listo' : ''}" data-etq-cliente="${esc(c)}" style="--i:${i}">
-          <span class="etq-ini" aria-hidden="true">${esc(etqIniciales(c))}</span>
-          <b>${esc(c)}</b>
-          <small>${etqListo(c) ? '<span class="tag ok">Disponible</span>' : '<span class="etq-pronto">En integración</span>'}</small>
-        </button>`).join('')}</div>`
-    : etqCargando('Cargando clientes…');
+  if (UI.etq.grupo === 'regionales' && UI.clientes) return etqRegionales();
+  let cuerpo = etqCargando('Cargando clientes…');
+  if (UI.clientes){
+    const {principales, regionales} = etqClientes();
+    cuerpo = `<div class="etq-grid" id="etq-grid">${principales.map((c, i) => etqTarjeta(c, i, etqListo(c) ? '<span class="tag ok">Disponible</span>' : '<span class="etq-pronto">En integración</span>')).join('')}
+      ${regionales.length ? `<button type="button" class="etq-card grupo" data-etq-grupo="regionales" style="--i:${principales.length}">
+        <span class="etq-ini" aria-hidden="true">${ICON.usuarios}</span><b>Regionales</b><small><span class="etq-pronto">${regionales.length} ${regionales.length === 1 ? 'cliente' : 'clientes'}</span></small></button>` : ''}</div>`;
+  }
   return `<div class="etq-centro" data-k="etq-elegir">
     <i class="etq-logo" aria-hidden="true">${ICON.etiquetas}</i>
     <h1>Etiquetas</h1>
     <p class="etq-sub">¿De qué cliente son las etiquetas? Cada cliente las manda de una forma distinta.</p>
     ${cuerpo}</div>`;
+}
+
+function etqRegionales(){
+  const {regionales} = etqClientes();
+  return `<div class="etq-centro" data-k="etq-regionales">
+    <div class="etq-arriba"><button type="button" class="btn quiet sm" data-etq="grupo-volver">${ICON.undo} Todos los clientes</button></div>
+    <i class="etq-logo" aria-hidden="true">${ICON.usuarios}</i>
+    <h1>Regionales</h1>
+    <p class="etq-sub">Los clientes de región 2 y 3. En general no llevan etiqueta; elige uno solo si lo necesitas.</p>
+    <div class="etq-grid" id="etq-grid">${regionales.map(([c, region], i) => etqTarjeta(c, i, `<span class="etq-pronto">${esc(region)} · en integración</span>`)).join('')}</div></div>`;
 }
 
 function etqEnIntegracion(){
@@ -179,11 +202,13 @@ async function etqCuadrar(){
 
 document.addEventListener('click', ev => {
   if (UI.view !== 'etiquetas') return;
-  const t = ev.target.closest && ev.target.closest('[data-etq], [data-etq-cliente], [data-etq-borrar]'); if (!t) return;
+  const t = ev.target.closest && ev.target.closest('[data-etq], [data-etq-cliente], [data-etq-borrar], [data-etq-grupo]'); if (!t) return;
+  if (t.dataset.etqGrupo){ UI.etq.grupo = t.dataset.etqGrupo; render(); return; }
   if (t.dataset.etqCliente){ etqElegirCliente(t.dataset.etqCliente); return; }
   if (t.dataset.etqBorrar){ UI.etq.filas = UI.etq.filas.filter(f => String(f._id) !== t.dataset.etqBorrar); UI.etq.cuadre = null; render(); return; }
   const a = t.dataset.etq;
-  if (a === 'volver') etqElegirCliente('');
+  if (a === 'grupo-volver'){ UI.etq.grupo = ''; render(); }
+  else if (a === 'volver') etqElegirCliente('');
   else if (a === 'agregar'){
     const f = {...etqFilaNueva(), _id: ++_etqId}; UI.etq.filas.push(f); UI.etq.cuadre = null; render();
     const i = document.querySelector(`[data-etq-celda="${f._id}:cod_interno"]`); if (i){ i.scrollIntoView({block: 'center'}); i.focus(); }
