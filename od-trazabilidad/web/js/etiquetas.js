@@ -10,13 +10,15 @@ const etqListo = c => ETQ_LISTOS.includes(String(c || '').toUpperCase());
 const etqIniciales = n => String(n).replace(/[^A-Za-zÁÉÍÓÚÑ0-9 ]/g, '').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
 /* Los clientes se separan igual que en SOP: los regionales (grupo «REGION 2» o «REGION 3») van juntos en una sola tarjeta, porque en general
    no llevan etiqueta; el resto son los principales y salen directo. */
+/* La Polar pasó a llamarse ABC (como en SOP): es el mismo cliente y sale en una sola tarjeta */
+const ETQ_ALIAS = {'LA POLAR': 'ABC'}, ETQ_ANTES = {ABC: 'Antes La Polar'};
 const etqEsRegional = c => /^REGION\b/i.test(String(c.grupo_sop || '').trim());
 const etqOrden = (a, b) => (etqListo(b) - etqListo(a)) || a.localeCompare(b, 'es');
 function etqClientes(){
   const principales = new Set(ETQ_LISTOS), regionales = new Map();
   for (const c of UI.clientes || []){
     if (!c || !c.nombre) continue;
-    const n = String(c.nombre).toUpperCase();
+    const n = ETQ_ALIAS[String(c.nombre).toUpperCase()] || String(c.nombre).toUpperCase();
     if (etqListo(n)) continue;
     if (etqEsRegional(c)) regionales.set(n, String(c.grupo_sop).trim().replace(/^REGION/i, 'Región')); else principales.add(n);
   }
@@ -43,7 +45,7 @@ function etqElegir(){
   let cuerpo = etqCargando('Cargando clientes…');
   if (UI.clientes){
     const {principales, regionales} = etqClientes();
-    cuerpo = `<div class="etq-grid" id="etq-grid">${principales.map((c, i) => etqTarjeta(c, i, etqListo(c) ? '<span class="tag ok">Disponible</span>' : '<span class="etq-pronto">En integración</span>')).join('')}
+    cuerpo = `<div class="etq-grid" id="etq-grid">${principales.map((c, i) => etqTarjeta(c, i, etqListo(c) ? '<span class="tag ok">Disponible</span>' : `<span class="etq-pronto">${ETQ_ANTES[c] ? ETQ_ANTES[c] + ' · ' : ''}En integración</span>`)).join('')}
       ${regionales.length ? `<button type="button" class="etq-card grupo" data-etq-grupo="regionales" style="--i:${principales.length}">
         <span class="etq-ini" aria-hidden="true">${ICON.usuarios}</span><b>Regionales</b><small><span class="etq-pronto">${regionales.length} ${regionales.length === 1 ? 'cliente' : 'clientes'}</span></small></button>` : ''}</div>`;
   }
