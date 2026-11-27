@@ -1,0 +1,27 @@
+"""Cubicaje, medidas, kits y cubicador libre, repartidos por tema.
+
+Antes era un solo archivo de 1.283 líneas. Cada módulo tiene sus endpoints y este paquete los junta.
+
+- medidas.py        Base de Medidas, ajustes del cubicaje y medidas de los camiones
+- kits.py           listado de kits (carga desde Excel)
+- predistribuido.py reparto por sucursal de un pedido
+- pedido.py         cubicaje de un pedido y cubicaje conjunto
+- libre.py          cubicador libre (sin pedido ni SAP)
+- carga_masiva.py   plantilla de carga y su importación
+- excel.py          descarga del cubicaje en Excel
+- entrega_cub.py    el camión (cubicaje) de cada entrega, guardado con ella
+- ajustes.py        ajustes a mano del 3D (mover, girar o quitar cajas, pasarlas de camión) y las cargas que salen de ahí
+- _comun.py         piezas compartidas (guardado, faltantes de medidas, visor)
+
+El orden de inclusión importa solo dentro de cada módulo (por ejemplo /predistribuido/plantilla
+va antes de /predistribuido/{numero}).
+"""
+from fastapi import APIRouter
+
+from . import ajustes, carga_masiva, entrega_cub, excel, kits, libre, medidas, pedido, predistribuido
+from .libre import _reparto_por_grupos  # noqa: F401  (lo usan las pruebas)
+from .pedido import _cubicar  # noqa: F401  (lo usa el análisis para recubicar)
+
+router = APIRouter()
+for _modulo in (medidas, kits, predistribuido, pedido, libre, carga_masiva, excel, entrega_cub, ajustes):
+    router.include_router(_modulo.router)
