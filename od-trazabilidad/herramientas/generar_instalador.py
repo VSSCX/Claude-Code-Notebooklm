@@ -45,7 +45,7 @@ def recolectar(sin_cuentas: bool = False):
         clave = rel.as_posix()
         if sin_cuentas and clave in SOLO_SERVIDOR:
             continue
-        if ruta.suffix.lower() in BINARIOS_EXT:
+        if ruta.suffix.lower() in BINARIOS_EXT or rel.parts[:2] == ("tests", "datos"):          # los archivos de ejemplo van tal cual (hay un TXT en cp1252 y Excel)
             binarios[clave] = base64.b64encode(ruta.read_bytes()).decode("ascii")
         else:
             texto[clave] = ruta.read_bytes().decode("utf-8").replace("\r\n", "\n")
