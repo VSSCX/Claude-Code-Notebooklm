@@ -4,7 +4,7 @@
    Parte de la interfaz de Trazabilidad Order Desk. */
 
 const ETQ_LISTOS = ['DIMARSA'];
-UI.etq = {cliente: '', archivo: '', res: null, leyendo: false, error: '', sel: new Set(), cuadre: null, cuadrando: false, arrastrando: false, cargandoClientes: false};
+UI.etq = {cliente: '', archivo: '', res: null, filas: [], orig: new Map(), bajando: false, leyendo: false, error: '', sel: new Set(), cuadre: null, cuadrando: false, arrastrando: false, cargandoClientes: false};
 
 const etqListo = c => ETQ_LISTOS.includes(String(c || '').toUpperCase());
 const etqIniciales = n => String(n).replace(/[^A-Za-zÁÉÍÓÚÑ0-9 ]/g, '').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
@@ -56,32 +56,48 @@ function etqZona(){
   const q = UI.etq;
   if (q.leyendo) return `<div class="etq-zona leyendo" aria-busy="true">${etqCargando(`Leyendo ${q.archivo || 'el archivo'}…`)}<i class="etq-barra" aria-hidden="true"></i></div>`;
   const msg = q.error ? `<div class="aviso error" role="alert" style="margin:0 0 12px"><div class="aviso-cuerpo">${esc(q.error)}</div></div>` : '';
-  if (q.res) return `<div class="etq-zona hecho"><span class="etq-arch">${ICON.file}<b>${esc(q.res.archivo || q.archivo)}</b><small>${fmt(q.res.total_etiquetas)} etiquetas</small></span>
+  if (q.res) return `<div class="etq-zona hecho"><span class="etq-arch">${ICON.file}<b>${esc(q.res.archivo || q.archivo)}</b><small>${esc(q.res.formato)} · ${fmt(q.res.total_etiquetas)} etiquetas</small></span>
       <button type="button" class="btn sm" data-etq="elegir">Cambiar archivo</button></div>${msg}`;
   return `${msg}<div class="etq-zona ${q.arrastrando ? 'sobre' : ''}" data-etq-zona>
     <i class="etq-subir" aria-hidden="true">${ICON.descargar}</i>
     <b>Arrastra aquí el archivo de etiquetas</b>
-    <span class="small muted">El que manda DIMARSA por correo (.prn o .txt)</span>
+    <span class="small muted">El TXT o el PRN que manda DIMARSA por correo</span>
     <button type="button" class="btn primary" data-etq="elegir">Elegir archivo</button></div>`;
 }
 
+/* La tabla editable: una fila por producto, con las columnas del Excel de impresión (más Local y Cantidad) */
+const ETQ_COLS = [['cod_interno', 'Cód. DIMARSA', 104], ['nombre', 'Descripción', 280], ['marca', 'Marca', 118], ['atributo', 'Atributo', 84],
+  ['orden_compra', 'N° OC', 92], ['serie', 'Serie', 88], ['cod_proveedor', 'Cód. proveedor', 130], ['precio', 'Precio', 76], ['cod_usuario', 'Cód. usuario', 90],
+  ['rubro', 'Rubro', 76], ['linea', 'Línea', 76], ['familia', 'Familia', 80], ['local', 'Local', 66], ['cantidad', 'Cantidad', 86]];
+const ETQ_AYUDA = {local: 'El 1006 que viene en el TXT', cantidad: 'Cuántas etiquetas se imprimen de este producto', cod_proveedor: 'Código Electrolux (o el modelo, si el archivo no trae código)',
+  rubro: 'Ej. 00002', linea: 'Ej. 00010', familia: 'Ej. 00030'};
+let _etqId = 0;
+const etqTotal = () => UI.etq.filas.reduce((a, f) => a + (+f.cantidad || 0), 0);
+const etqIgual = (a, b) => String(a ?? '') === String(b ?? '');
+const etqCambiada = (f, c) => { const o = UI.etq.orig.get(f._id); return !o || !etqIgual(o[c], f[c]); };
+const etqNCambios = () => UI.etq.filas.reduce((n, f) => n + (UI.etq.orig.has(f._id) ? ETQ_COLS.filter(([c]) => etqCambiada(f, c)).length : 1), 0)
+  + [...UI.etq.orig.keys()].filter(id => !UI.etq.filas.some(f => f._id === id)).length;
+
 function etqResumen(r){
-  const sinSku = r.productos.filter(p => !p.sku).length;
+  const q = UI.etq, nc = etqNCambios();
   return `<section class="panel etq-res" data-k="etq-res">
-    <div class="panel-h"><h2>Lo que trae el archivo</h2><span class="spacer"></span><span class="small muted">Lote ${esc(r.lote || '—')}</span></div>
+    <div class="panel-h"><h2>2. Cómo quedan las etiquetas</h2><span class="spacer"></span>
+      <button type="button" class="btn sm" data-etq="agregar">${ICON.plus} Agregar fila</button>
+      <button type="button" class="btn sm" data-etq="restaurar" ${nc ? '' : 'disabled'} title="Vuelve a lo que traía el archivo">${ICON.undo} Deshacer cambios</button>
+      <button type="button" class="btn primary" data-etq="excel" ${q.bajando ? 'disabled' : ''} title="Baja la tabla en el Excel que se usa para imprimir">${q.bajando ? '<i class="etq-giro chico" aria-hidden="true"></i> Preparando…' : `${ICON.descargar} Descargar Excel`}</button></div>
     <div class="panel-b">
       <div class="etq-stats">
-        <div><b class="num">${fmt(r.total_etiquetas)}</b><span>etiquetas</span></div>
-        <div><b class="num">${fmt(r.productos.length)}</b><span>productos</span></div>
-        <div><b class="num">${fmt(r.filas_impresas)}</b><span>filas de 2 etiquetas</span></div>
-        <div class="${sinSku ? 'mal' : 'bien'}"><b class="num">${sinSku ? fmt(sinSku) : 'Todos'}</b><span>${sinSku ? 'sin código Electrolux' : 'con código Electrolux'}</span></div>
+        <div><b class="num" data-etq-total>${fmt(etqTotal())}</b><span>etiquetas</span></div>
+        <div><b class="num">${fmt(q.filas.length)}</b><span>productos</span></div>
+        <div><b class="num">${esc(r.orden_compra || '—')}</b><span>orden de compra · ${esc(r.formato)}</span></div>
+        <div class="${nc ? 'edit' : ''}"><b class="num" data-etq-cambios>${nc ? fmt(nc) : 'Sin'}</b><span>${nc === 1 ? 'cambio tuyo' : 'cambios tuyos'}</span></div>
       </div>
       ${(r.avisos || []).map(a => `<div class="aviso warn" role="status" style="margin:0 0 8px"><div class="aviso-cuerpo">${esc(a)}</div></div>`).join('')}
-      <div class="scroll"><table class="tbl"><thead><tr><th>Cód. DIMARSA</th><th>Descripción</th><th>Cód. Electrolux</th><th>Ubicación</th><th class="n">Etiquetas</th></tr></thead><tbody>
-      ${r.productos.map(p => `<tr><td class="num">${esc(p.cod_cliente)}</td><td>${esc(p.descripcion)}</td>
-        <td>${p.sku ? `<span class="num">${esc(p.sku)}</span>${p.origen_sku === 'homologacion' ? ' <span class="tag" title="Sale de la maestra de homologación">homologado</span>' : ''}`
-                    : `<span class="tag warn" title="La etiqueta trae «${esc(p.sku_etiqueta)}» y la maestra no lo conoce">sin código</span>`}</td>
-        <td class="num">${esc(p.ubicacion)}</td><td class="n num">${fmt(p.etiquetas)}</td></tr>`).join('')}
+      <div class="scroll etq-scroll"><table class="tbl etq-tbl"><thead><tr>${ETQ_COLS.map(([c, t, w]) => `<th style="min-width:${w}px" ${ETQ_AYUDA[c] ? `title="${esc(ETQ_AYUDA[c])}"` : ''} class="${c === 'cantidad' ? 'n' : ''}">${t}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${q.filas.map(f => `<tr data-k="etq-f${f._id}">${ETQ_COLS.map(([c, t]) => {
+        const cod = c === 'cod_proveedor' && !/^\d{6,}$/.test(String(f[c]).trim());
+        return `<td><input class="${c === 'cantidad' ? 'n num' : ''} ${etqCambiada(f, c) ? 'edit' : ''} ${cod ? 'modelo' : ''}" data-etq-celda="${f._id}:${c}" value="${esc(f[c])}" aria-label="${esc(t)}" ${c === 'cantidad' ? 'inputmode="numeric"' : ''} spellcheck="false" autocomplete="off"></td>`; }).join('')}
+        <td><button type="button" class="btn quiet sm icon" data-etq-borrar="${f._id}" aria-label="Quitar esta fila" title="Quitar esta fila">${ICON.x}</button></td></tr>`).join('')}
       </tbody></table></div></div></section>`;
 }
 
@@ -104,7 +120,7 @@ function etqCuadre(){
         <span class="num">${esc(e.entrega)}</span><small>${fmt(unidades(e))} un.${e.grupo ? ` · grupo ${esc(e.grupo)}` : ''}</small></label>`).join('')}</div></div>`;
   }).join('') : `<div class="empty"><h3>No hay entregas para cuadrar</h3><p>Crea las entregas del pedido para poder compararlas con las etiquetas.</p></div>`;
   return `<section class="panel" data-k="etq-cuadre">
-    <div class="panel-h"><h2>Cuadrar con la factura</h2><span class="spacer"></span>
+    <div class="panel-h"><h2>3. Cuadrar con la factura (opcional)</h2><span class="spacer"></span>
       <button type="button" class="btn primary" data-etq="cuadrar" ${q.sel.size && !q.cuadrando ? '' : 'disabled'}>${q.cuadrando ? '<i class="etq-giro chico" aria-hidden="true"></i> Cuadrando…' : 'Cuadrar'}</button></div>
     <div class="panel-b">
       <p class="small muted" style="margin-top:0">Elige las entregas que van con estas etiquetas. Se compara, producto por producto, cuántas etiquetas hay contra cuántas unidades se despacharon.</p>
@@ -133,14 +149,14 @@ function etqDimarsa(){
     <div class="etq-top"><button type="button" class="btn quiet sm" data-etq="volver">${ICON.undo} Otro cliente</button>
       <h1>Etiquetas · <span>DIMARSA</span></h1></div>
     <input type="file" data-etq-archivo accept=".prn,.txt,.zpl,text/plain" hidden>
-    <section class="panel"><div class="panel-h"><h2>1. Archivo de etiquetas</h2></div><div class="panel-b">${etqZona()}</div></section>
+    <section class="panel"><div class="panel-h"><h2>1. Archivo de DIMARSA</h2></div><div class="panel-b">${etqZona()}</div></section>
     ${q.res ? etqResumen(q.res) : ''}
     ${q.res ? etqCuadre() : ''}
   </div>`;
 }
 
 /* ---- Acciones ---- */
-function etqElegirCliente(c){ Object.assign(UI.etq, {cliente: c, archivo: '', res: null, error: '', sel: new Set(), cuadre: null, leyendo: false, cuadrando: false}); render(); }
+function etqElegirCliente(c){ Object.assign(UI.etq, {cliente: c, archivo: '', res: null, filas: [], orig: new Map(), bajando: false, error: '', sel: new Set(), cuadre: null, leyendo: false, cuadrando: false}); render(); }
 async function etqLeer(archivo){
   const q = UI.etq; if (!archivo || q.leyendo) return;
   Object.assign(q, {leyendo: true, archivo: archivo.name, error: '', cuadre: null}); render();
@@ -149,24 +165,31 @@ async function etqLeer(archivo){
     const r = await fetch('/api/etiquetas/dimarsa/analizar', {method: 'POST', body: fd, headers: cab()});
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo leer el archivo.');
-    q.res = d; q.sel = new Set();
-  } catch(e){ q.res = null; q.error = e.message === 'Failed to fetch' ? 'Sin conexión con el servidor. Revisa que run.bat siga abierto.' : e.message; }
+    q.res = d; q.sel = new Set(); q.filas = d.filas.map(f => ({...f, _id: ++_etqId})); q.orig = new Map(q.filas.map(f => [f._id, {...f}]));
+  } catch(e){ q.res = null; q.filas = []; q.error = e.message === 'Failed to fetch' ? 'Sin conexión con el servidor. Revisa que run.bat siga abierto.' : e.message; }
   q.leyendo = false; render();
 }
 async function etqCuadrar(){
-  const q = UI.etq; if (!q.res || !q.sel.size || q.cuadrando) return;
+  const q = UI.etq; if (!q.res || !q.filas.length || !q.sel.size || q.cuadrando) return;
   Object.assign(q, {cuadrando: true, cuadre: null}); render();
-  try { q.cuadre = await api('POST', '/etiquetas/dimarsa/cuadrar', {productos: q.res.productos, entregas: [...q.sel]}); }
+  try { q.cuadre = await api('POST', '/etiquetas/dimarsa/cuadrar', {filas: q.filas, entregas: [...q.sel]}); }
   catch(e){ toast(e.message); }
   q.cuadrando = false; render();
 }
 
 document.addEventListener('click', ev => {
   if (UI.view !== 'etiquetas') return;
-  const t = ev.target.closest && ev.target.closest('[data-etq], [data-etq-cliente]'); if (!t) return;
+  const t = ev.target.closest && ev.target.closest('[data-etq], [data-etq-cliente], [data-etq-borrar]'); if (!t) return;
   if (t.dataset.etqCliente){ etqElegirCliente(t.dataset.etqCliente); return; }
+  if (t.dataset.etqBorrar){ UI.etq.filas = UI.etq.filas.filter(f => String(f._id) !== t.dataset.etqBorrar); UI.etq.cuadre = null; render(); return; }
   const a = t.dataset.etq;
   if (a === 'volver') etqElegirCliente('');
+  else if (a === 'agregar'){
+    const f = {...etqFilaNueva(), _id: ++_etqId}; UI.etq.filas.push(f); UI.etq.cuadre = null; render();
+    const i = document.querySelector(`[data-etq-celda="${f._id}:cod_interno"]`); if (i){ i.scrollIntoView({block: 'center'}); i.focus(); }
+  }
+  else if (a === 'restaurar'){ UI.etq.filas = [...UI.etq.orig.values()].map(f => ({...f})); UI.etq.cuadre = null; render(); }
+  else if (a === 'excel') etqDescargar();
   else if (a === 'elegir'){ const i = document.querySelector('[data-etq-archivo]'); if (i){ i.value = ''; i.click(); } }
   else if (a === 'cuadrar') etqCuadrar();
 });
@@ -207,3 +230,42 @@ document.addEventListener('pointerover', ev => {
 document.addEventListener('pointerout', ev => {
   const g = document.getElementById('etq-grid'); if (g && !g.contains(ev.relatedTarget)) g.classList.remove('hover');
 });
+
+/* ---- Editar la tabla ---- */
+const etqFilaNueva = () => ({cod_interno: '', nombre: '', marca: '', atributo: '000000', orden_compra: (UI.etq.res || {}).orden_compra || '', serie: '', cod_proveedor: '',
+  precio: '', cod_usuario: 1588, rubro: '', linea: '', familia: '', local: '1006', cantidad: 0});
+/* Cada tecla se guarda al momento y solo se actualizan los totales: la tabla no se vuelve a dibujar mientras escribes */
+document.addEventListener('input', ev => {
+  const i = ev.target; if (UI.view !== 'etiquetas' || !i.dataset || !i.dataset.etqCelda) return;
+  const [id, campo] = i.dataset.etqCelda.split(':'), f = UI.etq.filas.find(x => String(x._id) === id); if (!f) return;
+  f[campo] = campo === 'cantidad' ? Math.max(0, parseInt(String(i.value).replace(/\D/g, ''), 10) || 0) : i.value;
+  UI.etq.cuadre = null;
+  i.classList.toggle('edit', etqCambiada(f, campo));
+  if (campo === 'cod_proveedor') i.classList.toggle('modelo', !/^\d{6,}$/.test(String(f[campo]).trim()));
+  const tot = document.querySelector('[data-etq-total]'), nc = document.querySelector('[data-etq-cambios]');
+  if (tot) tot.textContent = fmt(etqTotal());
+  if (nc){ const n = etqNCambios(); nc.textContent = n ? fmt(n) : 'Sin'; nc.parentElement.classList.toggle('edit', n > 0); }
+});
+/* Enter baja a la misma columna de la fila siguiente, como en una planilla */
+document.addEventListener('keydown', ev => {
+  const i = ev.target; if (ev.key !== 'Enter' || UI.view !== 'etiquetas' || !i.dataset || !i.dataset.etqCelda) return;
+  const campo = i.dataset.etqCelda.split(':')[1], fila = i.closest('tr'), sig = ev.shiftKey ? fila.previousElementSibling : fila.nextElementSibling;
+  const dest = sig && sig.querySelector(`[data-etq-celda$=":${campo}"]`); if (dest){ ev.preventDefault(); dest.focus(); dest.select(); }
+});
+
+/* ---- Descargar el Excel de impresión ---- */
+async function etqDescargar(){
+  const q = UI.etq; if (!q.filas.length || q.bajando) return;
+  if (q.filas.some(f => !String(f.cod_interno).trim())) return toast('Hay filas sin código DIMARSA: complétalas o quítalas antes de descargar.');
+  q.bajando = true; render();
+  try {
+    const r = await fetch('/api/etiquetas/dimarsa/excel', {method: 'POST', headers: cab({'Content-Type': 'application/json'}),
+      body: JSON.stringify({filas: q.filas.map(({_id, ...f}) => f), archivo: q.res ? q.res.archivo : ''})});
+    if (!r.ok){ const d = await r.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : 'No se pudo preparar el Excel.'); }
+    const nombre = ((r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'Etiquetas_DIMARSA.xlsx';
+    const url = URL.createObjectURL(await r.blob()), a = document.createElement('a');
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(`Excel descargado: ${nombre}`);
+  } catch(e){ toast(e.message === 'Failed to fetch' ? 'Sin conexión con el servidor. Revisa que run.bat siga abierto.' : e.message); }
+  q.bajando = false; render();
+}

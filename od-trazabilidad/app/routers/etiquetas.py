@@ -1,5 +1,5 @@
-"""Etiquetas de los clientes (pack list): leer el archivo que manda el cliente y cuadrarlo con lo despachado."""
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+"""Etiquetas de los clientes (pack list): leer el archivo que manda el cliente, editarlo, bajarlo a Excel y cuadrarlo con lo despachado."""
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,35 +23,52 @@ def _texto(datos: bytes) -> str:
 
 @router.post("/etiquetas/dimarsa/analizar")
 def analizar_dimarsa(archivo: UploadFile = File(...)):
-    """Lee el archivo de etiquetas de DIMARSA (ZPL en .prn o .txt) y devuelve cuántas hay de cada producto."""
+    """Lee el archivo de DIMARSA (el TXT de ancho fijo o las etiquetas ZPL del .prn) y lo devuelve como tabla."""
     datos = archivo.file.read(MAX_BYTES + 1)
     if not datos:
         raise HTTPException(422, "El archivo está vacío.")
     if len(datos) > MAX_BYTES:
         raise HTTPException(413, "El archivo es demasiado grande para ser un archivo de etiquetas.")
     try:
-        return etiquetas.analizar(_texto(datos), archivo.filename or "", maestra.homologacion(etiquetas.CLIENTE_DIMARSA))
+        return etiquetas.leer(_texto(datos), archivo.filename or "", maestra.homologacion(etiquetas.CLIENTE_DIMARSA))
     except etiquetas.FormatoNoReconocido as e:
         raise HTTPException(422, str(e)) from e
 
 
+def _filas(body: dict) -> list[dict]:
+    filas = body.get("filas")
+    if not isinstance(filas, list) or not filas or not all(isinstance(f, dict) for f in filas):
+        raise HTTPException(422, "Falta leer primero el archivo de etiquetas.")
+    return filas
+
+
+@router.post("/etiquetas/dimarsa/excel")
+def excel_dimarsa(body: dict):
+    """La tabla (con lo que el analista haya editado) en el Excel que se usa para imprimir las etiquetas."""
+    filas = _filas(body)
+    archivo = str(body.get("archivo") or "")
+    orden = next((str(f.get("orden_compra")) for f in filas if str(f.get("orden_compra") or "").strip()), "")
+    nombre = f"Etiquetas_DIMARSA_{orden or 'sin_OC'}.xlsx"
+    return Response(etiquetas.excel(filas, archivo), headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @router.post("/etiquetas/dimarsa/cuadrar")
 def cuadrar_dimarsa(body: dict, s: Session = Depends(get_session)):
-    """Etiquetas del archivo contra las unidades de las entregas elegidas, producto por producto."""
-    prods, ents = body.get("productos"), body.get("entregas")
-    if not isinstance(prods, list) or not prods:
-        raise HTTPException(422, "Falta leer primero el archivo de etiquetas.")
+    """Etiquetas de la tabla contra las unidades de las entregas elegidas, producto por producto."""
+    filas, ents = _filas(body), body.get("entregas")
     if not isinstance(ents, list) or not ents:
         raise HTTPException(422, "Elige al menos una entrega para cuadrar.")
     numeros = [str(e).strip() for e in ents if str(e).strip()]
-    filas = s.execute(
+    reg = s.execute(
         select(Entrega.entrega, LineaEntrega.sku, LineaEntrega.qty)
         .join(LineaEntrega, LineaEntrega.entrega_id == Entrega.id)
         .where(Entrega.entrega.in_(numeros), Entrega.anulada.is_(False))).all()
-    if not filas and not s.execute(select(Entrega.id).where(Entrega.entrega.in_(numeros))).first():
+    if not reg and not s.execute(select(Entrega.id).where(Entrega.entrega.in_(numeros))).first():
         raise HTTPException(404, "No encuentro esas entregas.")
     unidades: dict[str, int] = {}
-    for _, sku, qty in filas:
+    for _, sku, qty in reg:
         k = maestra._sku(sku)
         unidades[k] = unidades.get(k, 0) + int(qty or 0)
+    prods = etiquetas.productos_para_cuadre(filas, maestra.homologacion(etiquetas.CLIENTE_DIMARSA))
     return etiquetas.cuadrar(prods, unidades, maestra.descripciones())

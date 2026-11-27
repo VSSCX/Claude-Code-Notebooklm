@@ -1,50 +1,43 @@
-"""Etiquetas de los clientes: lectura de los archivos que mandan y cuadre contra lo despachado.
+"""Etiquetas de los clientes: leer lo que manda el cliente, dejarlo en una tabla editable y bajarlo a Excel.
 
-DIMARSA manda sus etiquetas por correo como ZPL (impresora Zebra), en un archivo .prn o .txt. Cada bloque
-^XA … ^XZ es una FILA de la hoja (dos etiquetas lado a lado) y ^PQn repite esa fila n veces. En cada etiqueta:
+DIMARSA manda las etiquetas por correo de dos maneras, y las dos dicen lo mismo:
 
-    002 - 010 - 030            ubicación / familia del producto en el cliente
-    MADEMSA                    marca
-    [código de barras]         código del producto en DIMARSA (8 dígitos, ej. 01167226)
-    L-2600000000028 (vertical) lote del envío
-    LAVADORA MADEMSA 9,5KG BZG descripción (una o dos líneas)
-    240086033                  código Electrolux, o el modelo cuando no hay (M300D, MDWMT18S)
+* TXT (N00481284.txt): una línea por producto, de ancho fijo (cp1252):
+      0-8   código DIMARSA          48-68   marca
+      8-48  nombre del artículo     68-88   atributo(6) + N° de orden de compra(6) + serie(8)
+      88-108 código del proveedor (el de Electrolux, o el modelo)
+      108-…  cantidad(14) + local(4) + rubro(4) + línea(4) + familia(4)
+* PRN (L-2600000000028_584-etiquetas….prn): ZPL para impresora Zebra. Cada bloque ^XA…^XZ es una FILA de dos
+  etiquetas y ^PQn la repite n veces; como en las costuras la fila mezcla dos productos, se cuenta etiqueta por
+  etiqueta. La ubicación «002 - 010 - 030» es rubro - línea - familia.
 
-Como las filas llevan dos etiquetas, en las costuras entre un producto y otro la fila mezcla dos productos:
-por eso se cuenta etiqueta por etiqueta y no fila por fila.
+El Excel que se baja es el mismo que armaba la consulta de Power Query («Importaciones Txt»): 12 columnas con los
+datos del artículo y 4 auxiliares, una fila por producto.
 """
 from __future__ import annotations
 
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from io import BytesIO
 
 CLIENTE_DIMARSA = "DIMARSA"
 _SKU_NUMERICO = re.compile(r"^\d{6,}$")
 _NOMBRE = re.compile(r"^(L-\d+)[_\- ](\d+)")        # L-2600000000028_584-etiquetas…: lote y cuántas etiquetas trae
+COD_USUARIO = 1588
+LOCAL = "1006"
+
+# Campos de una fila, en el orden de la tabla. «cantidad» y «local» no salen como columna propia en el Excel (van dentro de Column5).
+CAMPOS = ("cod_interno", "nombre", "marca", "atributo", "orden_compra", "serie", "cod_proveedor", "precio",
+          "cod_usuario", "rubro", "linea", "familia", "local", "cantidad")
+COLUMNAS_EXCEL = ("Código Atríbuto Interno", "Nombre Artículo", "Marca Artículo", "Atributo Artículo", "Número Orden de Compra",
+                  "Serie Orden de Compra", "Código Artículo Proveedor", "Precio", "Código Usuario", "Rubro Artículo",
+                  "Línea Artículo", "Familia Artículo", "Source.Name", "Column1", "Column3", "Column5")
+ANCHOS_EXCEL = (22, 44, 22, 18, 24, 20, 26, 10, 16, 15, 15, 16, 22, 52, 24, 22)
 
 
 class FormatoNoReconocido(ValueError):
     pass
-
-
-@dataclass
-class Etiqueta:
-    ubicacion: str = ""
-    marca: str = ""
-    cod_cliente: str = ""
-    lote: str = ""
-    descripcion: str = ""
-    sku_etiqueta: str = ""        # lo último que dice la etiqueta: código Electrolux o modelo
-
-
-@dataclass
-class Lectura:
-    formato: str = "ZPL"
-    etiquetas: list[tuple[Etiqueta, int]] = field(default_factory=list)       # (etiqueta, copias)
-    bloques: int = 0
-    filas: int = 0                # filas de la hoja que se imprimen (cada una lleva dos etiquetas)
-    avisos: list[str] = field(default_factory=list)
 
 
 def _norm_cod(c: str) -> str:
@@ -52,6 +45,49 @@ def _norm_cod(c: str) -> str:
     return re.sub(r"^0+(?=\d)", "", str(c or "").strip()).lower()
 
 
+def _cinco(v: str) -> str:
+    """Rubro, línea o familia como los trae el Excel: «0» + 4 dígitos («00010»)."""
+    d = re.sub(r"\D", "", str(v or ""))
+    return ("0" + d.zfill(4)[-4:]) if d else ""
+
+
+def fila_vacia() -> dict:
+    return {"cod_interno": "", "nombre": "", "marca": "", "atributo": "000000", "orden_compra": "", "serie": "", "cod_proveedor": "",
+            "precio": "", "cod_usuario": COD_USUARIO, "rubro": "", "linea": "", "familia": "", "local": LOCAL, "cantidad": 0}
+
+
+@dataclass
+class Lectura:
+    formato: str
+    filas: list[dict] = field(default_factory=list)
+    lotes: set[str] = field(default_factory=set)
+    filas_impresas: int | None = None        # solo el PRN: filas de dos etiquetas que se imprimen
+    avisos: list[str] = field(default_factory=list)
+
+
+# ---------------- TXT ----------------
+def leer_txt(texto: str) -> Lectura:
+    lec = Lectura("TXT")
+    for n, linea in enumerate(texto.splitlines(), start=1):
+        if not linea.strip():
+            continue
+        linea = linea.rstrip("\r\n")
+        c5 = linea[108:].strip()
+        if len(linea) < 108 or not re.match(r"^\d{8}", linea) or not re.fullmatch(r"\d{17,}", c5):
+            lec.avisos.append(f"La línea {n} no tiene el formato esperado y no se leyó: «{linea[:60].strip()}».")
+            continue
+        f = fila_vacia()
+        f.update(cod_interno=linea[:8], nombre=linea[8:48].rstrip(), marca=linea[48:68].strip(),
+                 atributo=linea[68:74], orden_compra=linea[74:80], serie=linea[80:88].strip(),
+                 cod_proveedor=linea[88:108].strip(), cantidad=int(c5[:-16] or 0), local=c5[-16:-12],
+                 rubro=_cinco(c5[-12:-8]), linea=_cinco(c5[-8:-4]), familia=_cinco(c5[-4:]))
+        lec.filas.append(f)
+    if not lec.filas:
+        raise FormatoNoReconocido("No pude leer ninguna línea de este TXT. Espero una línea por producto, de ancho fijo, como el N00481284.txt de DIMARSA.")
+    return lec
+
+
+# ---------------- PRN (ZPL) ----------------
 def _campos(bloque: str, ancho: int) -> dict[int, list[dict]]:
     """Los campos de un bloque, agrupados por la columna (etiqueta) en que están."""
     columnas: dict[int, list[dict]] = {}
@@ -70,95 +106,154 @@ def _campos(bloque: str, ancho: int) -> dict[int, list[dict]]:
     return columnas
 
 
-def _etiqueta(campos: list[dict]) -> Etiqueta | None:
-    e = Etiqueta()
+def _etiqueta(campos: list[dict]) -> dict | None:
+    e = {"cod_interno": "", "lote": ""}
     textos = []
     for c in sorted(campos, key=lambda c: (c["y"], c["x"])):
         if c["barras"]:
-            e.cod_cliente = c["texto"]
+            e["cod_interno"] = c["texto"]
         elif c["vertical"]:
-            e.lote = c["texto"]
+            e["lote"] = c["texto"]
         else:
             textos.append(c["texto"])
-    if not e.cod_cliente or len(textos) < 3:
+    if not e["cod_interno"] or len(textos) < 3:
         return None
-    e.ubicacion, e.marca, e.sku_etiqueta = textos[0], textos[1], textos[-1]
-    e.descripcion = " ".join(textos[2:-1])
+    e.update(ubicacion=textos[0], marca=textos[1], cod_proveedor=textos[-1], nombre=" ".join(textos[2:-1]))
     return e
 
 
 def leer_zpl(texto: str) -> Lectura:
-    """Lee un archivo de etiquetas ZPL. Si no lo es, dice que no reconoce el formato."""
     bloques = re.findall(r"\^XA(.*?)\^XZ", texto or "", re.S)
     if not bloques:
-        raise FormatoNoReconocido(
-            "No reconozco este archivo: espero etiquetas en formato ZPL (las que empiezan con ^XA y terminan con ^XZ). "
-            "Si es un TXT de otro formato, avísanos cómo viene para poder leerlo.")
-    lec = Lectura(bloques=len(bloques))
+        raise FormatoNoReconocido("No reconozco este archivo: no es un TXT de DIMARSA ni etiquetas ZPL (las que empiezan con ^XA y terminan con ^XZ).")
+    lec = Lectura("PRN", filas_impresas=0)
+    por_cod: OrderedDict[str, dict] = OrderedDict()
     for b in bloques:
         pq = re.search(r"\^PQ(\d+)", b)
         copias = int(pq.group(1)) if pq else 1
-        lec.filas += copias
+        lec.filas_impresas += copias
         pw = re.search(r"\^PW(\d+)", b)
-        columnas = _campos(b, int(pw.group(1)) if pw else 832)
-        for _, campos in sorted(columnas.items()):
+        for _, campos in sorted(_campos(b, int(pw.group(1)) if pw else 832).items()):
             e = _etiqueta(campos)
             if e is None:
                 lec.avisos.append("Una etiqueta del archivo no tiene todos sus datos y no se cuenta.")
                 continue
-            lec.etiquetas.append((e, copias))
+            if e["lote"]:
+                lec.lotes.add(e["lote"])
+            f = por_cod.get(e["cod_interno"])
+            if f is None:
+                f = fila_vacia()
+                partes = [p.strip() for p in e["ubicacion"].split("-")]
+                f.update(cod_interno=e["cod_interno"], nombre=e["nombre"], marca=e["marca"], cod_proveedor=e["cod_proveedor"])
+                if len(partes) == 3:
+                    f.update(rubro=_cinco(partes[0]), linea=_cinco(partes[1]), familia=_cinco(partes[2]))
+                por_cod[e["cod_interno"]] = f
+            f["cantidad"] += copias
+    lec.filas = list(por_cod.values())
+    if lec.filas:
+        lec.avisos.append("El PRN no trae el número de orden de compra ni la serie: si los necesitas en el Excel, escríbelos en la tabla.")
     return lec
 
 
-def analizar(texto: str, nombre: str = "", homologacion: dict[str, str] | None = None) -> dict:
-    """Resumen del archivo: etiquetas por producto, con el código Electrolux de cada uno y lo que no cuadra dentro del propio archivo."""
-    lec = leer_zpl(texto)
+def leer(texto: str, nombre: str = "", homologacion: dict[str, str] | None = None) -> dict:
+    """Lee un archivo de DIMARSA (TXT de ancho fijo o ZPL) y lo deja como tabla, con los avisos de lo que no cuadra."""
     homologacion = homologacion or {}
-    productos: OrderedDict[str, dict] = OrderedDict()
-    lotes: set[str] = set()
-    total = 0
-    for e, n in lec.etiquetas:
-        total += n
-        if e.lote:
-            lotes.add(e.lote)
-        p = productos.get(e.cod_cliente)
-        if p is None:
-            p = productos[e.cod_cliente] = {
-                "cod_cliente": e.cod_cliente, "descripcion": e.descripcion, "marca": e.marca,
-                "ubicacion": e.ubicacion, "sku_etiqueta": e.sku_etiqueta, "etiquetas": 0}
-        p["etiquetas"] += n
+    lec = leer_zpl(texto) if "^XA" in (texto or "") else leer_txt(texto or "")
     avisos = list(dict.fromkeys(lec.avisos))
-    for p in productos.values():
-        h = homologacion.get(_norm_cod(p["cod_cliente"]), "")
-        num = p["sku_etiqueta"] if _SKU_NUMERICO.match(p["sku_etiqueta"]) else ""
-        p["sku"] = h or num
-        p["origen_sku"] = "homologacion" if h else ("etiqueta" if num else "")
-        if h and num and h != num:
-            avisos.append(f"El código DIMARSA {p['cod_cliente']} se homologa a {h}, pero la etiqueta dice {num}. Se usa {h}.")
-        if not p["sku"]:
-            avisos.append(f"{p['descripcion']} (código DIMARSA {p['cod_cliente']}) trae «{p['sku_etiqueta']}» en vez de un código Electrolux "
+    total = sum(f["cantidad"] for f in lec.filas)
+    if lec.formato == "PRN":
+        m = _NOMBRE.match(nombre or "")
+        if m and lec.lotes and m.group(1) not in lec.lotes:
+            avisos.append(f"El nombre del archivo habla del lote {m.group(1)} y las etiquetas traen {', '.join(sorted(lec.lotes))}.")
+        if m and int(m.group(2)) != total:
+            avisos.append(f"El nombre del archivo dice {m.group(2)} etiquetas y adentro hay {total}.")
+        if len(lec.lotes) > 1:
+            avisos.append(f"El archivo mezcla {len(lec.lotes)} lotes: {', '.join(sorted(lec.lotes))}.")
+        esperadas = int(m.group(2)) if m else None
+    else:
+        esperadas = None
+    ordenes = sorted({f["orden_compra"] for f in lec.filas if f["orden_compra"]})
+    if len(ordenes) > 1:
+        avisos.append(f"El archivo mezcla {len(ordenes)} órdenes de compra: {', '.join(ordenes)}.")
+    for f in lec.filas:
+        sku = sku_de(f, homologacion)
+        if not sku:
+            avisos.append(f"{f['nombre']} (código DIMARSA {f['cod_interno']}) trae «{f['cod_proveedor']}» en vez de un código Electrolux "
                           "y no está en la maestra de homologación: no se puede cuadrar con la entrega.")
-    m = _NOMBRE.match(nombre or "")
-    esperadas = int(m.group(2)) if m else None
-    if m and lotes and m.group(1) not in lotes:
-        avisos.append(f"El nombre del archivo habla del lote {m.group(1)} y las etiquetas traen {', '.join(sorted(lotes))}.")
-    if esperadas is not None and esperadas != total:
-        avisos.append(f"El nombre del archivo dice {esperadas} etiquetas y adentro hay {total}.")
-    if len(lotes) > 1:
-        avisos.append(f"El archivo mezcla {len(lotes)} lotes: {', '.join(sorted(lotes))}.")
-    return {
-        "cliente": CLIENTE_DIMARSA, "formato": lec.formato, "archivo": nombre, "lote": ", ".join(sorted(lotes)),
-        "total_etiquetas": total, "etiquetas_esperadas": esperadas, "bloques": lec.bloques,
-        "filas_impresas": lec.filas,
-        "productos": sorted(productos.values(), key=lambda p: (p["descripcion"], p["cod_cliente"])),
-        "avisos": avisos,
-    }
+        elif homologacion.get(_norm_cod(f["cod_interno"])) not in (None, sku) and _SKU_NUMERICO.match(f["cod_proveedor"]):
+            avisos.append(f"El código DIMARSA {f['cod_interno']} se homologa a {homologacion[_norm_cod(f['cod_interno'])]}, "
+                          f"pero el archivo dice {f['cod_proveedor']}.")
+    return {"cliente": CLIENTE_DIMARSA, "formato": lec.formato, "archivo": nombre, "lote": ", ".join(sorted(lec.lotes)),
+            "orden_compra": ", ".join(ordenes), "total_etiquetas": total, "etiquetas_esperadas": esperadas,
+            "filas_impresas": lec.filas_impresas, "filas": lec.filas, "avisos": avisos}
+
+
+def sku_de(fila: dict, homologacion: dict[str, str] | None = None) -> str:
+    """Código Electrolux de una fila: el que trae el archivo si es un código, si no el de la maestra de homologación."""
+    cod = str(fila.get("cod_proveedor") or "").strip()
+    if _SKU_NUMERICO.match(cod):
+        return cod
+    return (homologacion or {}).get(_norm_cod(fila.get("cod_interno")), "")
+
+
+# ---------------- Excel ----------------
+def _entero(v, defecto=0) -> int:
+    try:
+        return max(int(float(str(v).strip().replace(",", "."))), 0)
+    except ValueError:
+        return defecto
+
+
+def excel(filas: list[dict], archivo: str = "") -> bytes:
+    """El mismo Excel que armaba la consulta de Power Query: columnas A–L con el artículo y M–P auxiliares (Column5 lleva la cantidad)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Importaciones Txt"
+    ws.append(list(COLUMNAS_EXCEL))
+    for f in filas:
+        nombre, serie = str(f.get("nombre", "")), str(f.get("serie", ""))
+        atributo = str(f.get("atributo") or "000000")
+        orden = str(f.get("orden_compra", ""))
+        c1 = f"{str(f.get('cod_interno', ''))[:8]:<8}{nombre:<40}"
+        c3 = f"{atributo[:6]:<6}{orden:<6}{serie:<8}"
+        cuatro = lambda v: re.sub(r"\D", "", str(v or "")).zfill(4)[-4:]            # noqa: E731
+        c5 = str(int(f"{_entero(f.get('cantidad')):014d}{cuatro(f.get('local') or LOCAL)}{cuatro(f.get('rubro'))}{cuatro(f.get('linea'))}{cuatro(f.get('familia'))}"))
+        precio = str(f.get("precio", "")).strip()
+        usuario = f.get("cod_usuario", COD_USUARIO)
+        ws.append([str(f.get("cod_interno", "")), f"{nombre:<40}", f"{str(f.get('marca', '')):<20}", atributo, orden, f"{serie:<8}",
+                   f"{str(f.get('cod_proveedor', '')):<20}", precio or None, _entero(usuario, COD_USUARIO) if str(usuario).strip() else None,
+                   _cinco(f.get("rubro")), _cinco(f.get("linea")), _cinco(f.get("familia")), archivo, c1, c3, c5])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for i, w in enumerate(ANCHOS_EXCEL):
+        ws.column_dimensions[chr(65 + i)].width = w
+    for fila in ws.iter_rows(min_row=2):
+        for c in fila:
+            if isinstance(c.value, str):
+                c.number_format = "@"
+    if filas:
+        t = Table(displayName="Importaciones_Txt", ref=f"A1:P{len(filas) + 1}")
+        t.tableStyleInfo = TableStyleInfo(name="TableStyleMedium7", showRowStripes=True)
+        ws.add_table(t)
+    ws.freeze_panes = "A2"
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ---------------- Cuadre contra las entregas ----------------
+def productos_para_cuadre(filas: list[dict], homologacion: dict[str, str] | None = None) -> list[dict]:
+    return [{"sku": sku_de(f, homologacion), "etiquetas": _entero(f.get("cantidad")), "descripcion": str(f.get("nombre", "")).strip()} for f in filas]
 
 
 def cuadrar(etiquetas: list[dict], unidades: dict[str, int], descripciones: dict[str, str] | None = None) -> dict:
-    """Compara, por producto, las etiquetas del archivo con las unidades de las entregas elegidas.
+    """Compara, por producto, las etiquetas con las unidades de las entregas elegidas.
 
-    `etiquetas`: [{sku, etiquetas, descripcion}] (los productos de `analizar`). `unidades`: código Electrolux → unidades."""
+    `etiquetas`: [{sku, etiquetas, descripcion}]. `unidades`: código Electrolux → unidades."""
     descripciones = descripciones or {}
     por_sku: dict[str, dict] = OrderedDict()
     sin_codigo = 0
@@ -172,7 +267,6 @@ def cuadrar(etiquetas: list[dict], unidades: dict[str, int], descripciones: dict
         f["etiquetas"] += n
     for sku, u in unidades.items():
         f = por_sku.setdefault(sku, {"sku": sku, "descripcion": descripciones.get(sku, ""), "etiquetas": 0})
-        f.setdefault("unidades", 0)
         f["unidades"] = f.get("unidades", 0) + int(u)
     filas = []
     for f in por_sku.values():

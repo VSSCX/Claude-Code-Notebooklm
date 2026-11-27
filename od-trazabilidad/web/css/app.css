@@ -1432,3 +1432,19 @@ tr.etq-dif td{background:var(--warn-soft)}
   .etq-zona.sobre{transform:none}
 }
 @media (max-width:760px){.etq-centro{padding-top:3vh}.etq-zona.hecho{flex-direction:column;align-items:flex-start}}
+/* tabla editable de etiquetas */
+.etq-scroll{max-height:62vh;overflow:auto;border:1px solid var(--hair);border-radius:var(--r)}
+.etq-tbl{width:max-content;min-width:100%}
+.etq-tbl thead th{position:sticky;top:0;z-index:2;background:var(--paper-2);white-space:nowrap}
+.etq-tbl td{padding:2px 3px}
+.etq-tbl input{width:100%;box-sizing:border-box;font:inherit;font-size:var(--t-sm);color:var(--ink);padding:6px 7px;border:1px solid transparent;border-radius:6px;background:transparent;
+  transition:border-color 120ms var(--ease-out),background-color 120ms var(--ease-out)}
+.etq-tbl input.n{text-align:right}
+@media (hover:hover) and (pointer:fine){.etq-tbl input:hover{border-color:var(--line)}}
+.etq-tbl input:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
+.etq-tbl input.edit{background:var(--accent-soft)}
+.etq-tbl input.modelo:not(.edit){background:var(--warn-soft)}
+.etq-tbl .btn.icon{padding:4px 6px;min-width:0}
+.etq-stats .edit b{color:var(--accent)}
+.etq-tbl th:first-child,.etq-tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--paper);box-shadow:1px 0 0 var(--hair)}
+.etq-tbl thead th:first-child{z-index:3;background:var(--paper-2)}
