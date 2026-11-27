@@ -367,7 +367,7 @@ function moverIndicador(){
 }
 window.addEventListener('resize', moverIndicador);
 const NAV = [['pedidos','Pedidos'], ['bandeja','Por hacer'], ['cubicador','Cubicador'],
-             ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
+             ['etiquetas','Etiquetas'], ['proyeccion','Proyección'], ['importar','SAP'], ['config','Configuración']];
 function renderNav(){
   const pendientes = gruposPorHacer().length;
   const items = Sesion.esAdmin() ? [...NAV, ['admin', 'Administración']] : NAV;

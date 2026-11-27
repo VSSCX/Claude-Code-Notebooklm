@@ -571,6 +571,7 @@ function render(){
   }
   pintar(app, barraJob() + (UI.view === 'bandeja' ? vistaBandeja()
     : UI.view === 'cubicador' ? vistaCubicador()
+    : UI.view === 'etiquetas' ? vistaEtiquetas()
     : UI.view === 'proyeccion' ? vistaProyeccion()
     : UI.view === 'importar' ? vistaImportar()
     : UI.view === 'config' ? vistaConfiguracion()

@@ -2079,3 +2079,69 @@ def test_el_cubicaje_dice_cuantas_unidades_y_bultos_lleva_cada_camion_y_pallet(c
     # lo guardado también trae el resumen
     g = c.get("/api/cubicaje-libre").json()
     assert g["carga_por_camion"] and g["bultos"] == 10
+
+
+# ---------- Etiquetas (DIMARSA) ----------
+_PRN_DIMARSA = "L-2600000000028_584-etiquetas_ZPL_2xfila_1.prn"
+
+
+def _subir_etiquetas(c, nombre=_PRN_DIMARSA, datos=None):
+    from pathlib import Path
+    if datos is None:
+        datos = (Path(__file__).parent / "datos" / _PRN_DIMARSA).read_bytes()
+    return c.post("/api/etiquetas/dimarsa/analizar", files={"archivo": (nombre, datos)})
+
+
+def test_etiquetas_dimarsa_se_leen_etiqueta_por_etiqueta(c, monkeypatch):
+    from app.integrations import maestra
+    monkeypatch.setattr(maestra, "homologacion", lambda cliente="": {"1183609": "900276900", "1458164": "900081700"})
+    r = _subir_etiquetas(c)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    # 584 etiquetas, como dice el nombre del archivo; 292 filas impresas de dos etiquetas
+    assert d["total_etiquetas"] == 584 and d["etiquetas_esperadas"] == 584 and d["filas_impresas"] == 292
+    assert d["lote"] == "L-2600000000028" and len(d["productos"]) == 35
+    assert sum(p["etiquetas"] for p in d["productos"]) == 584
+    por_cod = {p["cod_cliente"]: p for p in d["productos"]}
+    # un producto que aparece en varias filas, también en las que comparte con otro, se junta
+    assert por_cod["01167226"]["etiquetas"] == 35 and por_cod["01167226"]["sku"] == "240086033"
+    assert por_cod["01167226"]["descripcion"] == "LAVADORA MADEMSA 9,5KG BZG" and por_cod["01167226"]["marca"] == "MADEMSA"
+    assert por_cod["01349063"]["descripcion"] == "REFRIGERADOR SIDE BY SIDE 426LT MAS430B"        # descripción en dos líneas
+    # las que traen el modelo en vez del código salen por la homologación
+    assert por_cod["01183609"]["sku"] == "900276900" and por_cod["01183609"]["origen_sku"] == "homologacion"
+    assert d["avisos"] == []
+
+
+def test_etiquetas_dimarsa_avisa_lo_que_no_se_puede_cuadrar(c, monkeypatch):
+    from app.integrations import maestra
+    monkeypatch.setattr(maestra, "homologacion", lambda cliente="": {})
+    d = _subir_etiquetas(c).json()
+    assert sorted(p["cod_cliente"] for p in d["productos"] if not p["sku"]) == ["01183609", "01458164"]
+    assert len(d["avisos"]) == 2 and "M300D" in " ".join(d["avisos"])
+    # el nombre dice una cantidad y adentro hay otra
+    d2 = _subir_etiquetas(c, nombre="L-2600000000028_999-etiquetas.prn").json()
+    assert any("999" in a and "584" in a for a in d2["avisos"])
+    assert _subir_etiquetas(c, datos=b"esto no es una etiqueta").status_code == 422
+    assert _subir_etiquetas(c, datos=b"").status_code == 422
+
+
+def test_etiquetas_dimarsa_se_cuadran_con_las_entregas(c):
+    c.put("/api/pedidos/6100", json={"pedido": "6100", "cliente": "DIMARSA", "lineas": [{"sku": "240086033", "qty": 40}, {"sku": "240086764", "qty": 10}]})
+    c.put("/api/entregas/8800000001", json={"entrega": "8800000001", "pedido": "6100", "lineas": [{"sku": "240086033", "qty": 30}, {"sku": "999000111", "qty": 4}]})
+    c.put("/api/entregas/8800000002", json={"entrega": "8800000002", "pedido": "6100", "lineas": [{"sku": "240086033", "qty": 5}]})
+    prods = [{"sku": "240086033", "etiquetas": 35, "descripcion": "LAVADORA 9,5"}, {"sku": "240086764", "etiquetas": 10, "descripcion": "LAVADORA 12"},
+             {"sku": "", "etiquetas": 3, "descripcion": "sin código"}]
+    r = c.post("/api/etiquetas/dimarsa/cuadrar", json={"productos": prods, "entregas": ["8800000001", "8800000002"]})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    est = {f["sku"]: f["estado"] for f in d["filas"]}
+    assert est == {"240086033": "ok", "240086764": "sin_entrega", "999000111": "sin_etiqueta"}
+    assert d["sin_codigo"] == 3 and not d["cuadra"] and d["con_diferencia"] == 2 and d["unidades"] == 39
+    # lo que no cuadra va primero
+    assert [f["estado"] for f in d["filas"]][-1] == "ok"
+    # una sola entrega: faltan etiquetas del resto
+    d1 = c.post("/api/etiquetas/dimarsa/cuadrar", json={"productos": prods[:1], "entregas": ["8800000001"]}).json()
+    assert {f["sku"]: (f["estado"], f["diferencia"]) for f in d1["filas"]}["240086033"] == ("sobran", 5)
+    assert c.post("/api/etiquetas/dimarsa/cuadrar", json={"productos": prods, "entregas": ["1"]}).status_code == 404
+    assert c.post("/api/etiquetas/dimarsa/cuadrar", json={"productos": prods, "entregas": []}).status_code == 422
+    assert c.post("/api/etiquetas/dimarsa/cuadrar", json={"productos": [], "entregas": ["8800000001"]}).status_code == 422

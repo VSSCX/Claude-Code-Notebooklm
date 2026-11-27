@@ -8,10 +8,11 @@ su archivo y este solo los junta bajo /api.
 - sap.py      leer, analizar, crear y borrar en SAP
 - cubicaje/   (paquete) cubicaje del pedido, cubicador libre, Base de Medidas y kits
 - datos.py    clientes, sesión, respaldos y estado del sistema
+- etiquetas.py etiquetas de los clientes (pack list): leer el archivo y cuadrarlo con lo despachado
 """
 from fastapi import APIRouter
 
-from . import admin, core, cubicaje, cuenta, datos, sap
+from . import admin, core, cubicaje, cuenta, datos, etiquetas, sap
 
 router = APIRouter(prefix="/api")
 router.include_router(cuenta.router)
@@ -20,3 +21,4 @@ router.include_router(datos.router)
 router.include_router(core.router)
 router.include_router(sap.router)
 router.include_router(cubicaje.router)
+router.include_router(etiquetas.router)

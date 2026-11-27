@@ -39,6 +39,8 @@ const ICON = {
   pedidos:    _svg('<path d="M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M9 8h6M9 12h6M9 16h4"/>'),
   porhacer:   _svg('<path d="M4 6.5l1.8 1.8L9 5M4 12.5l1.8 1.8L9 11M4 18.5l1.8 1.8L9 17"/><path d="M12 7h8M12 13h8M12 19h8"/>'),
   cubicador:  _svg('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>'),
+  etiquetas:  _svg('<path d="M3.5 12.5V4.5h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.3"/>'),
+  integracion:_svg('<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>'),
   proyeccion: _svg('<path d="M5 5h14v15H5z"/><path d="M5 10h14M9 3v4M15 3v4"/>'),
   sap:        _svg('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
   config:     _svg('<path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M6 15v4"/>'),
